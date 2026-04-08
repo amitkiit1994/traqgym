@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Location {
+  id        Int      @id @default(autoincrement())
+  name      String
+  code      String   @unique
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users            User[]
+  workers          Worker[]
+  memberTickets    MemberTicket[]
+  payments         Payment[]
+  attendanceLogs   AttendanceLog[]
+  biometricDevices BiometricDevice[]
+  openingHours     OpeningHour[]
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  email      String    @unique
+  password   String
+  firstname  String
+  lastname   String
+  phone      String?
+  gender     String?
+  birthdate  DateTime?
+  locationId Int?
+  location   Location? @relation(fields: [locationId], references: [id])
+  createdAt  DateTime  @default(now())
+
+  memberTickets  MemberTicket[]
+  payments       Payment[]
+  attendanceLogs AttendanceLog[]
+  notifications  NotificationLog[]
+  invoices       Invoice[]
+  deviceMappings DeviceUserMapping[]
+}
+
+model Worker {
+  id         Int       @id @default(autoincrement())
+  email      String    @unique
+  password   String
+  firstname  String
+  lastname   String
+  role       String    @default("staff")
+  locationId Int?
+  location   Location? @relation(fields: [locationId], references: [id])
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+
+  paymentsCollected Payment[]
+  attendanceLogs    AttendanceLog[]
+  deviceMappings    DeviceUserMapping[]
+}
+
+model TicketPlan {
+  id         Int      @id @default(autoincrement())
+  name       String
+  expireDays Int
+  price      Decimal  @db.Decimal(10, 2)
+  occasions  Int?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  memberTickets MemberTicket[]
+}
+
+model MemberTicket {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  user       User       @relation(fields: [userId], references: [id])
+  planId     Int
+  plan       TicketPlan @relation(fields: [planId], references: [id])
+  locationId Int?
+  location   Location?  @relation(fields: [locationId], references: [id])
+  buyDate    DateTime   @default(now())
+  expireDate DateTime
+  occasions  Int?
+  renewedBy  Int?
+  createdAt  DateTime   @default(now())
+
+  payments Payment[]
+}
+
+model Payment {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id])
+  memberTicketId Int
+  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id])
+  locationId     Int?
+  location       Location?    @relation(fields: [locationId], references: [id])
+  amount         Decimal      @db.Decimal(10, 2)
+  paymentMode    String
+  upiReference   String?
+  paymentNote    String?
+  collectedById  Int
+  collectedBy    Worker       @relation(fields: [collectedById], references: [id])
+  oldExpiryDate  DateTime?
+  newExpiryDate  DateTime?
+  createdAt      DateTime     @default(now())
+
+  invoice Invoice?
+}
+
+model Invoice {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id])
+  paymentId     Int      @unique
+  payment       Payment  @relation(fields: [paymentId], references: [id])
+  invoiceNumber String   @unique
+  route         String
+  status        String   @default("paid")
+  createdAt     DateTime @default(now())
+}
+
+model AttendanceLog {
+  id             Int       @id @default(autoincrement())
+  userId         Int?
+  user           User?     @relation(fields: [userId], references: [id])
+  workerId       Int?
+  worker         Worker?   @relation(fields: [workerId], references: [id])
+  locationId     Int
+  location       Location  @relation(fields: [locationId], references: [id])
+  attendanceDate DateTime  @db.Date
+  checkIn        DateTime
+  checkOut       DateTime?
+  source         String    @default("manual")
+  sourceEventId  Int?
+  deviceId       Int?
+  notes          String?
+  createdAt      DateTime  @default(now())
+
+  @@unique([userId, locationId, attendanceDate], name: "uk_member_daily")
+  @@unique([workerId, locationId, attendanceDate], name: "uk_worker_daily")
+}
+
+model BiometricDevice {
+  id           Int       @id @default(autoincrement())
+  name         String
+  locationId   Int
+  location     Location  @relation(fields: [locationId], references: [id])
+  deviceType   String    @default("fingerprint")
+  csvFormat    String    @default("default")
+  csvDelimiter String    @default(",")
+  timezone     String    @default("Asia/Kolkata")
+  lastSyncAt   DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  syncRuns     BiometricSyncRun[]
+  rawEvents    RawAttendanceEvent[]
+  userMappings DeviceUserMapping[]
+}
+
+model BiometricSyncRun {
+  id               Int             @id @default(autoincrement())
+  deviceId         Int
+  device           BiometricDevice @relation(fields: [deviceId], references: [id])
+  fileName         String?
+  fileHash         String?
+  runType          String          @default("manual")
+  status           String          @default("running")
+  totalRecords     Int             @default(0)
+  matchedRecords   Int             @default(0)
+  unmatchedRecords Int             @default(0)
+  duplicateRecords Int             @default(0)
+  errorLog         String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime        @default(now())
+
+  rawEvents RawAttendanceEvent[]
+}
+
+model RawAttendanceEvent {
+  id              Int               @id @default(autoincrement())
+  syncRunId       Int?
+  syncRun         BiometricSyncRun? @relation(fields: [syncRunId], references: [id])
+  deviceId        Int
+  device          BiometricDevice   @relation(fields: [deviceId], references: [id])
+  deviceUserId    String
+  eventTimestamp  DateTime
+  eventType       String            @default("check_in")
+  rawData         String?
+  matchStatus     String            @default("unmatched")
+  matchedUserId   Int?
+  matchedWorkerId Int?
+  createdAt       DateTime          @default(now())
+
+  @@unique([deviceId, deviceUserId, eventTimestamp])
+}
+
+model DeviceUserMapping {
+  id           Int             @id @default(autoincrement())
+  deviceId     Int
+  device       BiometricDevice @relation(fields: [deviceId], references: [id])
+  deviceUserId String
+  userId       Int?
+  user         User?           @relation(fields: [userId], references: [id])
+  workerId     Int?
+  worker       Worker?         @relation(fields: [workerId], references: [id])
+  createdAt    DateTime        @default(now())
+
+  @@unique([deviceId, deviceUserId])
+}
+
+model NotificationLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  templateName String
+  channel      String
+  recipient    String?
+  status       String   @default("pending")
+  errorMessage String?
+  deliveryDate DateTime @db.Date
+  sentAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, templateName, deliveryDate])
+}
+
+model OpeningHour {
+  id         Int      @id @default(autoincrement())
+  locationId Int
+  location   Location @relation(fields: [locationId], references: [id])
+  dayOfWeek  Int
+  openTime   String
+  closeTime  String
+  isClosed   Boolean  @default(false)
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  status    String
+  details   String?
+  actorId   Int?
+  actorType String?
+  createdAt DateTime @default(now())
+}
