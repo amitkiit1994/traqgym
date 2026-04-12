@@ -16,13 +16,18 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma db push --force-reset && npm run db:seed",
     "db:migrate": "npx prisma migrate deploy",
-    "test:e2e": "vitest run tests/e2e/"
+    "test:e2e": "vitest run tests/e2e/",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
     "@openai/agents": "^0.8.3",
     "@prisma/client": "^6.19.3",
     "@tailwindcss/typography": "^0.5.19",
