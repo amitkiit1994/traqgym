@@ -8,7 +8,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative w-full overflow-x-auto rounded-lg ring-1 ring-foreground/5 dark:ring-white/[0.06]"
     >
       <table
         data-slot="table"
@@ -23,7 +23,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn("sticky top-0 z-10 [&_tr]:border-b", className)}
       {...props}
     />
   )
@@ -57,7 +57,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "border-b premium-table-row hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
         className
       )}
       {...props}
@@ -70,7 +70,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "h-11 px-3 text-left align-middle font-semibold text-xs uppercase tracking-wider whitespace-nowrap text-muted-foreground bg-primary/[0.03] dark:bg-white/[0.02] first:rounded-tl-lg last:rounded-tr-lg [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -83,7 +83,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        "px-3 py-2.5 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -104,6 +104,24 @@ function TableCaption({
   )
 }
 
+function ScrollableTable({
+  className,
+  maxHeight = "400px",
+  children,
+  ...props
+}: React.ComponentProps<"div"> & { maxHeight?: string }) {
+  return (
+    <div
+      data-slot="scrollable-table"
+      className={cn("max-h-[var(--table-max-height)] overflow-y-auto", className)}
+      style={{ "--table-max-height": maxHeight } as React.CSSProperties}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+}
+
 export {
   Table,
   TableHeader,
@@ -113,4 +131,5 @@ export {
   TableRow,
   TableCell,
   TableCaption,
+  ScrollableTable,
 }

@@ -1,0 +1,490 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { getMembers, createMember, importMembersFromCSV } from "@/lib/actions/members";
+import { getLocations } from "@/lib/actions/locations";
+import { SearchInput } from "@/components/ui/search-input";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronUp, ChevronDown, Users, Loader2, Download } from "lucide-react";
+import { toCsv } from "@/lib/utils/csv-export";
+import Link from "next/link";
+
+type MemberRow = {
+  id: number;
+  firstname: string;
+  lastname: string;
+  email: string;
+  phone: string | null;
+  locationName: string;
+  status: "active" | "expired" | "no_plan";
+  riskLevel: "low" | "medium" | "high";
+  riskReason: string;
+};
+
+type LocationOption = {
+  id: number;
+  name: string;
+  isActive: boolean;
+};
+
+const statusVariant: Record<string, "active" | "expired" | "secondary"> = {
+  active: "active",
+  expired: "expired",
+  no_plan: "secondary",
+};
+
+const statusLabel: Record<string, string> = {
+  active: "Active",
+  expired: "Expired",
+  no_plan: "No Plan",
+};
+
+const riskVariant: Record<string, "active" | "expiring" | "destructive"> = {
+  low: "active",
+  medium: "expiring",
+  high: "destructive",
+};
+
+const riskLabel: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+const PAGE_SIZE = 25;
+
+export default function MembersPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(() => {
+    const p = searchParams.get("page");
+    return p ? parseInt(p, 10) : 1;
+  });
+  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [isPending, startTransition] = useTransition();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvResult, setCsvResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get("status") ?? "all");
+  const [sortBy, setSortBy] = useState<"name" | "status" | "location">(() => {
+    const s = searchParams.get("sort");
+    return s === "status" || s === "location" ? s : "name";
+  });
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
+    return searchParams.get("order") === "desc" ? "desc" : "asc";
+  });
+  const [selectedGender, setSelectedGender] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+
+  const updateUrl = (params: Record<string, string>) => {
+    const url = new URL(window.location.href);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v && v !== "all" && v !== "1" && v !== "name" && v !== "asc") {
+        url.searchParams.set(k, v);
+      } else {
+        url.searchParams.delete(k);
+      }
+    });
+    router.replace(url.pathname + url.search, { scroll: false });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const load = (q?: string, p?: number, status?: string) => {
+    const currentPage = p ?? page;
+    const currentStatus = status ?? statusFilter;
+    startTransition(async () => {
+      const data = await getMembers({
+        search: q || undefined,
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+        status: currentStatus !== "all" ? currentStatus as "active" | "expired" | "no_plan" : undefined,
+        sortBy,
+        sortOrder,
+      });
+      setMembers(data.members);
+      setTotal(data.total);
+    });
+  };
+
+  useEffect(() => {
+    load();
+    getLocations().then((locs) => setLocations(locs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    load(search, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortBy, sortOrder]);
+
+  const goToPage = (p: number) => {
+    setPage(p);
+    load(search, p, statusFilter);
+    updateUrl({ q: search, status: statusFilter, page: String(p), sort: sortBy, order: sortOrder });
+  };
+
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const result = await createMember({
+      firstname: fd.get("firstname") as string,
+      lastname: fd.get("lastname") as string,
+      email: fd.get("email") as string,
+      phone: (fd.get("phone") as string) || undefined,
+      gender: selectedGender || undefined,
+      locationId: selectedLocationId ? parseInt(selectedLocationId, 10) : null,
+    });
+    if (result.errors) {
+      setErrors(result.errors);
+      return;
+    }
+    setErrors({});
+    setSelectedGender("");
+    setSelectedLocationId("");
+    setDialogOpen(false);
+    load(search);
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvFile) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+    try {
+      const text = await csvFile.text();
+      const result = await importMembersFromCSV(text);
+      setCsvResult(result);
+      load(search);
+    } catch {
+      setCsvResult({ created: 0, skipped: 0, errors: ["Import failed unexpectedly"] });
+    } finally {
+      setCsvImporting(false);
+    }
+  };
+
+  const handleExport = () => {
+    const headers = ["Name", "Email", "Phone", "Location", "Status"];
+    const rows = members.map((m) => [
+      `${m.firstname} ${m.lastname}`,
+      m.email,
+      m.phone ?? "",
+      m.locationName,
+      statusLabel[m.status],
+    ]);
+    const csv = toCsv(headers, rows);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `members-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const activeLocations = locations.filter((l) => l.isActive);
+
+  function SortableHead({ field, children }: { field: "name" | "status" | "location"; children: React.ReactNode }) {
+    const isActive = sortBy === field;
+    return (
+      <TableHead>
+        <button
+          type="button"
+          className="flex items-center gap-1 hover:text-foreground"
+          onClick={() => {
+            if (sortBy === field) {
+              const newOrder = sortOrder === "asc" ? "desc" : "asc";
+              setSortOrder(newOrder);
+              updateUrl({ q: search, status: statusFilter, page: String(page), sort: field, order: newOrder });
+            } else {
+              setSortBy(field);
+              setSortOrder("asc");
+              updateUrl({ q: search, status: statusFilter, page: String(page), sort: field, order: "asc" });
+            }
+          }}
+        >
+          {children}
+          {isActive && (sortOrder === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />)}
+        </button>
+      </TableHead>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Members</h1>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={members.length === 0}>
+            <Download className="size-4" />
+            Export
+          </Button>
+          <Dialog open={csvDialogOpen} onOpenChange={(open) => { setCsvDialogOpen(open); if (!open) { setCsvFile(null); setCsvResult(null); } }}>
+            <DialogTrigger render={<Button variant="outline" />}>Import CSV</DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Import Members from CSV</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Expected format: <code className="text-xs bg-muted px-1 py-0.5 rounded">firstname,lastname,email,phone,gender,location_code</code>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  First row must be header. Password is set to the phone number or &quot;welcome123&quot;.
+                </p>
+                <Input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    setCsvFile(e.target.files?.[0] || null);
+                    setCsvResult(null);
+                  }}
+                />
+                {csvResult && (
+                  <div className="space-y-1 text-sm">
+                    <p className="text-status-active-foreground">Created: {csvResult.created}</p>
+                    <p className="text-status-expiring-foreground">Skipped (duplicate email): {csvResult.skipped}</p>
+                    {csvResult.errors.length > 0 && (
+                      <div className="text-destructive">
+                        {csvResult.errors.map((err, i) => (
+                          <p key={i}>{err}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button onClick={handleCsvImport} disabled={!csvFile || csvImporting}>
+                    {csvImporting && <Loader2 className="size-4 animate-spin" />}
+                    {csvImporting ? "Importing..." : "Import"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            </DialogContent>
+          </Dialog>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger render={<Button />}>New Member</DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>New Member</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreate} className="space-y-3">
+              <div>
+                <Label htmlFor="firstname">First Name *</Label>
+                <Input id="firstname" name="firstname" required />
+                {errors.firstname && (
+                  <p className="text-xs text-destructive mt-1">{errors.firstname}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="lastname">Last Name *</Label>
+                <Input id="lastname" name="lastname" required />
+                {errors.lastname && (
+                  <p className="text-xs text-destructive mt-1">{errors.lastname}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="email">Email *</Label>
+                <Input id="email" name="email" type="email" required />
+                {errors.email && (
+                  <p className="text-xs text-destructive mt-1">{errors.email}</p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="phone">Phone</Label>
+                <Input id="phone" name="phone" />
+              </div>
+              <div>
+                <Label>Gender</Label>
+                <Select value={selectedGender} onValueChange={(v) => setSelectedGender(v ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Location</Label>
+                <Select value={selectedLocationId} onValueChange={(v) => setSelectedLocationId(v ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select location">{selectedLocationId ? activeLocations.find((l) => String(l.id) === selectedLocationId)?.name ?? "Select location" : "Select location"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {activeLocations.map((loc) => (
+                      <SelectItem key={loc.id} value={String(loc.id)}>
+                        {loc.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Password will be set to the phone number, or &quot;welcome123&quot; if no phone is provided.
+              </p>
+              <DialogFooter>
+                <Button type="submit">Create Member</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <SearchInput
+          placeholder="Search by name, email, or phone..."
+          defaultValue={search}
+          onSearch={(q) => {
+            setSearch(q);
+            setPage(1);
+            load(q, 1, statusFilter);
+            updateUrl({ q, status: statusFilter, page: "1", sort: sortBy, order: sortOrder });
+          }}
+          isPending={isPending}
+          className="max-w-md"
+        />
+        <div className="flex gap-1">
+          {[
+            { value: "all", label: "All" },
+            { value: "active", label: "Active" },
+            { value: "expired", label: "Expired" },
+            { value: "no_plan", label: "No Plan" },
+          ].map((s) => (
+            <Button
+              key={s.value}
+              variant={statusFilter === s.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setStatusFilter(s.value);
+                setPage(1);
+                load(search, 1, s.value);
+                updateUrl({ q: search, status: s.value, page: "1", sort: sortBy, order: sortOrder });
+              }}
+            >
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <SortableHead field="name">Name</SortableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Phone</TableHead>
+            <SortableHead field="location">Location</SortableHead>
+            <SortableHead field="status">Status</SortableHead>
+            <TableHead>Risk</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {members.map((m) => (
+            <TableRow key={m.id}>
+              <TableCell>
+                {m.firstname} {m.lastname}
+              </TableCell>
+              <TableCell>{m.email}</TableCell>
+              <TableCell>{m.phone ?? "-"}</TableCell>
+              <TableCell>{m.locationName}</TableCell>
+              <TableCell>
+                <Badge variant={statusVariant[m.status]}>
+                  {statusLabel[m.status]}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant={riskVariant[m.riskLevel]} title={m.riskReason}>
+                  {riskLabel[m.riskLevel]}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Link href={`/admin/members/${m.id}`}>
+                  <Button variant="outline" size="sm">
+                    View
+                  </Button>
+                </Link>
+              </TableCell>
+            </TableRow>
+          ))}
+          {members.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={7}>
+                <div className="flex flex-col items-center gap-2 py-8">
+                  <Users className="size-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">No members found</p>
+                  <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+                    Add Member
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-4">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || isPending}
+            onClick={() => goToPage(page - 1)}
+          >
+            Prev
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || isPending}
+            onClick={() => goToPage(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

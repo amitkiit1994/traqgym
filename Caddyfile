@@ -1,0 +1,3 @@
+traqgym.com {
+	reverse_proxy landing:3000
+}

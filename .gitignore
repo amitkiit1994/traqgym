@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# per-gym env configs (contain secrets)
+envs/
+
+# competitor data exports (large CSVs, not code)
+competitor-data-export/
+
+# uploaded files (user content)
+public/uploads/
+
+# claude code local config
+.claude/
+
+# landing site build artifacts
+landing/node_modules/
+landing/.next/

@@ -4,43 +4,65 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:gym1": "grep -v '^DATABASE_URL\\|^NEXTAUTH_URL' envs/gym1.env > .env.local && echo 'DATABASE_URL=postgresql://postgres:postgres@localhost:5433/traqgym_gym1?schema=public' >> .env.local && echo 'NEXTAUTH_URL=http://localhost:3001' >> .env.local && next dev -p 3001",
+    "dev:gym2": "grep -v '^DATABASE_URL\\|^NEXTAUTH_URL' envs/gym2.env > .env.local && echo 'DATABASE_URL=postgresql://postgres:postgres@localhost:5434/traqgym_gym2?schema=public' >> .env.local && echo 'NEXTAUTH_URL=http://localhost:3002' >> .env.local && next dev -p 3002",
+    "db:setup:gym1": "DATABASE_URL=postgresql://postgres:postgres@localhost:5433/traqgym_gym1?schema=public npx prisma db push && DATABASE_URL=postgresql://postgres:postgres@localhost:5433/traqgym_gym1?schema=public NEXT_PUBLIC_GYM_NAME='EGym Lokhandwala' npx tsx prisma/seed-prod.ts",
+    "db:setup:gym2": "DATABASE_URL=postgresql://postgres:postgres@localhost:5434/traqgym_gym2?schema=public npx prisma db push && DATABASE_URL=postgresql://postgres:postgres@localhost:5434/traqgym_gym2?schema=public NEXT_PUBLIC_GYM_NAME='GymSpirit' npx tsx prisma/seed-prod.ts",
+    "db:seed:demo": "npx tsx prisma/seed.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "db:push": "npx prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
-    "db:reset": "npx prisma db push --force-reset && npm run db:seed"
+    "db:reset": "npx prisma db push --force-reset && npm run db:seed",
+    "db:migrate": "npx prisma migrate deploy",
+    "test:e2e": "vitest run tests/e2e/"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
+    "@openai/agents": "^0.8.3",
     "@prisma/client": "^6.19.3",
+    "@tailwindcss/typography": "^0.5.19",
     "@types/bcryptjs": "^2.4.6",
+    "@types/nodemailer": "^8.0.0",
+    "@types/qrcode": "^1.5.6",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.7.0",
     "next": "16.2.3",
     "next-auth": "^4.24.13",
+    "next-themes": "^0.4.6",
+    "nodemailer": "^7.0.13",
+    "openai": "^6.34.0",
     "prisma": "^6.19.3",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
     "shadcn": "^4.2.0",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
-    "tw-animate-css": "^1.4.0"
+    "tw-animate-css": "^1.4.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/cookie": "^0.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cookie": "^1.1.1",
+    "csv-parse": "^6.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.4"
   }
 }

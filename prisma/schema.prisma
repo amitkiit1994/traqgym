@@ -23,6 +23,11 @@ model Location {
   attendanceLogs   AttendanceLog[]
   biometricDevices BiometricDevice[]
   openingHours     OpeningHour[]
+  expenses         Expense[]
+  announcements    Announcement[]
+  equipment        Equipment[]
+  enquiries        Enquiry[]
+  classes          GymClass[]
 }
 
 model User {
@@ -36,14 +41,33 @@ model User {
   birthdate  DateTime?
   locationId Int?
   location   Location? @relation(fields: [locationId], references: [id])
+  isActive   Boolean   @default(true)
   createdAt  DateTime  @default(now())
 
-  memberTickets  MemberTicket[]
-  payments       Payment[]
-  attendanceLogs AttendanceLog[]
-  notifications  NotificationLog[]
-  invoices       Invoice[]
-  deviceMappings DeviceUserMapping[]
+  memberTickets     MemberTicket[]
+  payments          Payment[]
+  attendanceLogs    AttendanceLog[]
+  notifications     NotificationLog[]
+  invoices          Invoice[]
+  deviceMappings    DeviceUserMapping[]
+  freezes           MembershipFreeze[]
+  bodyMeasurements  BodyMeasurement[]
+  referralsGiven    Referral[] @relation("referrals_given")
+  referralsReceived Referral[] @relation("referrals_received")
+  classBookings     ClassBooking[]
+  paymentFollowups  PaymentFollowup[]
+  familyGroupId     Int?
+  familyGroup       FamilyGroup?     @relation(fields: [familyGroupId], references: [id])
+  waiverSignatures  WaiverSignature[]
+  facilityBookings  FacilityBooking[]
+  userWorkoutPlans  UserWorkoutPlan[]
+  userDietPlans         UserDietPlan[]
+  inAppNotifications   InAppNotification[] @relation("UserInAppNotifications")
+  alternatePhone       String?
+  address              String?
+  occupation           String?
+  anniversaryDate      DateTime?
+  govtId               String?
 }
 
 model Worker {
@@ -61,6 +85,14 @@ model Worker {
   paymentsCollected Payment[]
   attendanceLogs    AttendanceLog[]
   deviceMappings    DeviceUserMapping[]
+  leaveRequests     LeaveRequest[]
+  classes           GymClass[]
+  followupAssignments PaymentFollowup[] @relation("FollowupAssignee")
+  enquiryFollowups    EnquiryFollowup[] @relation("EnquiryFollowupWorker")
+  payrolls            Payroll[]
+  createdWorkoutPlans WorkoutPlan[]
+  createdDietPlans    DietPlan[]
+  inAppNotifications  InAppNotification[] @relation("WorkerInAppNotifications")
 }
 
 model TicketPlan {
@@ -70,6 +102,8 @@ model TicketPlan {
   price      Decimal  @db.Decimal(10, 2)
   occasions  Int?
   isActive   Boolean  @default(true)
+  isTrial    Boolean  @default(false)
+  trialDays  Int?
   createdAt  DateTime @default(now())
 
   memberTickets MemberTicket[]
@@ -78,37 +112,59 @@ model TicketPlan {
 model MemberTicket {
   id         Int        @id @default(autoincrement())
   userId     Int
-  user       User       @relation(fields: [userId], references: [id])
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   planId     Int
-  plan       TicketPlan @relation(fields: [planId], references: [id])
+  plan       TicketPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
   locationId Int?
-  location   Location?  @relation(fields: [locationId], references: [id])
+  location   Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
   buyDate    DateTime   @default(now())
   expireDate DateTime
   occasions  Int?
   renewedBy  Int?
+  status     String     @default("active") // active, cancelled
+  cancelledAt DateTime?
+  isTrial    Boolean    @default(false)
+  totalAmount Decimal?  @db.Decimal(10, 2)
+  amountPaid  Decimal   @default(0) @db.Decimal(10, 2)
+  balanceDue  Decimal   @default(0) @db.Decimal(10, 2)
+  dueDate     DateTime?
   createdAt  DateTime   @default(now())
 
+  externalRef String?
+
   payments Payment[]
+  freezes  MembershipFreeze[]
 }
 
 model Payment {
   id             Int          @id @default(autoincrement())
   userId         Int
-  user           User         @relation(fields: [userId], references: [id])
+  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   memberTicketId Int
-  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id])
+  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Restrict)
   locationId     Int?
-  location       Location?    @relation(fields: [locationId], references: [id])
+  location       Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
   amount         Decimal      @db.Decimal(10, 2)
   paymentMode    String
   upiReference   String?
   paymentNote    String?
   collectedById  Int
-  collectedBy    Worker       @relation(fields: [collectedById], references: [id])
+  collectedBy    Worker       @relation(fields: [collectedById], references: [id], onDelete: Restrict)
   oldExpiryDate  DateTime?
   newExpiryDate  DateTime?
-  createdAt      DateTime     @default(now())
+  baseAmount     Decimal? @db.Decimal(10, 2)
+  taxRate        Decimal? @db.Decimal(5, 2)
+  taxAmount      Decimal? @db.Decimal(10, 2)
+  paymentStatus  String       @default("full") // full, partial, advance
+  chequeNumber   String?
+  chequeDate     DateTime?
+  chequeStatus   String?      // pending, cleared, bounced
+  bankName          String?
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  discount          Decimal?     @db.Decimal(10, 2)
+  paymentFor        String?
+  createdAt         DateTime     @default(now())
 
   invoice Invoice?
 }
@@ -116,9 +172,9 @@ model Payment {
 model Invoice {
   id            Int      @id @default(autoincrement())
   userId        Int
-  user          User     @relation(fields: [userId], references: [id])
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   paymentId     Int      @unique
-  payment       Payment  @relation(fields: [paymentId], references: [id])
+  payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   invoiceNumber String   @unique
   route         String
   status        String   @default("paid")
@@ -128,11 +184,11 @@ model Invoice {
 model AttendanceLog {
   id             Int       @id @default(autoincrement())
   userId         Int?
-  user           User?     @relation(fields: [userId], references: [id])
+  user           User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   workerId       Int?
-  worker         Worker?   @relation(fields: [workerId], references: [id])
+  worker         Worker?   @relation(fields: [workerId], references: [id], onDelete: Cascade)
   locationId     Int
-  location       Location  @relation(fields: [locationId], references: [id])
+  location       Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
   attendanceDate DateTime  @db.Date
   checkIn        DateTime
   checkOut       DateTime?
@@ -219,7 +275,7 @@ model DeviceUserMapping {
 model NotificationLog {
   id           Int      @id @default(autoincrement())
   userId       Int
-  user         User     @relation(fields: [userId], references: [id])
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   templateName String
   channel      String
   recipient    String?
@@ -227,6 +283,7 @@ model NotificationLog {
   errorMessage String?
   deliveryDate DateTime @db.Date
   sentAt       DateTime?
+  readAt       DateTime?
   createdAt    DateTime @default(now())
 
   @@unique([userId, templateName, deliveryDate])
@@ -250,4 +307,523 @@ model AuditLog {
   actorId   Int?
   actorType String?
   createdAt DateTime @default(now())
+}
+
+model MembershipFreeze {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberTicketId Int
+  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Cascade)
+  freezeStart    DateTime     @db.Date
+  freezeEnd      DateTime     @db.Date
+  reason         String?
+  status         String       @default("active") // active, completed, cancelled
+  daysAdded      Int          @default(0)
+  originalExpiry DateTime?
+  createdAt      DateTime     @default(now())
+}
+
+model BodyMeasurement {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime @db.Date
+  weight     Decimal? @db.Decimal(5, 2)
+  height     Decimal? @db.Decimal(5, 2)
+  bmi        Decimal? @db.Decimal(5, 2)
+  chest      Decimal? @db.Decimal(5, 2)
+  waist      Decimal? @db.Decimal(5, 2)
+  hips       Decimal? @db.Decimal(5, 2)
+  biceps     Decimal? @db.Decimal(5, 2)
+  notes      String?
+  recordedBy Int?
+  createdAt  DateTime @default(now())
+}
+
+model LeaveRequest {
+  id         Int       @id @default(autoincrement())
+  workerId   Int
+  worker     Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  leaveType  String    @default("casual") // casual, sick, personal
+  startDate  DateTime  @db.Date
+  endDate    DateTime  @db.Date
+  reason     String?
+  status     String    @default("pending") // pending, approved, rejected
+  reviewedBy Int?
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+
+model GymSettings {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+}
+
+model Enquiry {
+  id              Int       @id @default(autoincrement())
+  name            String
+  phone           String
+  email           String?
+  source          String    @default("walk_in")
+  interest        String?
+  locationId      Int?
+  location        Location? @relation(fields: [locationId], references: [id])
+  status          String    @default("new")
+  followUpDate    DateTime? @db.Date
+  notes           String?
+  assignedTo      Int?
+  convertedUserId Int?
+  stage           String    @default("new") // new, contacted, tour_scheduled, tour_done, trial, negotiation, converted, lost
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  prospectType    String?
+  referredByName  String?
+
+  followups       EnquiryFollowup[]
+}
+
+model PromoCode {
+  id            Int      @id @default(autoincrement())
+  code          String   @unique
+  discountType  String   @default("percentage")
+  discountValue Decimal  @db.Decimal(10, 2)
+  maxUses       Int?
+  usedCount     Int      @default(0)
+  validFrom     DateTime @db.Date
+  validTo       DateTime @db.Date
+  isActive      Boolean  @default(true)
+  planIds       String?
+  createdAt     DateTime @default(now())
+}
+
+model Referral {
+  id            Int      @id @default(autoincrement())
+  referrerId    Int
+  referrer      User     @relation("referrals_given", fields: [referrerId], references: [id])
+  referredId    Int?
+  referred      User?    @relation("referrals_received", fields: [referredId], references: [id])
+  referredName  String
+  referredPhone String
+  status        String   @default("pending")
+  rewardGiven   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model Expense {
+  id          Int       @id @default(autoincrement())
+  category    String    // rent, salary, equipment, maintenance, utilities, marketing, other
+  description String
+  amount      Decimal   @db.Decimal(10, 2)
+  expenseDate DateTime  @db.Date
+  locationId  Int?
+  location    Location? @relation(fields: [locationId], references: [id])
+  paidBy      String?   // cash, upi, bank_transfer
+  receipt     String?   // receipt reference
+  recordedBy  Int?
+  createdAt   DateTime  @default(now())
+}
+
+model Announcement {
+  id          Int       @id @default(autoincrement())
+  title       String
+  content     String
+  priority    String    @default("normal") // low, normal, high, urgent
+  targetGroup String    @default("all") // all, members, staff
+  locationId  Int?
+  location    Location? @relation(fields: [locationId], references: [id])
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  createdBy   Int?
+  createdAt   DateTime  @default(now())
+}
+
+model Equipment {
+  id              Int       @id @default(autoincrement())
+  name            String
+  category        String    // cardio, strength, free_weights, accessories, other
+  locationId      Int
+  location        Location  @relation(fields: [locationId], references: [id])
+  purchaseDate    DateTime? @db.Date
+  purchasePrice   Decimal?  @db.Decimal(10, 2)
+  condition       String    @default("good") // good, fair, needs_repair, out_of_service
+  lastServiceDate DateTime? @db.Date
+  nextServiceDate DateTime? @db.Date
+  notes           String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+}
+
+model GymClass {
+  id           Int       @id @default(autoincrement())
+  name         String
+  description  String?
+  classType    String    @default("group") // group, personal_training, workshop
+  instructorId Int?
+  instructor   Worker?   @relation(fields: [instructorId], references: [id])
+  locationId   Int
+  location     Location  @relation(fields: [locationId], references: [id])
+  maxCapacity  Int       @default(20)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  schedules    ClassSchedule[]
+  bookings     ClassBooking[]
+}
+
+model ClassSchedule {
+  id         Int      @id @default(autoincrement())
+  classId    Int
+  gymClass   GymClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int      // 0=Sunday, 1=Monday, ..., 6=Saturday
+  startTime  String   // "07:00"
+  endTime    String   // "08:00"
+  createdAt  DateTime @default(now())
+}
+
+model ClassBooking {
+  id           Int      @id @default(autoincrement())
+  classId      Int
+  gymClass     GymClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleDate DateTime @db.Date
+  status       String   @default("booked") // booked, cancelled, attended, no_show
+  createdAt    DateTime @default(now())
+
+  @@unique([classId, userId, scheduleDate])
+}
+
+model GymTarget {
+  id               Int      @id @default(autoincrement())
+  month            Int
+  year             Int
+  targetRevenue    Decimal  @db.Decimal(12, 2)
+  targetNewMembers Int      @default(0)
+  targetRenewals   Int      @default(0)
+  locationId       Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([month, year, locationId])
+}
+
+model AiConversation {
+  id        Int         @id @default(autoincrement())
+  workerId  Int
+  title     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  messages  AiMessage[]
+}
+
+model AiMessage {
+  id             Int            @id @default(autoincrement())
+  conversationId Int
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  toolName       String?
+  toolCallId     String?
+  createdAt      DateTime       @default(now())
+}
+
+model AiUsage {
+  id         Int      @id @default(autoincrement())
+  workerId   Int
+  month      String
+  queryCount Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([workerId, month])
+}
+
+model PaymentFollowup {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberTicketId  Int?
+  amountDue       Decimal   @db.Decimal(10, 2)
+  dueDate         DateTime
+  assignedToId    Int?
+  assignedTo      Worker?   @relation("FollowupAssignee", fields: [assignedToId], references: [id])
+  status          String    @default("pending") // pending, contacted, promised, resolved, written_off
+  priority        String    @default("normal") // low, normal, high, critical
+  notes           String?
+  lastContactedAt DateTime?
+  nextFollowupAt  DateTime?
+  resolvedAt      DateTime?
+  callSubject     String?
+  reason          String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model EnquiryFollowup {
+  id            Int      @id @default(autoincrement())
+  enquiryId     Int
+  enquiry       Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  workerId      Int
+  worker        Worker   @relation("EnquiryFollowupWorker", fields: [workerId], references: [id])
+  action        String   // call, visit, whatsapp, email, sms, demo
+  outcome       String   // interested, not_interested, no_answer, callback, visited, converted
+  notes         String?
+  nextFollowupAt DateTime?
+  createdAt     DateTime @default(now())
+}
+
+// ─── Gift Cards ───
+
+model GiftCard {
+  id             Int       @id @default(autoincrement())
+  code           String    @unique
+  amount         Decimal  @db.Decimal(10, 2)
+  balance        Decimal  @db.Decimal(10, 2)
+  purchaserId    Int?
+  recipientName  String?
+  recipientPhone String?
+  status         String    @default("active") // active, redeemed, expired
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+// ─── Digital Waivers ───
+
+model WaiverTemplate {
+  id        Int       @id @default(autoincrement())
+  name      String
+  content   String
+  isActive  Boolean   @default(true)
+  required  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  signatures WaiverSignature[]
+}
+
+model WaiverSignature {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId Int
+  template   WaiverTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  signedAt   DateTime @default(now())
+  ipAddress  String?
+  signature  String?
+  @@unique([userId, templateId])
+}
+
+// ─── Payroll ───
+
+model Payroll {
+  id         Int       @id @default(autoincrement())
+  workerId   Int
+  worker     Worker    @relation(fields: [workerId], references: [id])
+  month      Int
+  year       Int
+  baseSalary Decimal   @db.Decimal(10, 2)
+  commission Decimal   @default(0) @db.Decimal(10, 2)
+  deductions Decimal   @default(0) @db.Decimal(10, 2)
+  bonus      Decimal   @default(0) @db.Decimal(10, 2)
+  netPayable Decimal   @db.Decimal(10, 2)
+  status     String    @default("pending") // pending, processed, paid
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  @@unique([workerId, month, year])
+}
+
+// ─── Family/Group Accounts ───
+
+model FamilyGroup {
+  id              Int      @id @default(autoincrement())
+  name            String
+  primaryMemberId Int
+  createdAt       DateTime @default(now())
+  members         User[]
+}
+
+// ─── POS / Retail ───
+
+model Product {
+  id        Int      @id @default(autoincrement())
+  name      String
+  price     Decimal  @db.Decimal(10, 2)
+  stock     Int      @default(0)
+  category  String   @default("general")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  sales         Sale[]
+  inventoryLogs InventoryLog[]
+}
+
+model Sale {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  totalAmount Decimal  @db.Decimal(10, 2)
+  userId      Int?
+  paymentMode String   @default("cash")
+  locationId  Int?
+  soldById    Int?
+  createdAt   DateTime @default(now())
+}
+
+model InventoryLog {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+  change    Int      // positive = restock, negative = sale/loss
+  reason    String   // sale, restock, adjustment, loss
+  createdAt DateTime @default(now())
+}
+
+// ─── Facility Bookings ───
+
+model Facility {
+  id         Int      @id @default(autoincrement())
+  name       String
+  type       String   // court, pool, studio, track
+  locationId Int?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  slots      FacilitySlot[]
+}
+
+model FacilitySlot {
+  id         Int      @id @default(autoincrement())
+  facilityId Int
+  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  date       DateTime @db.Date
+  startTime  String   // "07:00"
+  endTime    String   // "08:00"
+  maxCapacity Int     @default(1)
+  status     String   @default("available") // available, full, blocked
+  createdAt  DateTime @default(now())
+  bookings   FacilityBooking[]
+  @@unique([facilityId, date, startTime])
+}
+
+model FacilityBooking {
+  id       Int          @id @default(autoincrement())
+  slotId   Int
+  slot     FacilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  userId   Int
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status   String       @default("booked") // booked, cancelled, completed
+  createdAt DateTime    @default(now())
+  @@unique([slotId, userId])
+}
+
+// ─── Workout & Diet Plans ───
+
+model WorkoutPlan {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  createdById Int
+  createdBy   Worker   @relation(fields: [createdById], references: [id])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  exercises   WorkoutExercise[]
+  assignments UserWorkoutPlan[]
+}
+
+model WorkoutExercise {
+  id        Int         @id @default(autoincrement())
+  planId    Int
+  plan      WorkoutPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  name      String
+  sets      Int         @default(3)
+  reps      Int         @default(12)
+  weight    Float?
+  day       String      // "monday", "tuesday", etc.
+  order     Int         @default(0)
+  notes     String?
+}
+
+model UserWorkoutPlan {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    Int
+  plan      WorkoutPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  startDate DateTime    @default(now())
+  endDate   DateTime?
+  isActive  Boolean     @default(true)
+  @@unique([userId, planId])
+}
+
+model DietPlan {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  createdById Int
+  createdBy   Worker   @relation(fields: [createdById], references: [id])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  meals       DietMeal[]
+  assignments UserDietPlan[]
+}
+
+model DietMeal {
+  id          Int      @id @default(autoincrement())
+  planId      Int
+  plan        DietPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  mealType    String   // breakfast, lunch, dinner, snack
+  description String
+  calories    Int?
+  protein     Float?
+  carbs       Float?
+  fat         Float?
+  order       Int      @default(0)
+}
+
+model UserDietPlan {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    Int
+  plan      DietPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  isActive  Boolean  @default(true)
+  @@unique([userId, planId])
+}
+
+model InAppNotification {
+  id        Int       @id @default(autoincrement())
+  userId    Int?
+  user      User?     @relation("UserInAppNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  workerId  Int?
+  worker    Worker?   @relation("WorkerInAppNotifications", fields: [workerId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@index([workerId, readAt, createdAt])
+}
+
+// ─── AI Proactive Features ───
+
+model AiProactiveLog {
+  id         Int      @id @default(autoincrement())
+  feature    String   // daily_briefing, churn_alert, lead_followup, member_nudge, weekly_summary, milestone
+  targetType String   // "worker" | "user"
+  targetId   Int
+  channel    String   // "whatsapp" | "in_app" | "both"
+  content    String
+  tokensUsed Int?
+  status     String   @default("sent") // sent | failed | skipped
+  error      String?
+  createdAt  DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([targetType, targetId, createdAt])
 }

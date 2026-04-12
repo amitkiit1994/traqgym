@@ -21,6 +21,19 @@ export const authOptions: NextAuthOptions = {
         if (worker && worker.isActive) {
           const valid = await bcrypt.compare(credentials.password, worker.password);
           if (valid) {
+            try {
+              await prisma.auditLog.create({
+                data: {
+                  action: "login",
+                  actorType: "worker",
+                  actorId: worker.id,
+                  status: "success",
+                  details: JSON.stringify({ email: worker.email, role: worker.role }),
+                },
+              });
+            } catch {
+              // fire-and-forget: don't break login if audit fails
+            }
             return {
               id: String(worker.id),
               email: worker.email,
@@ -39,6 +52,19 @@ export const authOptions: NextAuthOptions = {
         if (user) {
           const valid = await bcrypt.compare(credentials.password, user.password);
           if (valid) {
+            try {
+              await prisma.auditLog.create({
+                data: {
+                  action: "login",
+                  actorType: "member",
+                  actorId: user.id,
+                  status: "success",
+                  details: JSON.stringify({ email: user.email, role: "member" }),
+                },
+              });
+            } catch {
+              // fire-and-forget: don't break login if audit fails
+            }
             return {
               id: String(user.id),
               email: user.email,
@@ -79,5 +105,6 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
+    maxAge: 8 * 60 * 60,
   },
 };

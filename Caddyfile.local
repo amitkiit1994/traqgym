@@ -1,0 +1,14 @@
+traqgym.local {
+	tls internal
+	reverse_proxy landing:3000
+}
+
+egymlokhandwala.traqgym.local {
+	tls internal
+	reverse_proxy app-gym1:3000
+}
+
+egymthane.traqgym.local {
+	tls internal
+	reverse_proxy app-gym2:3000
+}

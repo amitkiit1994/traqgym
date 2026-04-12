@@ -1,0 +1,19 @@
+# Local dev override — use with: docker compose -f docker-compose.prod.yml -f docker-compose.local.yml up
+# Exposes DB ports, skips Caddy
+
+services:
+  pg-gym1:
+    ports:
+      - "5433:5432"
+
+  pg-gym2:
+    ports:
+      - "5434:5432"
+
+  landing:
+    ports:
+      - "3000:3000"
+
+  caddy:
+    profiles:
+      - disabled

@@ -1,0 +1,1030 @@
+"use client";
+
+import { useState, useEffect, useTransition, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import Image from "next/image";
+
+async function loadSettings() {
+  const res = await fetch("/api/admin/settings");
+  if (!res.ok) throw new Error("Failed to load settings");
+  return res.json();
+}
+
+async function saveSettings(settings: Record<string, string>) {
+  const res = await fetch("/api/admin/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error("Failed to save settings");
+  return res.json();
+}
+
+const PAYMENT_MODE_OPTIONS = [
+  { key: "cash", label: "Cash" },
+  { key: "upi", label: "UPI" },
+  { key: "card", label: "Card" },
+  { key: "bank_transfer", label: "Bank Transfer" },
+];
+
+export default function SettingsPage() {
+  // Branding
+  const [gymName, setGymName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [gymAddress, setGymAddress] = useState("");
+  const [gymPhone, setGymPhone] = useState("");
+  const [gymEmail, setGymEmail] = useState("");
+  const [gymState, setGymState] = useState("Maharashtra");
+  const [gymGstin, setGymGstin] = useState("");
+  const [gymUpiVpa, setGymUpiVpa] = useState("");
+
+  // Financial
+  const [gstRate, setGstRate] = useState("18");
+  const [registrationFee, setRegistrationFee] = useState("0");
+  const [paymentModes, setPaymentModes] = useState<Set<string>>(new Set(["cash", "upi"]));
+
+  // Membership policy
+  const [gracePeriod, setGracePeriod] = useState("7");
+  const [renewalReminderDays, setRenewalReminderDays] = useState("7,3,1");
+  const [maxFreezes, setMaxFreezes] = useState("2");
+  const [maxFreezeDays, setMaxFreezeDays] = useState("30");
+
+  // Leave policy
+  const [leaveCasualQuota, setLeaveCasualQuota] = useState("12");
+  const [leaveSickQuota, setLeaveSickQuota] = useState("6");
+  const [leavePersonalQuota, setLeavePersonalQuota] = useState("3");
+
+  // Kiosk
+  const [autoCheckout, setAutoCheckout] = useState(true);
+  const [checkinCooldown, setCheckinCooldown] = useState("60");
+
+  // Communication
+  const [welcomeMessage, setWelcomeMessage] = useState(true);
+  const [birthdayWish, setBirthdayWish] = useState(true);
+  const [renewalReminder, setRenewalReminder] = useState(true);
+  const [announcementNotify, setAnnouncementNotify] = useState(true);
+  const [promoNotify, setPromoNotify] = useState(true);
+  const [notificationChannel, setNotificationChannel] = useState("whatsapp");
+
+  // Automation / Cron
+  const [cronRenewalReminders, setCronRenewalReminders] = useState(true);
+  const [cronAutoCheckout, setCronAutoCheckout] = useState(true);
+  const [cronReEngagement, setCronReEngagement] = useState(true);
+  const [triggeringCron, setTriggeringCron] = useState<string | null>(null);
+  const [cronResult, setCronResult] = useState<string | null>(null);
+
+  // Integrations — MSG91
+  const [msg91AuthKey, setMsg91AuthKey] = useState("");
+  const [msg91WhatsappNumber, setMsg91WhatsappNumber] = useState("");
+  const [msg91SmsFlowId, setMsg91SmsFlowId] = useState("");
+  const [msg91SmsSenderId, setMsg91SmsSenderId] = useState("");
+
+  // Integrations — SMTP
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+
+  // Integrations — Biometric SDK
+  const [biomaxBaseUrl, setBiomaxBaseUrl] = useState("");
+  const [biomaxApiKey, setBiomaxApiKey] = useState("");
+
+  // Integration test state
+  const [testingChannel, setTestingChannel] = useState<string | null>(null);
+  const [testRecipient, setTestRecipient] = useState("");
+  const [channelTestResult, setChannelTestResult] = useState<string | null>(null);
+  const [testingBiomax, setTestingBiomax] = useState(false);
+  const [biomaxTestResult, setBiomaxTestResult] = useState<string | null>(null);
+
+  // UI state
+  const [isPending, startTransition] = useTransition();
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    loadSettings()
+      .then((data) => {
+        setGymName(data.gym_name ?? "");
+        setLogoUrl(data.gym_logo ?? "");
+        setGymAddress(data.gym_address ?? "");
+        setGymPhone(data.gym_phone ?? "");
+        setGymEmail(data.gym_email ?? "");
+        setGymState(data.gym_state ?? "Maharashtra");
+        setGymGstin(data.gym_gstin ?? "");
+        setGymUpiVpa(data.gym_upi_vpa ?? "");
+        setGstRate(data.gst_rate ?? "18");
+        setRegistrationFee(data.registration_fee ?? "0");
+        setPaymentModes(new Set((data.payment_modes ?? "cash,upi").split(",").filter(Boolean)));
+        setGracePeriod(data.grace_period_days ?? "7");
+        setRenewalReminderDays(data.renewal_reminder_days ?? "7,3,1");
+        setMaxFreezes(data.max_freezes_per_membership ?? "2");
+        setMaxFreezeDays(data.max_freeze_days ?? "30");
+        setLeaveCasualQuota(data.leave_casual_quota ?? "12");
+        setLeaveSickQuota(data.leave_sick_quota ?? "6");
+        setLeavePersonalQuota(data.leave_personal_quota ?? "3");
+        setAutoCheckout(data.auto_checkout_enabled === "true");
+        setCheckinCooldown(data.checkin_cooldown_seconds ?? "60");
+        setWelcomeMessage(data.welcome_message_enabled !== "false");
+        setBirthdayWish(data.birthday_wish_enabled === "true");
+        setRenewalReminder(data.renewal_reminder_enabled !== "false");
+        setAnnouncementNotify(data.announcement_notify_enabled !== "false");
+        setPromoNotify(data.promo_notify_enabled !== "false");
+        setNotificationChannel(data.notification_channel ?? "whatsapp");
+        setCronRenewalReminders(data.cron_renewal_reminders_enabled !== "false");
+        setCronAutoCheckout(data.cron_auto_checkout_enabled !== "false");
+        setCronReEngagement(data.cron_re_engagement_enabled !== "false");
+        // Integrations
+        setMsg91AuthKey(data.msg91_auth_key ?? "");
+        setMsg91WhatsappNumber(data.msg91_whatsapp_number ?? "");
+        setMsg91SmsFlowId(data.msg91_sms_flow_id ?? "");
+        setMsg91SmsSenderId(data.msg91_sms_sender_id ?? "");
+        setSmtpHost(data.smtp_host ?? "");
+        setSmtpPort(data.smtp_port ?? "587");
+        setSmtpUser(data.smtp_user ?? "");
+        setSmtpPass(data.smtp_pass ?? "");
+        setSmtpFrom(data.smtp_from ?? "");
+        setBiomaxBaseUrl(data.biomax_sdk_base_url ?? "");
+        setBiomaxApiKey(data.biomax_sdk_api_key ?? "");
+      })
+      .catch(() => setError("Failed to load settings"));
+  }, []);
+
+  const togglePaymentMode = (mode: string) => {
+    setPaymentModes((prev) => {
+      const next = new Set(prev);
+      if (next.has(mode)) next.delete(mode);
+      else next.add(mode);
+      return next;
+    });
+  };
+
+  const handleSave = () => {
+    setSaved(false);
+    setError("");
+    startTransition(async () => {
+      try {
+        await saveSettings({
+          gym_name: gymName,
+          gym_address: gymAddress,
+          gym_phone: gymPhone,
+          gym_email: gymEmail,
+          gym_state: gymState,
+          gym_gstin: gymGstin,
+          gym_upi_vpa: gymUpiVpa,
+          gst_rate: gstRate,
+          registration_fee: registrationFee,
+          payment_modes: Array.from(paymentModes).join(","),
+          grace_period_days: gracePeriod,
+          renewal_reminder_days: renewalReminderDays,
+          max_freezes_per_membership: maxFreezes,
+          max_freeze_days: maxFreezeDays,
+          leave_casual_quota: leaveCasualQuota,
+          leave_sick_quota: leaveSickQuota,
+          leave_personal_quota: leavePersonalQuota,
+          auto_checkout_enabled: autoCheckout ? "true" : "false",
+          checkin_cooldown_seconds: checkinCooldown,
+          welcome_message_enabled: welcomeMessage ? "true" : "false",
+          birthday_wish_enabled: birthdayWish ? "true" : "false",
+          renewal_reminder_enabled: renewalReminder ? "true" : "false",
+          announcement_notify_enabled: announcementNotify ? "true" : "false",
+          promo_notify_enabled: promoNotify ? "true" : "false",
+          notification_channel: notificationChannel,
+          cron_renewal_reminders_enabled: cronRenewalReminders ? "true" : "false",
+          cron_auto_checkout_enabled: cronAutoCheckout ? "true" : "false",
+          cron_re_engagement_enabled: cronReEngagement ? "true" : "false",
+          // Integrations
+          msg91_auth_key: msg91AuthKey,
+          msg91_whatsapp_number: msg91WhatsappNumber,
+          msg91_sms_flow_id: msg91SmsFlowId,
+          msg91_sms_sender_id: msg91SmsSenderId,
+          smtp_host: smtpHost,
+          smtp_port: smtpPort,
+          smtp_user: smtpUser,
+          smtp_pass: smtpPass,
+          smtp_from: smtpFrom,
+          biomax_sdk_base_url: biomaxBaseUrl,
+          biomax_sdk_api_key: biomaxApiKey,
+        });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } catch {
+        setError("Failed to save settings");
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      <h1 className="text-xl font-semibold">Settings</h1>
+
+      {/* Card 1: Gym Identity */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Gym Identity</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="gym-name">Gym Name</Label>
+            <Input
+              id="gym-name"
+              value={gymName}
+              onChange={(e) => setGymName(e.target.value)}
+              placeholder={process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym"}
+            />
+            <p className="text-xs text-muted-foreground">
+              Override the gym name displayed across the app
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Gym Logo</Label>
+            <div className="flex items-center gap-4">
+              {logoUrl && (
+                <Image
+                  src={`${logoUrl}?t=${Date.now()}`}
+                  alt="Gym logo"
+                  width={64}
+                  height={64}
+                  className="rounded-lg border object-contain"
+                  unoptimized
+                />
+              )}
+              <div className="space-y-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setLogoUploading(true);
+                    setError("");
+                    try {
+                      const formData = new FormData();
+                      formData.append("logo", file);
+                      const res = await fetch("/api/admin/logo", {
+                        method: "POST",
+                        body: formData,
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error);
+                      setLogoUrl(data.path);
+                    } catch (err: any) {
+                      setError(err.message || "Failed to upload logo");
+                    } finally {
+                      setLogoUploading(false);
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={logoUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {logoUploading ? "Uploading..." : logoUrl ? "Change Logo" : "Upload Logo"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  PNG, JPEG, SVG, or WebP. Max 2MB.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-address">Address</Label>
+            <textarea
+              id="gym-address"
+              className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={gymAddress}
+              onChange={(e) => setGymAddress(e.target.value)}
+              placeholder="Full gym address"
+              rows={2}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-phone">Phone</Label>
+            <Input
+              id="gym-phone"
+              value={gymPhone}
+              onChange={(e) => setGymPhone(e.target.value)}
+              placeholder="+91 98765 43210"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-email">Email</Label>
+            <Input
+              id="gym-email"
+              type="email"
+              value={gymEmail}
+              onChange={(e) => setGymEmail(e.target.value)}
+              placeholder="info@gym.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-state">State</Label>
+            <Input
+              id="gym-state"
+              value={gymState}
+              onChange={(e) => setGymState(e.target.value)}
+              placeholder="Maharashtra"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-gstin">GSTIN</Label>
+            <Input
+              id="gym-gstin"
+              value={gymGstin}
+              onChange={(e) => setGymGstin(e.target.value)}
+              placeholder="27AABCU9603R1ZM"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-upi-vpa">UPI VPA</Label>
+            <Input
+              id="gym-upi-vpa"
+              value={gymUpiVpa}
+              onChange={(e) => setGymUpiVpa(e.target.value)}
+              placeholder="gym@upi"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 2: Financial */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Financial</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="gst-rate">GST Rate</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="gst-rate"
+                type="number"
+                min="0"
+                max="28"
+                value={gstRate}
+                onChange={(e) => setGstRate(e.target.value)}
+                className="max-w-[100px]"
+              />
+              <span className="text-sm text-muted-foreground">%</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="registration-fee">Registration Fee</Label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">&#8377;</span>
+              <Input
+                id="registration-fee"
+                type="number"
+                min="0"
+                value={registrationFee}
+                onChange={(e) => setRegistrationFee(e.target.value)}
+                className="max-w-[140px]"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Payment Modes</Label>
+            <div className="space-y-3">
+              {PAYMENT_MODE_OPTIONS.map((mode) => (
+                <div key={mode.key} className="flex items-center justify-between">
+                  <Label className="font-normal">{mode.label}</Label>
+                  <Switch
+                    checked={paymentModes.has(mode.key)}
+                    onCheckedChange={() => togglePaymentMode(mode.key)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 3: Membership Policy */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Membership Policy</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="grace-period">Grace Period (days)</Label>
+            <Input
+              id="grace-period"
+              type="number"
+              min="0"
+              max="30"
+              value={gracePeriod}
+              onChange={(e) => setGracePeriod(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Days after expiry before marking member as overdue
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="renewal-reminder">Renewal Reminder Days</Label>
+            <Input
+              id="renewal-reminder"
+              value={renewalReminderDays}
+              onChange={(e) => setRenewalReminderDays(e.target.value)}
+              placeholder="7,3,1"
+            />
+            <p className="text-xs text-muted-foreground">
+              Comma-separated days before expiry to send reminders
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="max-freezes">Max Freezes per Membership</Label>
+            <Input
+              id="max-freezes"
+              type="number"
+              min="0"
+              max="10"
+              value={maxFreezes}
+              onChange={(e) => setMaxFreezes(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="max-freeze-days">Max Freeze Days</Label>
+            <Input
+              id="max-freeze-days"
+              type="number"
+              min="0"
+              max="90"
+              value={maxFreezeDays}
+              onChange={(e) => setMaxFreezeDays(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 4: Leave Policy */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Leave Policy</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Annual leave quota per worker. Balance is computed as quota minus approved leaves in the current year.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="leave-casual">Casual Leave (days/year)</Label>
+            <Input
+              id="leave-casual"
+              type="number"
+              min="0"
+              max="365"
+              value={leaveCasualQuota}
+              onChange={(e) => setLeaveCasualQuota(e.target.value)}
+              className="max-w-[100px]"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="leave-sick">Sick Leave (days/year)</Label>
+            <Input
+              id="leave-sick"
+              type="number"
+              min="0"
+              max="365"
+              value={leaveSickQuota}
+              onChange={(e) => setLeaveSickQuota(e.target.value)}
+              className="max-w-[100px]"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="leave-personal">Personal Leave (days/year)</Label>
+            <Input
+              id="leave-personal"
+              type="number"
+              min="0"
+              max="365"
+              value={leavePersonalQuota}
+              onChange={(e) => setLeavePersonalQuota(e.target.value)}
+              className="max-w-[100px]"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 5: Kiosk & Check-in */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Kiosk &amp; Check-in</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Auto-checkout</Label>
+              <p className="text-xs text-muted-foreground">
+                Automatically check out members at closing time
+              </p>
+            </div>
+            <Switch
+              checked={autoCheckout}
+              onCheckedChange={setAutoCheckout}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="checkin-cooldown">Check-in Cooldown (seconds)</Label>
+            <Input
+              id="checkin-cooldown"
+              type="number"
+              min="10"
+              max="300"
+              value={checkinCooldown}
+              onChange={(e) => setCheckinCooldown(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Minimum seconds between consecutive check-ins for the same member
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 5: Communication */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Communication</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="notification-channel">Notification Channel</Label>
+            <select
+              id="notification-channel"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={notificationChannel}
+              onChange={(e) => setNotificationChannel(e.target.value)}
+            >
+              <option value="whatsapp">WhatsApp</option>
+              <option value="sms">SMS</option>
+              <option value="both">Both (WhatsApp + SMS)</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Used for all automated and bulk notifications
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Welcome Message</Label>
+              <p className="text-xs text-muted-foreground">
+                Send welcome notification when a new member is added
+              </p>
+            </div>
+            <Switch checked={welcomeMessage} onCheckedChange={setWelcomeMessage} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Renewal Reminders</Label>
+              <p className="text-xs text-muted-foreground">
+                Notify members before membership expires
+              </p>
+            </div>
+            <Switch checked={renewalReminder} onCheckedChange={setRenewalReminder} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Birthday Wishes</Label>
+              <p className="text-xs text-muted-foreground">
+                Send birthday greetings to members
+              </p>
+            </div>
+            <Switch checked={birthdayWish} onCheckedChange={setBirthdayWish} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Announcement Notifications</Label>
+              <p className="text-xs text-muted-foreground">
+                Notify members about new announcements
+              </p>
+            </div>
+            <Switch checked={announcementNotify} onCheckedChange={setAnnouncementNotify} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Offer / Promo Notifications</Label>
+              <p className="text-xs text-muted-foreground">
+                Notify members about promotions and offers
+              </p>
+            </div>
+            <Switch checked={promoNotify} onCheckedChange={setPromoNotify} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 6: Automation / Cron Jobs */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Automation</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            These jobs run automatically when triggered by an external scheduler (e.g., Vercel Cron).
+            Toggle them on or off, or trigger manually.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Renewal Reminders Cron</Label>
+              <p className="text-xs text-muted-foreground">
+                Send renewal + birthday notifications daily
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={triggeringCron !== null}
+                onClick={async () => {
+                  setTriggeringCron("renewal");
+                  setCronResult(null);
+                  try {
+                    const res = await fetch("/api/cron/renewal-reminders");
+                    const data = await res.json();
+                    setCronResult(`Renewal: sent=${data.sent ?? 0}, skipped=${data.skipped ?? 0}, birthday=${data.birthdaySent ?? 0}`);
+                  } catch {
+                    setCronResult("Failed to trigger");
+                  }
+                  setTriggeringCron(null);
+                }}
+              >
+                {triggeringCron === "renewal" ? "Running..." : "Run Now"}
+              </Button>
+              <Switch checked={cronRenewalReminders} onCheckedChange={setCronRenewalReminders} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Auto-Checkout Cron</Label>
+              <p className="text-xs text-muted-foreground">
+                Check out members at location closing time
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={triggeringCron !== null}
+                onClick={async () => {
+                  setTriggeringCron("checkout");
+                  setCronResult(null);
+                  try {
+                    const res = await fetch("/api/cron/auto-checkout");
+                    const data = await res.json();
+                    setCronResult(`Auto-checkout: closed=${data.closed ?? 0}`);
+                  } catch {
+                    setCronResult("Failed to trigger");
+                  }
+                  setTriggeringCron(null);
+                }}
+              >
+                {triggeringCron === "checkout" ? "Running..." : "Run Now"}
+              </Button>
+              <Switch checked={cronAutoCheckout} onCheckedChange={setCronAutoCheckout} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Re-engagement Cron</Label>
+              <p className="text-xs text-muted-foreground">
+                Reach out to expired members at 7, 14, 30 days
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={triggeringCron !== null}
+                onClick={async () => {
+                  setTriggeringCron("reengagement");
+                  setCronResult(null);
+                  try {
+                    const res = await fetch("/api/cron/re-engagement");
+                    const data = await res.json();
+                    setCronResult(`Re-engagement: sent=${data.sent ?? 0}, skipped=${data.skipped ?? 0}`);
+                  } catch {
+                    setCronResult("Failed to trigger");
+                  }
+                  setTriggeringCron(null);
+                }}
+              >
+                {triggeringCron === "reengagement" ? "Running..." : "Run Now"}
+              </Button>
+              <Switch checked={cronReEngagement} onCheckedChange={setCronReEngagement} />
+            </div>
+          </div>
+
+          {cronResult && (
+            <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">{cronResult}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Card 7: Integrations */}
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle>Integrations</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-8">
+          {/* WhatsApp (MSG91) */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">WhatsApp (MSG91)</h3>
+            <div className="space-y-2">
+              <Label htmlFor="msg91-auth-key">Auth Key</Label>
+              <Input
+                id="msg91-auth-key"
+                type="password"
+                value={msg91AuthKey}
+                onChange={(e) => setMsg91AuthKey(e.target.value)}
+                placeholder="MSG91 auth key"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="msg91-wa-number">Integrated Number</Label>
+              <Input
+                id="msg91-wa-number"
+                value={msg91WhatsappNumber}
+                onChange={(e) => setMsg91WhatsappNumber(e.target.value)}
+                placeholder="919876543210"
+              />
+            </div>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <Label htmlFor="test-wa-recipient">Test Recipient</Label>
+                <Input
+                  id="test-wa-recipient"
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  placeholder="919876543210"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testingChannel !== null || !testRecipient}
+                onClick={async () => {
+                  setTestingChannel("whatsapp");
+                  setChannelTestResult(null);
+                  try {
+                    const res = await fetch("/api/admin/test-channel", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ channel: "whatsapp", recipient: testRecipient }),
+                    });
+                    const data = await res.json();
+                    setChannelTestResult(data.success ? "WhatsApp test sent" : `Failed: ${data.error}`);
+                  } catch {
+                    setChannelTestResult("Failed to send test");
+                  }
+                  setTestingChannel(null);
+                }}
+              >
+                {testingChannel === "whatsapp" ? "Sending..." : "Send Test"}
+              </Button>
+            </div>
+          </div>
+
+          <hr className="border-border" />
+
+          {/* SMS (MSG91) */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">SMS (MSG91)</h3>
+            <p className="text-xs text-muted-foreground">Uses the same Auth Key as WhatsApp above</p>
+            <div className="space-y-2">
+              <Label htmlFor="msg91-sms-flow">SMS Flow ID</Label>
+              <Input
+                id="msg91-sms-flow"
+                value={msg91SmsFlowId}
+                onChange={(e) => setMsg91SmsFlowId(e.target.value)}
+                placeholder="Flow ID from MSG91"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="msg91-sms-sender">Sender ID</Label>
+              <Input
+                id="msg91-sms-sender"
+                value={msg91SmsSenderId}
+                onChange={(e) => setMsg91SmsSenderId(e.target.value)}
+                placeholder="GYMFIT"
+                maxLength={6}
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={testingChannel !== null || !testRecipient}
+              onClick={async () => {
+                setTestingChannel("sms");
+                setChannelTestResult(null);
+                try {
+                  const res = await fetch("/api/admin/test-channel", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ channel: "sms", recipient: testRecipient }),
+                  });
+                  const data = await res.json();
+                  setChannelTestResult(data.success ? "SMS test sent" : `Failed: ${data.error}`);
+                } catch {
+                  setChannelTestResult("Failed to send test");
+                }
+                setTestingChannel(null);
+              }}
+            >
+              {testingChannel === "sms" ? "Sending..." : "Send SMS Test"}
+            </Button>
+          </div>
+
+          <hr className="border-border" />
+
+          {/* Email (SMTP) */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Email (SMTP)</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="smtp-host">SMTP Host</Label>
+                <Input
+                  id="smtp-host"
+                  value={smtpHost}
+                  onChange={(e) => setSmtpHost(e.target.value)}
+                  placeholder="smtp.gmail.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="smtp-port">Port</Label>
+                <Input
+                  id="smtp-port"
+                  type="number"
+                  value={smtpPort}
+                  onChange={(e) => setSmtpPort(e.target.value)}
+                  placeholder="587"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="smtp-user">Username</Label>
+              <Input
+                id="smtp-user"
+                value={smtpUser}
+                onChange={(e) => setSmtpUser(e.target.value)}
+                placeholder="user@gmail.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="smtp-pass">Password</Label>
+              <Input
+                id="smtp-pass"
+                type="password"
+                value={smtpPass}
+                onChange={(e) => setSmtpPass(e.target.value)}
+                placeholder="App password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="smtp-from">From Address</Label>
+              <Input
+                id="smtp-from"
+                value={smtpFrom}
+                onChange={(e) => setSmtpFrom(e.target.value)}
+                placeholder="noreply@gym.com"
+              />
+            </div>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <Label htmlFor="test-email-recipient">Test Recipient Email</Label>
+                <Input
+                  id="test-email-recipient"
+                  type="email"
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  placeholder="test@example.com"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={testingChannel !== null || !testRecipient}
+                onClick={async () => {
+                  setTestingChannel("email");
+                  setChannelTestResult(null);
+                  try {
+                    const res = await fetch("/api/admin/test-channel", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ channel: "email", recipient: testRecipient }),
+                    });
+                    const data = await res.json();
+                    setChannelTestResult(data.success ? `Email test sent (${data.mode})` : `Failed: ${data.error}`);
+                  } catch {
+                    setChannelTestResult("Failed to send test");
+                  }
+                  setTestingChannel(null);
+                }}
+              >
+                {testingChannel === "email" ? "Sending..." : "Send Email Test"}
+              </Button>
+            </div>
+          </div>
+
+          <hr className="border-border" />
+
+          {/* Biometric SDK */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">Biometric SDK (BioMax)</h3>
+            <div className="space-y-2">
+              <Label htmlFor="biomax-url">SDK Base URL</Label>
+              <Input
+                id="biomax-url"
+                value={biomaxBaseUrl}
+                onChange={(e) => setBiomaxBaseUrl(e.target.value)}
+                placeholder="http://192.168.1.100:8090"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="biomax-key">API Key</Label>
+              <Input
+                id="biomax-key"
+                type="password"
+                value={biomaxApiKey}
+                onChange={(e) => setBiomaxApiKey(e.target.value)}
+                placeholder="Device API key (if required)"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={testingBiomax}
+              onClick={async () => {
+                setTestingBiomax(true);
+                setBiomaxTestResult(null);
+                try {
+                  const res = await fetch("/api/biometric/test-connection", { method: "POST" });
+                  const data = await res.json();
+                  setBiomaxTestResult(data.connected ? "Connected" : `Not connected: ${data.error}`);
+                } catch {
+                  setBiomaxTestResult("Connection test failed");
+                }
+                setTestingBiomax(false);
+              }}
+            >
+              {testingBiomax ? "Testing..." : "Test Connection"}
+            </Button>
+            {biomaxTestResult && (
+              <p className={`text-sm ${biomaxTestResult === "Connected" ? "text-status-active" : "text-destructive"}`}>
+                {biomaxTestResult}
+              </p>
+            )}
+          </div>
+
+          {channelTestResult && (
+            <p className="text-sm border rounded-md px-3 py-2 text-muted-foreground">{channelTestResult}</p>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Save settings first, then test. Credentials stored in DB override .env values.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Save */}
+      <div className="flex items-center gap-3 max-w-lg">
+        <Button onClick={handleSave} disabled={isPending}>
+          {isPending ? "Saving..." : "Save Settings"}
+        </Button>
+        {saved && (
+          <span className="text-sm text-status-active">Settings saved</span>
+        )}
+        {error && (
+          <span className="text-sm text-destructive">{error}</span>
+        )}
+      </div>
+    </div>
+  );
+}

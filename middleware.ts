@@ -1,6 +1,11 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 
+const STAFF_RESTRICTED_PATHS = [
+  "/admin/workers",
+  "/admin/reports",
+];
+
 export default withAuth(
   function middleware(req) {
     const token = req.nextauth.token;
@@ -10,6 +15,27 @@ export default withAuth(
     if (pathname.startsWith("/admin")) {
       if (token?.actorType !== "worker") {
         return NextResponse.redirect(new URL("/login", req.url));
+      }
+
+      // Staff role restrictions
+      if (token?.role === "staff") {
+        const isRestricted = STAFF_RESTRICTED_PATHS.some((p) =>
+          pathname.startsWith(p)
+        );
+        // Staff can view locations but not create/edit (POST handled server-side)
+        if (
+          pathname.startsWith("/admin/locations") &&
+          (pathname.includes("/new") || pathname.includes("/edit"))
+        ) {
+          return NextResponse.redirect(
+            new URL("/admin/dashboard", req.url)
+          );
+        }
+        if (isRestricted) {
+          return NextResponse.redirect(
+            new URL("/admin/dashboard", req.url)
+          );
+        }
       }
     }
 
