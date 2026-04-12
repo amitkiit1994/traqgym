@@ -19,12 +19,12 @@ export default async function AdminLayout({
   const counts = await getSidebarCounts();
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen overflow-x-hidden">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:rounded-lg">
         Skip to content
       </a>
       <AdminSidebar role={role} counts={counts} />
-      <div className="flex flex-1 flex-col min-h-0">
+      <div className="flex flex-1 flex-col min-h-0 min-w-0">
         <header className="relative z-50 flex h-14 items-center border-b border-border/50 px-3 md:px-6 gap-2 md:gap-4 bg-background/70 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[0_1px_8px_oklch(0.565_0.20_275_/_5%),0_1px_2px_oklch(0_0_0_/_3%)] dark:shadow-[0_1px_15px_oklch(0_0_0_/_15%)]">
           <div className="md:hidden">
             <AdminMobileMenu role={role} counts={counts} />
