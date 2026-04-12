@@ -228,8 +228,8 @@ export function GlobalSearch() {
                         onClick={() => handleSelect(item)}
                         className={`flex w-full flex-col rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted ${highlightedIndex === idx ? "bg-muted" : ""}`}
                       >
-                        <span className="font-medium">{item.label}</span>
-                        <span className="text-xs text-muted-foreground">{item.sublabel}</span>
+                        <span className="font-medium truncate">{item.label}</span>
+                        <span className="text-xs text-muted-foreground truncate">{item.sublabel}</span>
                       </button>
                     );
                   })}
@@ -250,7 +250,7 @@ export function GlobalSearch() {
               className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted ${highlightedIndex === idx ? "bg-muted" : ""}`}
             >
               <Clock className="size-3 text-muted-foreground shrink-0" />
-              <span>{recent}</span>
+              <span className="truncate">{recent}</span>
             </button>
           ))}
           <button

@@ -210,13 +210,13 @@ export default function EnquiriesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-2 text-left font-medium">Name</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Name</th>
                   <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Phone</th>
                   <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Source</th>
-                  <th className="px-4 py-2 text-left font-medium">Interest</th>
-                  <th className="px-4 py-2 text-left font-medium">Status</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Interest</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Status</th>
                   <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Follow-up</th>
-                  <th className="px-4 py-2 text-left font-medium">Actions</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -226,11 +226,11 @@ export default function EnquiriesPage() {
                     className="border-b hover:bg-muted/30 cursor-pointer"
                     onClick={() => handleEdit(e)}
                   >
-                    <td className="px-4 py-2">{e.name}</td>
+                    <td className="px-2 sm:px-4 py-2">{e.name}</td>
                     <td className="px-4 py-2 hidden md:table-cell">{e.phone}</td>
                     <td className="px-4 py-2 hidden md:table-cell">{sourceLabels[e.source] || e.source}</td>
-                    <td className="px-4 py-2">{e.interest || "-"}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2">{e.interest || "-"}</td>
+                    <td className="px-2 sm:px-4 py-2">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusColors[e.status] || ""}`}>
                         {e.status.replace("_", " ")}
                       </span>
@@ -238,7 +238,7 @@ export default function EnquiriesPage() {
                     <td className="px-4 py-2 hidden md:table-cell">
                       {e.followUpDate ? new Date(e.followUpDate).toLocaleDateString("en-IN") : "-"}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2">
                       {e.status === "converted" ? (
                         <Badge variant="active">Converted</Badge>
                       ) : e.status !== "lost" ? (

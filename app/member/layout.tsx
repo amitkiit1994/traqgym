@@ -16,7 +16,7 @@ export default async function MemberLayout({
   return (
     <div className="min-h-screen flex flex-col">
       <MemberNav memberName={session.user.name} />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 overflow-x-hidden">{children}</main>
     </div>
   );
 }

@@ -38,7 +38,7 @@ export default async function AdminLayout({
             <span className="hidden md:inline font-medium text-foreground">{session.user.name}</span>
           </div>
         </header>
-        <main id="main-content" className="flex-1 overflow-y-auto p-3 md:p-6">
+        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6">
           <Breadcrumbs />
           {children}
         </main>

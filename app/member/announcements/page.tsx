@@ -24,7 +24,7 @@ export default async function MemberAnnouncementsPage() {
   });
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <h1 className="text-2xl font-bold">Announcements</h1>
 
       {announcements.length === 0 ? (

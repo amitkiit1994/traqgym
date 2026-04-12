@@ -221,7 +221,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-4 md:space-y-6 p-3 sm:p-6">
+    <div className="space-y-4 md:space-y-6">
       <h1 className="text-xl font-semibold">Settings</h1>
 
       {/* Card 1: Gym Identity */}

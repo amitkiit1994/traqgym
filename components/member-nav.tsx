@@ -45,9 +45,9 @@ export function MemberNav({ memberName }: { memberName: string }) {
   return (
     <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/70 backdrop-blur-2xl backdrop-saturate-[1.4] shadow-[0_1px_8px_oklch(0.565_0.20_275_/_5%)] dark:shadow-[0_1px_20px_oklch(0.65_0.18_275_/_4%)]">
       <div className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-4 md:gap-6">
-          <GymBrand size="sm" className="text-primary" />
-          <span className="font-semibold text-sm hidden sm:inline">{memberName}</span>
+        <div className="flex items-center gap-2 sm:gap-4 md:gap-6 min-w-0">
+          <GymBrand size="sm" className="text-primary shrink-0" />
+          <span className="font-semibold text-sm hidden sm:inline truncate">{memberName}</span>
 
           {/* Desktop nav */}
           <div className="hidden md:flex gap-1">

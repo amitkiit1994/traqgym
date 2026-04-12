@@ -18,7 +18,7 @@ export default async function MemberWorkoutPage() {
 
   if (!workout) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-4 md:space-y-6 p-3 md:p-6">
         <h1 className="text-2xl font-bold">Workout Plan</h1>
         <div className="flex flex-col items-center py-12 text-center">
           <Dumbbell className="size-8 text-muted-foreground/50 mb-2" />
@@ -33,7 +33,7 @@ export default async function MemberWorkoutPage() {
   const days = DAY_ORDER.filter((d) => workout.exercisesByDay[d]);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Workout Plan</h1>
         <Badge variant="outline">{workout.planName}</Badge>

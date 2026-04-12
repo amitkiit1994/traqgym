@@ -291,7 +291,7 @@ export function DashboardClient({
   }
 
   return (
-    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
+    <div className="space-y-4 md:space-y-6 min-w-0">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
         <h1 className="text-xl md:text-2xl font-bold">Dashboard</h1>
         {locations.length > 1 ? (
@@ -345,7 +345,7 @@ export function DashboardClient({
               <div className="flex flex-wrap gap-4">
                 {overdueCount > 0 && (
                   <Link href="/admin/renewals">
-                    <div className="flex items-center gap-2 rounded-lg border border-status-expired/30 bg-status-expired-bg px-4 py-2 text-sm hover:bg-status-expired-bg/80 transition-colors">
+                    <div className="flex items-center gap-2 rounded-lg border border-status-expired/30 bg-status-expired-bg px-3 py-2 text-xs sm:text-sm hover:bg-status-expired-bg/80 transition-colors">
                       <Badge variant="destructive">{overdueCount}</Badge>
                       <span>overdue payments</span>
                     </div>
@@ -353,7 +353,7 @@ export function DashboardClient({
                 )}
                 {expiringTomorrowCount > 0 && (
                   <Link href="/admin/renewals">
-                    <div className="flex items-center gap-2 rounded-lg border border-status-expiring/30 bg-status-expiring-bg px-4 py-2 text-sm hover:bg-status-expiring-bg/80 transition-colors">
+                    <div className="flex items-center gap-2 rounded-lg border border-status-expiring/30 bg-status-expiring-bg px-3 py-2 text-xs sm:text-sm hover:bg-status-expiring-bg/80 transition-colors">
                       <Badge variant="secondary">{expiringTomorrowCount}</Badge>
                       <span>expiring tomorrow</span>
                     </div>
@@ -867,7 +867,7 @@ export function DashboardClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Member</TableHead>
-                    <TableHead>Email</TableHead>
+                    <TableHead className="hidden sm:table-cell">Email</TableHead>
                     <TableHead>Plan</TableHead>
                     <TableHead>Expires</TableHead>
                     <TableHead>Action</TableHead>
@@ -877,7 +877,7 @@ export function DashboardClient({
                   {stats.expiringIn3Days.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell>{t.userName}</TableCell>
-                      <TableCell>{t.userEmail}</TableCell>
+                      <TableCell className="max-w-32 truncate hidden sm:table-cell">{t.userEmail}</TableCell>
                       <TableCell>{t.planName}</TableCell>
                       <TableCell>
                         <Badge variant="destructive">

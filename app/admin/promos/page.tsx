@@ -106,32 +106,32 @@ export default function PromosPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-2 text-left font-medium">Code</th>
-                  <th className="px-4 py-2 text-left font-medium hidden sm:table-cell">Type</th>
-                  <th className="px-4 py-2 text-left font-medium">Value</th>
-                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Valid From</th>
-                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Valid To</th>
-                  <th className="px-4 py-2 text-left font-medium hidden sm:table-cell">Uses</th>
-                  <th className="px-4 py-2 text-left font-medium">Status</th>
-                  <th className="px-4 py-2 text-left font-medium">Actions</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Code</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium hidden sm:table-cell">Type</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Value</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium hidden md:table-cell">Valid From</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium hidden md:table-cell">Valid To</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium hidden sm:table-cell">Uses</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Status</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {promos.map((p) => (
                   <tr key={p.id} className="border-b">
-                    <td className="px-4 py-2 font-mono font-medium">{p.code}</td>
-                    <td className="px-4 py-2 capitalize hidden sm:table-cell">{p.discountType}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2 font-mono font-medium">{p.code}</td>
+                    <td className="px-2 sm:px-4 py-2 capitalize hidden sm:table-cell">{p.discountType}</td>
+                    <td className="px-2 sm:px-4 py-2">
                       {p.discountType === "percentage"
                         ? `${p.discountValue}%`
                         : `Rs.${p.discountValue}`}
                     </td>
-                    <td className="px-4 py-2 hidden md:table-cell">{new Date(p.validFrom).toLocaleDateString("en-IN")}</td>
-                    <td className="px-4 py-2 hidden md:table-cell">{new Date(p.validTo).toLocaleDateString("en-IN")}</td>
-                    <td className="px-4 py-2 hidden sm:table-cell">
+                    <td className="px-2 sm:px-4 py-2 hidden md:table-cell">{new Date(p.validFrom).toLocaleDateString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 hidden md:table-cell">{new Date(p.validTo).toLocaleDateString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 hidden sm:table-cell">
                       {p.usedCount}{p.maxUses ? `/${p.maxUses}` : ""}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2">
                       {isExpired(p.validTo) ? (
                         <Badge variant="destructive">Expired</Badge>
                       ) : p.isActive ? (
@@ -140,7 +140,7 @@ export default function PromosPage() {
                         <Badge variant="secondary">Inactive</Badge>
                       )}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2">
                       <Button
                         size="sm"
                         variant="outline"

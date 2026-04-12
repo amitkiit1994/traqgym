@@ -100,7 +100,7 @@ export default function MemberBookingsPage() {
   const facilitiesWithSlots = facilities.filter((f) => f.slots.length > 0);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Facility Bookings</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

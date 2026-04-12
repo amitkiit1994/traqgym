@@ -36,7 +36,7 @@ export default async function MemberReferralsPage() {
   const rewardedCount = referrals.filter((r) => r.rewardGiven).length;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <h1 className="text-2xl font-bold">My Referrals</h1>
 
       <div className="grid grid-cols-2 gap-4">

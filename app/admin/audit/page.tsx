@@ -127,7 +127,7 @@ export default function AuditPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Timestamp</TableHead>
+            <TableHead className="hidden sm:table-cell">Timestamp</TableHead>
             <TableHead>Action</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden md:table-cell">Actor</TableHead>
@@ -138,7 +138,7 @@ export default function AuditPage() {
           {logs.map((log) => (
             <Fragment key={log.id}>
               <TableRow>
-                <TableCell className="whitespace-nowrap">
+                <TableCell className="whitespace-nowrap hidden sm:table-cell">
                   {new Date(log.createdAt).toLocaleString("en-IN")}
                 </TableCell>
                 <TableCell>{log.action}</TableCell>

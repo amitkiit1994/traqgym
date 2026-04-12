@@ -72,7 +72,7 @@ export default function ActivityPage() {
                 </span>
                 <p className="text-sm mt-0.5">{item.message}</p>
               </div>
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
+              <span className="text-xs text-muted-foreground shrink-0">
                 {formatTime(item.timestamp)}
               </span>
             </CardContent>

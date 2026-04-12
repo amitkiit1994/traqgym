@@ -159,7 +159,7 @@ export default function MemberClassesPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 p-4">
+      <div className="space-y-4 md:space-y-6 p-3 md:p-4">
         <h1 className="text-xl font-semibold">Classes</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -172,7 +172,7 @@ export default function MemberClassesPage() {
   }
 
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-4">
       <h1 className="text-xl font-semibold">Classes</h1>
 
       {error && (

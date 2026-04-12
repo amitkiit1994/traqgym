@@ -107,7 +107,7 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right panel — login form ── */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-8">
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8">
         <div className="w-full max-w-[420px]">
           {/* Mobile brand */}
           <div className="flex justify-center mb-8 lg:hidden">
@@ -123,7 +123,7 @@ export default function LoginPage() {
               {/* Top gradient accent */}
               <div className="h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
 
-              <div className="p-8 sm:p-10">
+              <div className="p-5 sm:p-8 md:p-10">
                 {/* Header */}
                 <div className="mb-8">
                   <div className="inline-flex items-center justify-center size-12 rounded-2xl bg-primary/10 border border-primary/10 mb-4">
@@ -213,7 +213,7 @@ export default function LoginPage() {
               </div>
 
               {/* Bottom bar */}
-              <div className="px-8 sm:px-10 py-4 border-t border-border/30 bg-muted/20 dark:bg-white/[0.02]">
+              <div className="px-5 sm:px-8 md:px-10 py-4 border-t border-border/30 bg-muted/20 dark:bg-white/[0.02]">
                 <p className="text-center text-xs text-muted-foreground/60">
                   Powered by <span className="font-medium text-muted-foreground/80">TraqGym</span>
                 </p>

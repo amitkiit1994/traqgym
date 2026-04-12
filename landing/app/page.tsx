@@ -194,7 +194,7 @@ function DashboardContent() {
         {/* AI Chat View — ChatGPT style */}
         <div className={`absolute inset-0 flex flex-col transition-all duration-500 ${showAI ? "opacity-100 scale-100" : "opacity-0 scale-105 pointer-events-none"}`}>
           {/* Messages area */}
-          <div className="flex-1 overflow-hidden px-8 py-6">
+          <div className="flex-1 overflow-hidden px-4 py-4 md:px-8 md:py-6">
             {msgIndex === 0 && (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-cyan-brand flex items-center justify-center mb-4">
@@ -243,7 +243,7 @@ function DashboardContent() {
           </div>
 
           {/* Big prompt box — ChatGPT style */}
-          <div className="px-6 pb-5">
+          <div className="px-4 pb-4 md:px-6 md:pb-5">
             <div className="max-w-lg mx-auto">
               <div className="flex items-center gap-3 bg-white/[0.04] border border-white/[0.1] rounded-2xl px-5 py-4 shadow-lg shadow-accent/5">
                 <svg className="w-4 h-4 text-dim shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>

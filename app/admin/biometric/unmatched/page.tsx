@@ -96,7 +96,7 @@ export default function UnmatchedPage() {
   }
 
   return (
-    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
+    <div className="space-y-4 md:space-y-6">
       <h1 className="text-xl md:text-2xl font-bold">Unmatched Attendance Events</h1>
 
       <Card>

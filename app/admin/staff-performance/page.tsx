@@ -78,33 +78,33 @@ export default function StaffPerformancePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-2 text-left font-medium">Staff Name</th>
-                  <th className="px-4 py-2 text-right font-medium">Renewals</th>
-                  <th className="px-4 py-2 text-right font-medium hidden md:table-cell">Cash Collected</th>
-                  <th className="px-4 py-2 text-right font-medium hidden md:table-cell">UPI Collected</th>
-                  <th className="px-4 py-2 text-right font-medium">Total</th>
+                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Staff Name</th>
+                  <th className="px-2 sm:px-4 py-2 text-right font-medium">Renewals</th>
+                  <th className="px-2 sm:px-4 py-2 text-right font-medium hidden md:table-cell">Cash Collected</th>
+                  <th className="px-2 sm:px-4 py-2 text-right font-medium hidden md:table-cell">UPI Collected</th>
+                  <th className="px-2 sm:px-4 py-2 text-right font-medium">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {staff.map((s) => (
                   <tr key={s.id} className="border-b">
-                    <td className="px-4 py-2">
+                    <td className="px-2 sm:px-4 py-2">
                       {s.name}
                       <span className="ml-1 text-xs text-muted-foreground capitalize">({s.role})</span>
                     </td>
-                    <td className="px-4 py-2 text-right">{s.renewalCount}</td>
-                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{s.cashCollected.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{s.upiCollected.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-2 text-right font-medium">Rs.{s.totalCollected.toLocaleString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right">{s.renewalCount}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right hidden md:table-cell">Rs.{s.cashCollected.toLocaleString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right hidden md:table-cell">Rs.{s.upiCollected.toLocaleString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right font-medium">Rs.{s.totalCollected.toLocaleString("en-IN")}</td>
                   </tr>
                 ))}
                 {staff.length > 0 && (
                   <tr className="border-t-2 font-semibold bg-muted/30">
-                    <td className="px-4 py-2">Totals</td>
-                    <td className="px-4 py-2 text-right">{totals.renewals}</td>
-                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{totals.cash.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{totals.upi.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-2 text-right">Rs.{totals.total.toLocaleString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2">Totals</td>
+                    <td className="px-2 sm:px-4 py-2 text-right">{totals.renewals}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right hidden md:table-cell">Rs.{totals.cash.toLocaleString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right hidden md:table-cell">Rs.{totals.upi.toLocaleString("en-IN")}</td>
+                    <td className="px-2 sm:px-4 py-2 text-right">Rs.{totals.total.toLocaleString("en-IN")}</td>
                   </tr>
                 )}
               </tbody>

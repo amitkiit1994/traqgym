@@ -246,7 +246,7 @@ export default function BiometricPage() {
   }
 
   return (
-    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
+    <div className="space-y-4 md:space-y-6">
       <h1 className="text-xl font-semibold">Biometric Attendance</h1>
 
       {/* SDK Connection Status Banner */}

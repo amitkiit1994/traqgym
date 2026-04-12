@@ -22,7 +22,7 @@ export default async function MemberProfilePage() {
   if (!user) redirect("/login");
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <h1 className="text-2xl font-bold">Profile</h1>
 
       <Card className="max-w-md">

@@ -67,7 +67,7 @@ export function ActionList() {
           {items.map((item) => (
             <Link key={item.type} href={item.href}>
               <div
-                className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm transition-all hover:scale-[1.02] ${priorityColors[item.priority]}`}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm transition-all hover:scale-[1.02] ${priorityColors[item.priority]}`}
               >
                 {iconMap[item.type]}
                 <Badge
