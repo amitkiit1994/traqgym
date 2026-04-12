@@ -24,8 +24,8 @@ export default async function AdminLayout({
         Skip to content
       </a>
       <AdminSidebar role={role} counts={counts} />
-      <div className="flex flex-1 flex-col min-h-0 min-w-0">
-        <header className="relative z-50 flex h-14 items-center border-b border-border/50 px-3 md:px-6 gap-2 md:gap-4 bg-background/70 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[0_1px_8px_oklch(0.565_0.20_275_/_5%),0_1px_2px_oklch(0_0_0_/_3%)] dark:shadow-[0_1px_15px_oklch(0_0_0_/_15%)]">
+      <div className="flex flex-1 flex-col min-h-0 min-w-0 overflow-y-auto">
+        <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center border-b border-border/50 px-3 md:px-6 gap-2 md:gap-4 bg-background/70 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[0_1px_8px_oklch(0.565_0.20_275_/_5%),0_1px_2px_oklch(0_0_0_/_3%)] dark:shadow-[0_1px_15px_oklch(0_0_0_/_15%)]">
           <div className="md:hidden">
             <AdminMobileMenu role={role} counts={counts} />
           </div>
@@ -38,7 +38,7 @@ export default async function AdminLayout({
             <span className="hidden md:inline font-medium text-foreground">{session.user.name}</span>
           </div>
         </header>
-        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6">
+        <main id="main-content" className="flex-1 overflow-x-hidden p-3 md:p-6">
           <Breadcrumbs />
           {children}
         </main>
