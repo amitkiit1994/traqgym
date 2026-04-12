@@ -320,10 +320,20 @@ export async function getStats(locationId?: number) {
     activeCount: p._count.id,
   }));
 
+  // Serialize expiringIn3Days for cache compatibility (Dates → strings)
+  const serializedExpiring = expiringIn3Days.map((t) => ({
+    id: t.id,
+    userId: t.userId,
+    locationId: t.locationId,
+    expireDate: t.expireDate.toISOString(),
+    user: { firstname: t.user.firstname, lastname: t.user.lastname, email: t.user.email },
+    plan: { id: t.plan.id, name: t.plan.name },
+  }));
+
   return {
     activeMembers,
     revenueThisMonth,
-    expiringIn3Days,
+    expiringIn3Days: serializedExpiring,
     todayCheckIns,
     attendanceChartData,
     revenueChartData,
@@ -570,7 +580,8 @@ export const getCachedProfitLoss = unstable_cache(
 );
 
 export const getCachedStaffPerformance = unstable_cache(
-  async (monthStart: Date, monthEnd: Date) => getStaffPerformance(monthStart, monthEnd),
+  async (monthStartISO: string, monthEndISO: string) =>
+    getStaffPerformance(new Date(monthStartISO), new Date(monthEndISO)),
   ["dashboard-staff-performance"],
   { tags: ["dashboard", "payments"], revalidate: 120 }
 );

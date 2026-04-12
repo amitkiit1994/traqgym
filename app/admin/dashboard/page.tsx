@@ -30,7 +30,7 @@ export default async function DashboardPage({
     getCachedStats(locationId),
     getCachedProfitLoss(currentMonth, locationId),
     getAnnouncements("staff", locationId),
-    getCachedStaffPerformance(monthStart, monthEnd),
+    getCachedStaffPerformance(monthStart.toISOString(), monthEnd.toISOString()),
     getCachedPreviousMonthStats(locationId),
     getRevenueForecast(locationId),
   ]);
@@ -53,7 +53,7 @@ export default async function DashboardPage({
           planName: t.plan.name,
           planId: t.plan.id,
           locationId: t.locationId,
-          expireDate: t.expireDate.toISOString(),
+          expireDate: t.expireDate,
         })),
         todayCheckIns: stats.todayCheckIns,
         revenueChartData: stats.revenueChartData,
