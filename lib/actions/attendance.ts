@@ -2,6 +2,7 @@
 
 import { checkIn, getDaily } from "@/lib/services/attendance";
 import { prisma } from "@/lib/prisma";
+import { revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { manualCheckInSchema, zodErrors } from "@/lib/validations";
 
@@ -47,6 +48,8 @@ export async function manualCheckIn(userId: number, locationId: number) {
   if (!parsed.success) return { success: false, error: Object.values(zodErrors(parsed.error))[0] };
   try {
     const result = await checkIn({ userId, locationId, source: "manual" });
+    revalidateTag("attendance", "max");
+    revalidateTag("dashboard", "max");
     return result;
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Unknown error" };

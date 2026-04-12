@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getStats, getProfitLoss, getStaffPerformance, getPreviousMonthStats } from "@/lib/services/dashboard";
+import { getCachedStats, getCachedProfitLoss, getCachedStaffPerformance, getCachedPreviousMonthStats } from "@/lib/services/dashboard";
 import { getRevenueForecast } from "@/lib/services/revenue-forecast";
 import { getAnnouncements } from "@/lib/actions/announcements";
 import { prisma } from "@/lib/prisma";
@@ -27,11 +27,11 @@ export default async function DashboardPage({
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
   const [stats, profitLoss, announcements, staffPerf, prevStats, forecast] = await Promise.all([
-    getStats(locationId),
-    getProfitLoss(currentMonth, locationId),
+    getCachedStats(locationId),
+    getCachedProfitLoss(currentMonth, locationId),
     getAnnouncements("staff", locationId),
-    getStaffPerformance(monthStart, monthEnd),
-    getPreviousMonthStats(locationId),
+    getCachedStaffPerformance(monthStart, monthEnd),
+    getCachedPreviousMonthStats(locationId),
     getRevenueForecast(locationId),
   ]);
   const locations = await prisma.location.findMany({

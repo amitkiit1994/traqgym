@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { createEnquirySchema, updateEnquirySchema, zodErrors } from "@/lib/validations";
 
@@ -75,6 +75,7 @@ export async function createEnquiry(data: {
   } catch {}
 
   revalidatePath("/admin/enquiries");
+  revalidateTag("sidebar-counts", "max");
   return { success: true };
 }
 
@@ -101,6 +102,7 @@ export async function updateEnquiry(
 
   await prisma.enquiry.update({ where: { id }, data: updateData });
   revalidatePath("/admin/enquiries");
+  revalidateTag("sidebar-counts", "max");
   return { success: true };
 }
 
@@ -157,5 +159,6 @@ export async function convertEnquiry(enquiryId: number) {
   });
 
   revalidatePath("/admin/enquiries");
+  revalidateTag("sidebar-counts", "max");
   return { success: true, userId: user.id };
 }

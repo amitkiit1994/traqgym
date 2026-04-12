@@ -68,6 +68,10 @@ model User {
   occupation           String?
   anniversaryDate      DateTime?
   govtId               String?
+
+  @@index([phone])
+  @@index([locationId])
+  @@index([birthdate])
 }
 
 model Worker {
@@ -134,6 +138,11 @@ model MemberTicket {
 
   payments Payment[]
   freezes  MembershipFreeze[]
+
+  @@index([userId, expireDate])
+  @@index([locationId, expireDate])
+  @@index([status, balanceDue])
+  @@index([planId])
 }
 
 model Payment {
@@ -167,6 +176,11 @@ model Payment {
   createdAt         DateTime     @default(now())
 
   invoice Invoice?
+
+  @@index([createdAt])
+  @@index([locationId, createdAt])
+  @@index([collectedById])
+  @@index([paymentMode, createdAt])
 }
 
 model Invoice {
@@ -200,6 +214,9 @@ model AttendanceLog {
 
   @@unique([userId, locationId, attendanceDate], name: "uk_member_daily")
   @@unique([workerId, locationId, attendanceDate], name: "uk_worker_daily")
+  @@index([attendanceDate])
+  @@index([locationId, attendanceDate])
+  @@index([userId, attendanceDate])
 }
 
 model BiometricDevice {
@@ -353,6 +370,8 @@ model LeaveRequest {
   reviewedBy Int?
   reviewedAt DateTime?
   createdAt  DateTime  @default(now())
+
+  @@index([status])
 }
 
 
@@ -384,6 +403,8 @@ model Enquiry {
   referredByName  String?
 
   followups       EnquiryFollowup[]
+
+  @@index([status])
 }
 
 model PromoCode {
@@ -439,6 +460,8 @@ model Announcement {
   expiresAt   DateTime?
   createdBy   Int?
   createdAt   DateTime  @default(now())
+
+  @@index([isActive, targetGroup])
 }
 
 model Equipment {
@@ -560,6 +583,8 @@ model PaymentFollowup {
   reason          String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  @@index([status])
 }
 
 model EnquiryFollowup {

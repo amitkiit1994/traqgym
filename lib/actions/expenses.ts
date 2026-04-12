@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { expenseSchema, zodErrors } from "@/lib/validations";
 import { createAuditLog } from "@/lib/utils/audit";
@@ -75,6 +75,7 @@ export async function createExpense(data: {
   });
 
   revalidatePath("/admin/expenses");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }
 
@@ -111,6 +112,7 @@ export async function updateExpense(
   });
 
   revalidatePath("/admin/expenses");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }
 

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { checkIn, checkOut } from "@/lib/services/attendance";
+import { revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { workerCheckInSchema, zodErrors } from "@/lib/validations";
 
@@ -59,6 +60,8 @@ export async function workerCheckIn(workerId: number, locationId: number) {
   if (!parsed.success) return { success: false, error: Object.values(zodErrors(parsed.error))[0] };
   try {
     const result = await checkIn({ workerId, locationId, source: "manual" });
+    revalidateTag("attendance", "max");
+    revalidateTag("dashboard", "max");
     return result;
   } catch (err) {
     return {
@@ -81,6 +84,8 @@ export async function workerCheckOut(attendanceId: number) {
       where: { id: attendanceId },
       data: { checkOut: new Date() },
     });
+    revalidateTag("attendance", "max");
+    revalidateTag("dashboard", "max");
     return { success: true, id: attendanceId };
   } catch (err) {
     return {

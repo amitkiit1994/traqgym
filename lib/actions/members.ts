@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { requireWorker } from "@/lib/auth-guard";
 import { createMemberSchema, zodErrors } from "@/lib/validations";
@@ -210,6 +210,9 @@ export async function createMember(data: {
   }
 
   revalidatePath("/admin/members");
+  revalidateTag("members", "max");
+  revalidateTag("dashboard", "max");
+  revalidateTag("sidebar-counts", "max");
   return { success: true };
 }
 
@@ -315,6 +318,9 @@ export async function updateMember(
   });
   revalidatePath(`/admin/members/${id}`);
   revalidatePath("/admin/members");
+  revalidateTag("members", "max");
+  revalidateTag("dashboard", "max");
+  revalidateTag("sidebar-counts", "max");
   return { success: true };
 }
 
@@ -342,6 +348,9 @@ export async function toggleMemberActive(id: number) {
 
   revalidatePath(`/admin/members/${id}`);
   revalidatePath("/admin/members");
+  revalidateTag("members", "max");
+  revalidateTag("dashboard", "max");
+  revalidateTag("sidebar-counts", "max");
   return { success: true, isActive: newActive };
 }
 
@@ -362,6 +371,9 @@ export async function transferMember(data: {
   if (result.success) {
     revalidatePath(`/admin/members/${data.userId}`);
     revalidatePath("/admin/members");
+    revalidateTag("members", "max");
+    revalidateTag("dashboard", "max");
+    revalidateTag("sidebar-counts", "max");
   }
 
   return result;
@@ -380,5 +392,8 @@ export async function cancelMembership(ticketId: number) {
   });
 
   revalidatePath(`/admin/members/${ticket.userId}`);
+  revalidateTag("members", "max");
+  revalidateTag("dashboard", "max");
+  revalidateTag("sidebar-counts", "max");
   return { success: true };
 }

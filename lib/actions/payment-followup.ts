@@ -1,6 +1,7 @@
 "use server";
 
 import { requireWorker } from "@/lib/auth-guard";
+import { revalidateTag } from "next/cache";
 import {
   createFollowup,
   getFollowups,
@@ -19,10 +20,12 @@ export async function createFollowupAction(data: {
   notes?: string;
 }) {
   try { await requireWorker(); } catch { return { success: false as const, error: "Unauthorized" }; }
-  return createFollowup({
+  const result = await createFollowup({
     ...data,
     dueDate: new Date(data.dueDate),
   });
+  revalidateTag("sidebar-counts", "max");
+  return result;
 }
 
 export async function getFollowupsAction(filters?: {
@@ -63,16 +66,20 @@ export async function updateFollowupAction(
   }
 ) {
   try { await requireWorker(); } catch { return { success: false as const, error: "Unauthorized" }; }
-  return updateFollowup(id, {
+  const result = await updateFollowup(id, {
     ...data,
     nextFollowupAt: data.nextFollowupAt ? new Date(data.nextFollowupAt) : undefined,
     lastContactedAt: data.status === "contacted" ? new Date() : undefined,
   });
+  revalidateTag("sidebar-counts", "max");
+  return result;
 }
 
 export async function assignFollowupAction(id: number, workerId: number) {
   try { await requireWorker(); } catch { return { success: false as const, error: "Unauthorized" }; }
-  return assignFollowup(id, workerId);
+  const result = await assignFollowup(id, workerId);
+  revalidateTag("sidebar-counts", "max");
+  return result;
 }
 
 export async function getOverdueFollowupsAction(locationId?: number) {

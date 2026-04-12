@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { getSetting } from "@/lib/services/settings";
 import { leaveRequestSchema, reviewLeaveSchema, zodErrors } from "@/lib/validations";
@@ -130,6 +131,7 @@ export async function createLeaveRequest(
       });
     } catch {}
 
+    revalidateTag("sidebar-counts", "max");
     return { success: true, id: request.id };
   } catch (err) {
     return {
@@ -156,6 +158,7 @@ export async function reviewLeaveRequest(
         reviewedAt: new Date(),
       },
     });
+    revalidateTag("sidebar-counts", "max");
     return { success: true };
   } catch (err) {
     return {

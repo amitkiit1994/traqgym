@@ -1,79 +1,250 @@
 import { prisma } from "@/lib/prisma";
 import { todayIST } from "@/lib/utils/date";
+import { unstable_cache } from "next/cache";
 
 export async function getStats(locationId?: number) {
   const where = locationId ? { locationId } : {};
   const now = todayIST();
 
-  // Active members: users who have a non-expired MemberTicket
-  const activeMembers = await prisma.user.count({
-    where: {
-      ...where,
-      memberTickets: {
-        some: {
-          expireDate: { gte: now },
-        },
-      },
-    },
-  });
-
-  // Revenue this month
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const revenueResult = await prisma.payment.aggregate({
-    where: {
-      ...where,
-      createdAt: { gte: monthStart, lt: monthEnd },
-    },
-    _sum: { amount: true },
-  });
-  const revenueThisMonth = revenueResult._sum.amount
-    ? Number(revenueResult._sum.amount)
-    : 0;
-
-  // Expiring in 3 days
   const threeDaysFromNow = new Date(now);
   threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
 
-  const expiringIn3Days = await prisma.memberTicket.findMany({
-    where: {
-      ...(locationId ? { locationId } : {}),
-      expireDate: { gte: now, lte: threeDaysFromNow },
-    },
-    include: {
-      user: { select: { firstname: true, lastname: true, email: true } },
-      plan: { select: { id: true, name: true } },
-    },
-    orderBy: { expireDate: "asc" },
-  });
-
-  // Today's check-ins
   const todayStart = new Date(now);
   const todayEnd = new Date(todayStart);
   todayEnd.setDate(todayEnd.getDate() + 1);
 
-  const todayCheckIns = await prisma.attendanceLog.count({
-    where: {
-      ...where,
-      attendanceDate: { gte: todayStart, lt: todayEnd },
-      userId: { not: null },
-    },
-  });
-
-  // Attendance chart data (last 30 days)
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const attendanceLogs = await prisma.attendanceLog.findMany({
-    where: {
-      ...where,
-      attendanceDate: { gte: thirtyDaysAgo },
-      userId: { not: null },
-    },
-    select: { attendanceDate: true },
-  });
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+  const sevenDaysAgoDate = new Date(now);
+  sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
+
+  const todayMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+  const thisYear = now.getFullYear();
+
+  // Run all independent queries in parallel
+  const [
+    activeMembers, revenueResult, expiringIn3Days, todayCheckIns,
+    attendanceLogs, recentPayments, totalMembers, expiredMembers,
+    cashResult, upiResult, currentlyInGymLogs, overdueUsers,
+    planDistRaw
+  ] = await Promise.all([
+    // Active members
+    prisma.user.count({
+      where: {
+        ...where,
+        memberTickets: {
+          some: {
+            expireDate: { gte: now },
+          },
+        },
+      },
+    }),
+    // Revenue this month
+    prisma.payment.aggregate({
+      where: {
+        ...where,
+        createdAt: { gte: monthStart, lt: monthEnd },
+      },
+      _sum: { amount: true },
+    }),
+    // Expiring in 3 days
+    prisma.memberTicket.findMany({
+      where: {
+        ...(locationId ? { locationId } : {}),
+        expireDate: { gte: now, lte: threeDaysFromNow },
+      },
+      include: {
+        user: { select: { firstname: true, lastname: true, email: true } },
+        plan: { select: { id: true, name: true } },
+      },
+      orderBy: { expireDate: "asc" },
+    }),
+    // Today's check-ins
+    prisma.attendanceLog.count({
+      where: {
+        ...where,
+        attendanceDate: { gte: todayStart, lt: todayEnd },
+        userId: { not: null },
+      },
+    }),
+    // Attendance chart data (last 30 days)
+    prisma.attendanceLog.findMany({
+      where: {
+        ...where,
+        attendanceDate: { gte: thirtyDaysAgo },
+        userId: { not: null },
+      },
+      select: { attendanceDate: true },
+    }),
+    // Revenue chart data (last 7 days)
+    prisma.payment.findMany({
+      where: {
+        ...where,
+        createdAt: { gte: sevenDaysAgo },
+      },
+      select: { amount: true, paymentMode: true, createdAt: true },
+    }),
+    // Total members
+    prisma.user.count({ where }),
+    // Expired members
+    prisma.user.count({
+      where: {
+        ...where,
+        memberTickets: {
+          some: {},
+        },
+        NOT: {
+          memberTickets: {
+            some: {
+              expireDate: { gte: now },
+            },
+          },
+        },
+      },
+    }),
+    // Cash this month
+    prisma.payment.aggregate({
+      where: {
+        ...where,
+        createdAt: { gte: monthStart, lt: monthEnd },
+        paymentMode: "Cash",
+      },
+      _sum: { amount: true },
+    }),
+    // UPI this month
+    prisma.payment.aggregate({
+      where: {
+        ...where,
+        createdAt: { gte: monthStart, lt: monthEnd },
+        paymentMode: "UPI",
+      },
+      _sum: { amount: true },
+    }),
+    // Currently in gym
+    prisma.attendanceLog.findMany({
+      where: {
+        ...where,
+        attendanceDate: { gte: todayStart, lt: todayEnd },
+        userId: { not: null },
+        checkOut: null,
+      },
+      include: {
+        user: { select: { firstname: true, lastname: true } },
+      },
+    }),
+    // Overdue members
+    prisma.user.findMany({
+      where: {
+        ...where,
+        memberTickets: {
+          some: {},
+        },
+        NOT: {
+          memberTickets: {
+            some: {
+              expireDate: { gte: sevenDaysAgoDate },
+            },
+          },
+        },
+      },
+      include: {
+        memberTickets: {
+          orderBy: { expireDate: "desc" },
+          take: 1,
+          include: { plan: { select: { id: true, name: true } } },
+        },
+      },
+      take: 50,
+    }),
+    // Plan distribution
+    prisma.memberTicket.groupBy({
+      by: ["planId"],
+      where: {
+        ...(locationId ? { locationId } : {}),
+        expireDate: { gte: now },
+      },
+      _count: { id: true },
+    }),
+  ]);
+
+  // Birthday queries (raw SQL, separate Promise.all)
+  const [todayBirthdaysRaw, upcomingBirthdaysRaw] = await Promise.all([
+    prisma.$queryRaw<
+      { id: number; firstname: string; lastname: string; phone: string | null }[]
+    >`
+      SELECT id, firstname, lastname, phone
+      FROM "User"
+      WHERE birthdate IS NOT NULL
+        AND EXTRACT(MONTH FROM birthdate) = ${todayMonth}
+        AND EXTRACT(DAY FROM birthdate) = ${todayDay}
+    `,
+    prisma.$queryRaw<
+      { id: number; firstname: string; lastname: string; phone: string | null; days_until: number }[]
+    >`
+      WITH birthdays AS (
+        SELECT id, firstname, lastname, phone,
+          CASE
+            WHEN EXTRACT(MONTH FROM birthdate) = 2 AND EXTRACT(DAY FROM birthdate) = 29
+              AND NOT (${thisYear} % 4 = 0 AND (${thisYear} % 100 != 0 OR ${thisYear} % 400 = 0))
+              THEN MAKE_DATE(${thisYear}, 3, 1)
+            ELSE MAKE_DATE(${thisYear}, EXTRACT(MONTH FROM birthdate)::int, EXTRACT(DAY FROM birthdate)::int)
+          END as this_year_bd,
+          CASE
+            WHEN EXTRACT(MONTH FROM birthdate) = 2 AND EXTRACT(DAY FROM birthdate) = 29
+              AND NOT (${thisYear + 1} % 4 = 0 AND (${thisYear + 1} % 100 != 0 OR ${thisYear + 1} % 400 = 0))
+              THEN MAKE_DATE(${thisYear + 1}, 3, 1)
+            ELSE MAKE_DATE(${thisYear + 1}, EXTRACT(MONTH FROM birthdate)::int, EXTRACT(DAY FROM birthdate)::int)
+          END as next_year_bd
+        FROM "User"
+        WHERE birthdate IS NOT NULL
+      )
+      SELECT id, firstname, lastname, phone,
+        CASE
+          WHEN this_year_bd > CURRENT_DATE THEN this_year_bd - CURRENT_DATE
+          ELSE next_year_bd - CURRENT_DATE
+        END as days_until
+      FROM birthdays
+      WHERE CASE
+          WHEN this_year_bd > CURRENT_DATE THEN this_year_bd - CURRENT_DATE
+          ELSE next_year_bd - CURRENT_DATE
+        END BETWEEN 1 AND 7
+      ORDER BY days_until
+    `,
+  ]);
+
+  const todayBirthdays = todayBirthdaysRaw.map((u) => ({
+    id: u.id,
+    name: `${u.firstname} ${u.lastname}`,
+    phone: u.phone || "-",
+  }));
+
+  const upcomingBirthdays = upcomingBirthdaysRaw.map((u) => ({
+    id: u.id,
+    name: `${u.firstname} ${u.lastname}`,
+    phone: u.phone || "-",
+    daysUntil: Number(u.days_until),
+  }));
+
+  // Process revenue
+  const revenueThisMonth = revenueResult._sum.amount
+    ? Number(revenueResult._sum.amount)
+    : 0;
+  const cashThisMonth = cashResult._sum.amount
+    ? Number(cashResult._sum.amount)
+    : 0;
+  const upiThisMonth = upiResult._sum.amount
+    ? Number(upiResult._sum.amount)
+    : 0;
+
+  // Process attendance chart
   const attendanceMap = new Map<string, number>();
   for (const log of attendanceLogs) {
     const key = log.attendanceDate.toISOString().split("T")[0];
@@ -88,18 +259,7 @@ export async function getStats(locationId?: number) {
     attendanceChartData.push({ date: key, count: attendanceMap.get(key) || 0 });
   }
 
-  // Revenue chart data (last 7 days by payment mode)
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  const recentPayments = await prisma.payment.findMany({
-    where: {
-      ...where,
-      createdAt: { gte: sevenDaysAgo },
-    },
-    select: { amount: true, paymentMode: true, createdAt: true },
-  });
-
+  // Process revenue chart
   const revenueChartMap = new Map<
     string,
     { cash: number; upi: number; other: number }
@@ -131,97 +291,13 @@ export async function getStats(locationId?: number) {
     })
   );
 
-  // Total members
-  const totalMembers = await prisma.user.count({ where });
-
-  // Expired members: users whose latest ticket is expired and have no active ticket
-  const expiredMembers = await prisma.user.count({
-    where: {
-      ...where,
-      memberTickets: {
-        some: {},
-      },
-      NOT: {
-        memberTickets: {
-          some: {
-            expireDate: { gte: now },
-          },
-        },
-      },
-    },
-  });
-
-  // Cash vs UPI this month
-  const cashResult = await prisma.payment.aggregate({
-    where: {
-      ...where,
-      createdAt: { gte: monthStart, lt: monthEnd },
-      paymentMode: "Cash",
-    },
-    _sum: { amount: true },
-  });
-  const cashThisMonth = cashResult._sum.amount
-    ? Number(cashResult._sum.amount)
-    : 0;
-
-  const upiResult = await prisma.payment.aggregate({
-    where: {
-      ...where,
-      createdAt: { gte: monthStart, lt: monthEnd },
-      paymentMode: "UPI",
-    },
-    _sum: { amount: true },
-  });
-  const upiThisMonth = upiResult._sum.amount
-    ? Number(upiResult._sum.amount)
-    : 0;
-
-  // Currently in gym: checked in today, no checkOut
-  const currentlyInGymLogs = await prisma.attendanceLog.findMany({
-    where: {
-      ...where,
-      attendanceDate: { gte: todayStart, lt: todayEnd },
-      userId: { not: null },
-      checkOut: null,
-    },
-    include: {
-      user: { select: { firstname: true, lastname: true } },
-    },
-  });
-
+  // Process currently in gym
   const currentlyInGym = currentlyInGymLogs.map((log) => ({
     name: `${log.user!.firstname} ${log.user!.lastname}`,
     checkInTime: log.checkIn.toISOString(),
   }));
 
-  // Overdue members: expired > 7 days ago, no renewal
-  const sevenDaysAgoDate = new Date(now);
-  sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
-
-  const overdueUsers = await prisma.user.findMany({
-    where: {
-      ...where,
-      memberTickets: {
-        some: {},
-      },
-      NOT: {
-        memberTickets: {
-          some: {
-            expireDate: { gte: sevenDaysAgoDate },
-          },
-        },
-      },
-    },
-    include: {
-      memberTickets: {
-        orderBy: { expireDate: "desc" },
-        take: 1,
-        include: { plan: { select: { id: true, name: true } } },
-      },
-    },
-    take: 50,
-  });
-
+  // Process overdue members
   const overdueMembers = overdueUsers.map((u) => ({
     userId: u.id,
     name: `${u.firstname} ${u.lastname}`,
@@ -231,16 +307,7 @@ export async function getStats(locationId?: number) {
     lastPlanId: u.memberTickets[0].plan.id,
   }));
 
-  // Plan distribution: active tickets grouped by plan
-  const planDistRaw = await prisma.memberTicket.groupBy({
-    by: ["planId"],
-    where: {
-      ...(locationId ? { locationId } : {}),
-      expireDate: { gte: now },
-    },
-    _count: { id: true },
-  });
-
+  // Plan distribution: depends on planDistRaw
   const planIds = planDistRaw.map((p) => p.planId);
   const plans = await prisma.ticketPlan.findMany({
     where: { id: { in: planIds } },
@@ -252,49 +319,6 @@ export async function getStats(locationId?: number) {
     planName: planNameMap.get(p.planId) || "Unknown",
     activeCount: p._count.id,
   }));
-
-  // Birthdays
-  const allUsersWithBirthday = await prisma.user.findMany({
-    where: { birthdate: { not: null } },
-    select: { id: true, firstname: true, lastname: true, phone: true, birthdate: true },
-  });
-
-  const todayMonth = now.getMonth() + 1;
-  const todayDay = now.getDate();
-
-  const todayBirthdays = allUsersWithBirthday
-    .filter((u) => {
-      const bd = u.birthdate!;
-      return bd.getMonth() + 1 === todayMonth && bd.getDate() === todayDay;
-    })
-    .map((u) => ({
-      id: u.id,
-      name: `${u.firstname} ${u.lastname}`,
-      phone: u.phone || "-",
-    }));
-
-  const upcomingBirthdays: { id: number; name: string; phone: string; daysUntil: number }[] = [];
-  const thisYear = now.getFullYear();
-  const todayOnly = new Date(thisYear, now.getMonth(), now.getDate());
-
-  for (const u of allUsersWithBirthday) {
-    const bd = u.birthdate!;
-    let nextBd = new Date(thisYear, bd.getMonth(), bd.getDate());
-    if (nextBd <= todayOnly) {
-      nextBd = new Date(thisYear + 1, bd.getMonth(), bd.getDate());
-    }
-    const diffMs = nextBd.getTime() - todayOnly.getTime();
-    const daysUntil = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    if (daysUntil > 0 && daysUntil <= 7) {
-      upcomingBirthdays.push({
-        id: u.id,
-        name: `${u.firstname} ${u.lastname}`,
-        phone: u.phone || "-",
-        daysUntil,
-      });
-    }
-  }
-  upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil);
 
   return {
     activeMembers,
@@ -405,47 +429,49 @@ export async function getDailyCollection(locationId?: number) {
 }
 
 export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
-  const workers = await prisma.worker.findMany({
-    where: { isActive: true },
-    select: { id: true, firstname: true, lastname: true, role: true },
-  });
+  const [workers, paymentsByWorker, attendance] = await Promise.all([
+    prisma.worker.findMany({
+      where: { isActive: true },
+      select: { id: true, firstname: true, lastname: true, role: true },
+    }),
+    prisma.payment.groupBy({
+      by: ["collectedById", "paymentMode"],
+      where: { createdAt: { gte: monthStart, lt: monthEnd } },
+      _sum: { amount: true },
+      _count: { id: true },
+    }),
+    prisma.attendanceLog.findMany({
+      where: {
+        attendanceDate: { gte: monthStart, lt: monthEnd },
+        userId: { not: null },
+        workerId: null,
+      },
+      select: { id: true },
+    }),
+  ]);
 
-  const payments = await prisma.payment.findMany({
-    where: { createdAt: { gte: monthStart, lt: monthEnd } },
-    select: {
-      collectedById: true,
-      amount: true,
-      paymentMode: true,
-      memberTicket: { select: { id: true } },
-    },
-  });
-
-  const attendance = await prisma.attendanceLog.findMany({
-    where: {
-      attendanceDate: { gte: monthStart, lt: monthEnd },
-      userId: { not: null },
-      workerId: null,
-    },
-    select: { id: true },
-  });
+  // Build a map from the groupBy results
+  const workerStatsMap = new Map<number, { cash: number; upi: number; count: number }>();
+  for (const row of paymentsByWorker) {
+    const existing = workerStatsMap.get(row.collectedById) || { cash: 0, upi: 0, count: 0 };
+    const amt = Number(row._sum.amount || 0);
+    const mode = row.paymentMode.toLowerCase();
+    if (mode === "cash") existing.cash += amt;
+    else if (mode === "upi") existing.upi += amt;
+    existing.count += row._count.id;
+    workerStatsMap.set(row.collectedById, existing);
+  }
 
   const result = workers.map((w) => {
-    const workerPayments = payments.filter((p) => p.collectedById === w.id);
-    const cashTotal = workerPayments
-      .filter((p) => p.paymentMode.toLowerCase() === "cash")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-    const upiTotal = workerPayments
-      .filter((p) => p.paymentMode.toLowerCase() === "upi")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
+    const s = workerStatsMap.get(w.id) || { cash: 0, upi: 0, count: 0 };
     return {
       id: w.id,
       name: `${w.firstname} ${w.lastname}`,
       role: w.role,
-      renewalCount: workerPayments.length,
-      cashCollected: cashTotal,
-      upiCollected: upiTotal,
-      totalCollected: cashTotal + upiTotal,
+      renewalCount: s.count,
+      cashCollected: s.cash,
+      upiCollected: s.upi,
+      totalCollected: s.cash + s.upi,
     };
   });
 
@@ -522,3 +548,29 @@ export async function getProfitLoss(month: string, locationId?: number) {
     netProfitLoss: revenue - expenses,
   };
 }
+
+// --- Cached wrappers ---
+
+export const getCachedStats = unstable_cache(
+  async (locationId?: number) => getStats(locationId),
+  ["dashboard-stats"],
+  { tags: ["dashboard", "members", "payments", "attendance"], revalidate: 60 }
+);
+
+export const getCachedPreviousMonthStats = unstable_cache(
+  async (locationId?: number) => getPreviousMonthStats(locationId),
+  ["dashboard-previous-month-stats"],
+  { tags: ["dashboard", "payments"], revalidate: 300 }
+);
+
+export const getCachedProfitLoss = unstable_cache(
+  async (month: string, locationId?: number) => getProfitLoss(month, locationId),
+  ["dashboard-profit-loss"],
+  { tags: ["dashboard", "payments"], revalidate: 60 }
+);
+
+export const getCachedStaffPerformance = unstable_cache(
+  async (monthStart: Date, monthEnd: Date) => getStaffPerformance(monthStart, monthEnd),
+  ["dashboard-staff-performance"],
+  { tags: ["dashboard", "payments"], revalidate: 120 }
+);

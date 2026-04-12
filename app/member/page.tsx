@@ -28,48 +28,41 @@ export default async function MemberHomePage() {
   const todayEnd = new Date(todayStart);
   todayEnd.setDate(todayEnd.getDate() + 1);
 
-  // Today's attendance
-  const todayAttendance = await prisma.attendanceLog.findFirst({
-    where: {
-      userId,
-      attendanceDate: { gte: todayStart, lt: todayEnd },
-    },
-  });
-
-  // Membership history
-  const tickets = await prisma.memberTicket.findMany({
-    where: { userId },
-    include: { plan: { select: { name: true } } },
-    orderBy: { buyDate: "desc" },
-  });
-
-  // Attendance for stats (last 30 days)
+  // Fetch all independent data in parallel
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const recentAttendanceAll = await prisma.attendanceLog.findMany({
-    where: { userId, attendanceDate: { gte: thirtyDaysAgo } },
-    orderBy: { attendanceDate: "desc" },
-    include: { location: { select: { name: true } } },
-  });
 
-  // Announcements for members
-  const announcements = await prisma.announcement.findMany({
-    where: {
-      isActive: true,
-      targetGroup: { in: ["all", "members"] },
-      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-    },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
-
-  // Active freeze
-  const activeFreeze = await prisma.membershipFreeze.findFirst({
-    where: { userId, status: "active" },
-  });
-
-  // Last 5 payments
-  const { payments: recentPayments } = await getMemberPayments(userId, { page: 1, pageSize: 5 });
+  const [todayAttendance, tickets, recentAttendanceAll, announcements, activeFreeze, { payments: recentPayments }] = await Promise.all([
+    prisma.attendanceLog.findFirst({
+      where: {
+        userId,
+        attendanceDate: { gte: todayStart, lt: todayEnd },
+      },
+    }),
+    prisma.memberTicket.findMany({
+      where: { userId },
+      include: { plan: { select: { name: true } } },
+      orderBy: { buyDate: "desc" },
+    }),
+    prisma.attendanceLog.findMany({
+      where: { userId, attendanceDate: { gte: thirtyDaysAgo } },
+      orderBy: { attendanceDate: "desc" },
+      include: { location: { select: { name: true } } },
+    }),
+    prisma.announcement.findMany({
+      where: {
+        isActive: true,
+        targetGroup: { in: ["all", "members"] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    prisma.membershipFreeze.findFirst({
+      where: { userId, status: "active" },
+    }),
+    getMemberPayments(userId, { page: 1, pageSize: 5 }),
+  ]);
 
   // Active ticket
   const activeTicket = tickets.find((t) => t.expireDate >= now);

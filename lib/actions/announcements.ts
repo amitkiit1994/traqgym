@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { announcementSchema, zodErrors } from "@/lib/validations";
 
@@ -107,6 +107,7 @@ export async function createAnnouncement(data: {
   } catch {}
 
   revalidatePath("/admin/announcements");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }
 
@@ -121,5 +122,6 @@ export async function toggleAnnouncement(id: number) {
   });
 
   revalidatePath("/admin/announcements");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }

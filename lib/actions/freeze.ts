@@ -6,7 +6,7 @@ import {
   getActiveFreezes,
 } from "@/lib/services/freeze";
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { freezeSchema, zodErrors } from "@/lib/validations";
 
@@ -37,6 +37,9 @@ export async function freezeMembershipAction(
       },
     });
     revalidatePath(`/admin/members/${userId}`);
+    revalidateTag("members", "max");
+    revalidateTag("dashboard", "max");
+    revalidateTag("sidebar-counts", "max");
   }
   return result;
 }
@@ -54,6 +57,9 @@ export async function cancelFreezeAction(freezeId: number, userId: number) {
       },
     });
     revalidatePath(`/admin/members/${userId}`);
+    revalidateTag("members", "max");
+    revalidateTag("dashboard", "max");
+    revalidateTag("sidebar-counts", "max");
   }
   return result;
 }

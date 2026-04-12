@@ -31,26 +31,13 @@ import {
   TableRow,
   ScrollableTable,
 } from "@/components/ui/table";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   UserPlus,
   ClipboardCheck,
   RefreshCw,
   MessageSquarePlus,
-  Trophy,
   TrendingUp,
   TrendingDown,
   AlertTriangle,
@@ -65,6 +52,32 @@ import {
 } from "lucide-react";
 import { getActivePlans, getActiveLocations, submitRenewal } from "@/lib/actions/renewals";
 import { ActionList } from "./action-list";
+
+const RevenueChart = dynamic(
+  () => import("./revenue-chart").then((m) => ({ default: m.RevenueChart })),
+  {
+    ssr: false,
+    loading: () => (
+      <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
+        <CardHeader><CardTitle>Revenue (Last 7 Days)</CardTitle></CardHeader>
+        <CardContent><Skeleton className="h-64 w-full" /></CardContent>
+      </Card>
+    ),
+  }
+);
+
+const AttendanceAndStaffSection = dynamic(
+  () => import("./attendance-chart").then((m) => ({ default: m.AttendanceAndStaffSection })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <Card><CardContent><Skeleton className="h-48 w-full" /></CardContent></Card>
+        <Card><CardContent><Skeleton className="h-48 w-full" /></CardContent></Card>
+      </div>
+    ),
+  }
+);
 
 type ExpiringTicket = {
   id: number;
@@ -685,175 +698,13 @@ export function DashboardClient({
       )}
 
       {/* Revenue Bar Chart */}
-      <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
-        <CardHeader>
-          <CardTitle>Revenue (Last 7 Days)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.revenueChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" strokeOpacity={0.5} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(v) => {
-                    const d = new Date(v);
-                    return `${d.getDate()}/${d.getMonth() + 1}`;
-                  }}
-                  stroke="var(--color-muted-foreground)"
-                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
-                  axisLine={{ stroke: "var(--color-border)" }}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="var(--color-muted-foreground)"
-                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={40}
-                />
-                <Tooltip
-                  labelFormatter={(v) => new Date(v).toLocaleDateString("en-IN")}
-                  contentStyle={{
-                    backgroundColor: "var(--color-popover)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "0.5rem",
-                    color: "var(--color-foreground)",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  }}
-                  itemStyle={{ color: "var(--color-foreground)" }}
-                  labelStyle={{ color: "var(--color-muted-foreground)", fontWeight: 600 }}
-                />
-                <Legend
-                  wrapperStyle={{ color: "var(--color-muted-foreground)", fontSize: 12 }}
-                />
-                <Bar dataKey="cash" fill="#22c55e" name="Cash" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="upi" fill="#6366f1" name="UPI" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="other" fill="#a78bfa" name="Other" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <RevenueChart data={stats.revenueChartData} />
 
       {/* Attendance Trend (30 Days) + Staff Leaderboard */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-        {/* Attendance Trend */}
-        <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="size-4" />
-              Attendance Trend (30 Days)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={stats.attendanceChartData}>
-                  <defs>
-                    <linearGradient id="attendanceGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" strokeOpacity={0.5} />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(v) => {
-                      const d = new Date(v);
-                      return `${d.getDate()}/${d.getMonth() + 1}`;
-                    }}
-                    stroke="var(--color-muted-foreground)"
-                    tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
-                    axisLine={{ stroke: "var(--color-border)" }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    stroke="var(--color-muted-foreground)"
-                    tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={40}
-                  />
-                  <Tooltip
-                    labelFormatter={(v) => new Date(v).toLocaleDateString("en-IN")}
-                    contentStyle={{
-                      backgroundColor: "var(--color-popover)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "0.5rem",
-                      color: "var(--color-foreground)",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                    }}
-                    itemStyle={{ color: "var(--color-foreground)" }}
-                    labelStyle={{ color: "var(--color-muted-foreground)", fontWeight: 600 }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="count"
-                    stroke="#6366f1"
-                    strokeWidth={2}
-                    fill="url(#attendanceGrad)"
-                    name="Check-ins"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Staff Leaderboard */}
-        {stats.staffPerformance.length > 0 && (
-          <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Trophy className="size-4" />
-                Staff Collections (This Month)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {stats.staffPerformance.map((s, idx) => {
-                  const maxTotal = stats.staffPerformance[0]?.total || 1;
-                  const pct = Math.round((s.total / maxTotal) * 100);
-                  return (
-                    <div key={s.name} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground font-mono text-xs w-4">
-                            #{idx + 1}
-                          </span>
-                          <span className="font-medium">{s.name}</span>
-                        </div>
-                        <div className="flex items-center gap-3 text-muted-foreground">
-                          <span className="text-xs">{s.renewals} renewals</span>
-                          <span className="font-medium text-foreground">
-                            {new Intl.NumberFormat("en-IN", {
-                              style: "currency",
-                              currency: "INR",
-                              maximumFractionDigits: 0,
-                            }).format(s.total)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <Link href="/admin/staff-performance">
-                <Button variant="link" size="sm" className="mt-3 px-0 h-auto text-xs">
-                  View full report
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      <AttendanceAndStaffSection
+        attendanceChartData={stats.attendanceChartData}
+        staffPerformance={stats.staffPerformance}
+      />
 
       {/* Expiring Members Table */}
       {stats.expiringIn3Days.length > 0 && (

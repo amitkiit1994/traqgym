@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { renewMembership } from "@/lib/services/renewal";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { requireWorker } from "@/lib/auth-guard";
@@ -97,6 +98,15 @@ export async function submitRenewal(data: {
       promoCode: data.promoCode,
       collectedById: parseInt(session.user.id, 10),
     });
+
+    if (result.success) {
+      revalidatePath("/admin/renewals");
+      revalidatePath(`/admin/members/${data.userId}`);
+      revalidateTag("payments", "max");
+      revalidateTag("dashboard", "max");
+      revalidateTag("sidebar-counts", "max");
+      revalidateTag("members", "max");
+    }
 
     return result;
   } catch (err) {

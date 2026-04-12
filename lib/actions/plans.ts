@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { planSchema, zodErrors } from "@/lib/validations";
 
@@ -35,6 +35,7 @@ export async function createPlan(data: {
     },
   });
   revalidatePath("/plans");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }
 
@@ -61,6 +62,7 @@ export async function updatePlan(
     },
   });
   revalidatePath("/plans");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }
 
@@ -74,5 +76,6 @@ export async function togglePlanActive(id: number) {
     data: { isActive: !plan.isActive },
   });
   revalidatePath("/plans");
+  revalidateTag("dashboard", "max");
   return { success: true };
 }
