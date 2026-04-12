@@ -84,8 +84,8 @@ export function AiActivityClient() {
 
   if (!summary) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold">AI Activity</h1>
+      <div className="space-y-4 md:space-y-6">
+        <h1 className="text-xl md:text-2xl font-bold">AI Activity</h1>
         <p className="text-muted-foreground">Loading...</p>
       </div>
     );
@@ -97,9 +97,9 @@ export function AiActivityClient() {
     summary.byStatus.find((s) => s.status === "failed")?.count ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
           <Bot className="size-6 text-primary" />
           AI Activity
         </h1>
@@ -126,7 +126,7 @@ export function AiActivityClient() {
       {tab === "activity" && (
         <>
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="gradient-border-card">
               <CardContent className="pt-4">
                 <div className="text-2xl font-bold stat-value-glow">
@@ -200,8 +200,8 @@ export function AiActivityClient() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Feature</TableHead>
-                    <TableHead>Target</TableHead>
-                    <TableHead>Channel</TableHead>
+                    <TableHead className="hidden sm:table-cell">Target</TableHead>
+                    <TableHead className="hidden md:table-cell">Channel</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>When</TableHead>
                   </TableRow>
@@ -212,10 +212,10 @@ export function AiActivityClient() {
                       <TableCell className="font-medium">
                         {featureLabels[log.feature] ?? log.feature}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="hidden sm:table-cell text-muted-foreground">
                         {log.targetType} #{log.targetId}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <Badge variant="outline" className="text-xs">
                           {log.channel}
                         </Badge>
@@ -281,7 +281,7 @@ export function AiActivityClient() {
 
             <div className="border-t pt-4 mt-4">
               <p className="text-sm font-medium mb-3">Configuration</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="flex justify-between border rounded-lg p-3">
                   <span className="text-muted-foreground">
                     Daily AI budget

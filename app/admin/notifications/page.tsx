@@ -156,9 +156,9 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Notification Log</h1>
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-semibold">Notification Log</h1>
         <Button variant="outline" size="sm" onClick={handleExport}>
           <Download className="size-4 mr-1.5" />
           Export CSV
@@ -226,7 +226,7 @@ export default function NotificationsPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3 sm:items-end">
         <div className="flex gap-1 items-center">
           {["all", "sent", "pending", "failed"].map((s) => (
             <button
@@ -296,12 +296,12 @@ export default function NotificationsPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Member</TableHead>
-            <TableHead>Template</TableHead>
-            <TableHead>Channel</TableHead>
-            <TableHead>Recipient</TableHead>
+            <TableHead className="hidden md:table-cell">Template</TableHead>
+            <TableHead className="hidden sm:table-cell">Channel</TableHead>
+            <TableHead className="hidden lg:table-cell">Recipient</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead>Sent At</TableHead>
+            <TableHead className="hidden sm:table-cell">Date</TableHead>
+            <TableHead className="hidden lg:table-cell">Sent At</TableHead>
             <TableHead className="w-20">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -309,14 +309,14 @@ export default function NotificationsPage() {
           {logs.map((n) => (
             <TableRow key={n.id}>
               <TableCell className="font-medium">{n.memberName}</TableCell>
-              <TableCell className="text-sm">{formatTemplate(n.templateName)}</TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell text-sm">{formatTemplate(n.templateName)}</TableCell>
+              <TableCell className="hidden sm:table-cell">
                 <span className="flex items-center gap-1.5">
                   {channelIcons[n.channel] || null}
                   <span className="capitalize text-sm">{n.channel}</span>
                 </span>
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">{n.recipient || "-"}</TableCell>
+              <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{n.recipient || "-"}</TableCell>
               <TableCell>
                 <div>
                   <Badge variant={statusVariant[n.status] ?? "secondary"}>
@@ -347,10 +347,10 @@ export default function NotificationsPage() {
                   )}
                 </div>
               </TableCell>
-              <TableCell className="text-sm">
+              <TableCell className="hidden sm:table-cell text-sm">
                 {new Date(n.deliveryDate).toLocaleDateString("en-IN")}
               </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
+              <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                 {n.sentAt
                   ? new Date(n.sentAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
                   : "-"}

@@ -151,7 +151,7 @@ export default function PayrollPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Payroll</h1>
       </div>
 
@@ -163,7 +163,7 @@ export default function PayrollPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{fmt(total)}</p>
+            <p className="text-xl md:text-2xl font-bold">{fmt(total)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -173,7 +173,7 @@ export default function PayrollPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
+            <p className="text-xl md:text-2xl font-bold">
               {payrolls.filter((p) => p.status === "pending").length}
             </p>
           </CardContent>
@@ -185,14 +185,14 @@ export default function PayrollPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
+            <p className="text-xl md:text-2xl font-bold">
               {payrolls.filter((p) => p.status === "paid").length}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex gap-3 items-end flex-wrap">
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end flex-wrap">
         <div>
           <Label>Month</Label>
           <Input
@@ -203,7 +203,7 @@ export default function PayrollPage() {
               setYear(parseInt(y, 10));
               setMonth(parseInt(m, 10));
             }}
-            className="w-40"
+            className="w-full sm:w-40"
           />
         </div>
       </div>
@@ -212,10 +212,10 @@ export default function PayrollPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Worker</TableHead>
-            <TableHead className="text-right">Base Salary</TableHead>
-            <TableHead className="text-right">Commission</TableHead>
-            <TableHead className="text-right">Bonus</TableHead>
-            <TableHead className="text-right">Deductions</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Base Salary</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Commission</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Bonus</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Deductions</TableHead>
             <TableHead className="text-right">Net Payable</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
@@ -225,10 +225,10 @@ export default function PayrollPage() {
           {payrolls.map((p) => (
             <TableRow key={p.id}>
               <TableCell className="font-medium">{p.workerName}</TableCell>
-              <TableCell className="text-right">{fmt(p.baseSalary)}</TableCell>
-              <TableCell className="text-right">{fmt(p.commission)}</TableCell>
-              <TableCell className="text-right">{fmt(p.bonus)}</TableCell>
-              <TableCell className="text-right">{fmt(p.deductions)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmt(p.baseSalary)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmt(p.commission)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmt(p.bonus)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmt(p.deductions)}</TableCell>
               <TableCell className="text-right font-semibold">
                 {fmt(p.netPayable)}
               </TableCell>

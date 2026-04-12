@@ -395,7 +395,7 @@ export function MemberDetailClient({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {!member.isActive && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm">
           <p className="font-medium">This member is deactivated</p>
@@ -408,7 +408,7 @@ export function MemberDetailClient({
           <span className="text-yellow-700 dark:text-yellow-400">{anomaly.message}</span>
         </div>
       )}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         <Link href="/admin/members">
           <Button variant="outline" size="sm">
             Back
@@ -741,7 +741,7 @@ export function MemberDetailClient({
           <CardTitle>Profile</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm max-w-lg">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm max-w-lg">
             <dt className="text-muted-foreground">Name</dt>
             <dd>
               {member.firstname} {member.lastname}
@@ -776,7 +776,7 @@ export function MemberDetailClient({
               <TableHeader>
                 <TableRow>
                   <TableHead>Plan</TableHead>
-                  <TableHead>Buy Date</TableHead>
+                  <TableHead className="hidden sm:table-cell">Buy Date</TableHead>
                   <TableHead>Expire Date</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -789,7 +789,7 @@ export function MemberDetailClient({
                   return (
                     <TableRow key={ticket.id}>
                       <TableCell>{ticket.plan.name}</TableCell>
-                      <TableCell>{fmt(ticket.buyDate)}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{fmt(ticket.buyDate)}</TableCell>
                       <TableCell>{fmt(ticket.expireDate)}</TableCell>
                       <TableCell>
                         {cancelled ? (
@@ -826,10 +826,10 @@ export function MemberDetailClient({
                   <TableHead>Date</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Amount</TableHead>
-                  <TableHead>Mode</TableHead>
-                  <TableHead>UPI Ref</TableHead>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Collected By</TableHead>
+                  <TableHead className="hidden sm:table-cell">Mode</TableHead>
+                  <TableHead className="hidden md:table-cell">UPI Ref</TableHead>
+                  <TableHead className="hidden md:table-cell">Invoice #</TableHead>
+                  <TableHead className="hidden lg:table-cell">Collected By</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -838,10 +838,10 @@ export function MemberDetailClient({
                     <TableCell>{fmt(p.date)}</TableCell>
                     <TableCell>{p.planName}</TableCell>
                     <TableCell>{inr.format(p.amount)}</TableCell>
-                    <TableCell>{p.paymentMode}</TableCell>
-                    <TableCell>{p.upiReference ?? "-"}</TableCell>
-                    <TableCell>{p.invoiceNumber ?? "-"}</TableCell>
-                    <TableCell>{p.collectedBy}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{p.paymentMode}</TableCell>
+                    <TableCell className="hidden md:table-cell">{p.upiReference ?? "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{p.invoiceNumber ?? "-"}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{p.collectedBy}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -913,13 +913,13 @@ export function MemberDetailClient({
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Weight</TableHead>
-                  <TableHead>Height</TableHead>
+                  <TableHead className="hidden sm:table-cell">Height</TableHead>
                   <TableHead>BMI</TableHead>
-                  <TableHead>Chest</TableHead>
-                  <TableHead>Waist</TableHead>
-                  <TableHead>Hips</TableHead>
-                  <TableHead>Biceps</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead className="hidden md:table-cell">Chest</TableHead>
+                  <TableHead className="hidden md:table-cell">Waist</TableHead>
+                  <TableHead className="hidden md:table-cell">Hips</TableHead>
+                  <TableHead className="hidden md:table-cell">Biceps</TableHead>
+                  <TableHead className="hidden lg:table-cell">Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -927,13 +927,13 @@ export function MemberDetailClient({
                   <TableRow key={m.id}>
                     <TableCell>{fmt(m.date)}</TableCell>
                     <TableCell>{m.weight ?? "-"}</TableCell>
-                    <TableCell>{m.height ?? "-"}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{m.height ?? "-"}</TableCell>
                     <TableCell>{m.bmi ?? "-"}</TableCell>
-                    <TableCell>{m.chest ?? "-"}</TableCell>
-                    <TableCell>{m.waist ?? "-"}</TableCell>
-                    <TableCell>{m.hips ?? "-"}</TableCell>
-                    <TableCell>{m.biceps ?? "-"}</TableCell>
-                    <TableCell>{m.notes ?? "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{m.chest ?? "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{m.waist ?? "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{m.hips ?? "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">{m.biceps ?? "-"}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{m.notes ?? "-"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -955,9 +955,9 @@ export function MemberDetailClient({
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Check In</TableHead>
-                  <TableHead>Check Out</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead className="hidden sm:table-cell">Check Out</TableHead>
+                  <TableHead className="hidden sm:table-cell">Location</TableHead>
+                  <TableHead className="hidden md:table-cell">Source</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -965,11 +965,11 @@ export function MemberDetailClient({
                   <TableRow key={log.id}>
                     <TableCell>{fmt(log.attendanceDate)}</TableCell>
                     <TableCell>{fmtTime(log.checkIn)}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       {log.checkOut ? fmtTime(log.checkOut) : "-"}
                     </TableCell>
-                    <TableCell>{log.location.name}</TableCell>
-                    <TableCell>{log.source}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{log.location.name}</TableCell>
+                    <TableCell className="hidden md:table-cell">{log.source}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

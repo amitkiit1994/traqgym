@@ -251,7 +251,7 @@ export function AiChat({
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] -m-6 -mt-2">
+    <div className="flex h-[calc(100vh-8rem)] -m-3 -mt-2 md:-m-6 md:-mt-2">
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
@@ -277,7 +277,7 @@ export function AiChat({
         </div>
 
         {/* Messages */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-6">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 py-4 md:px-4 md:py-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
@@ -341,7 +341,7 @@ export function AiChat({
                   ) : (
                     <>
                       <div
-                        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                        className={`max-w-[90%] sm:max-w-[80%] rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 text-sm ${
                           msg.role === "user"
                             ? "bg-primary text-primary-foreground rounded-br-md"
                             : "bg-muted rounded-bl-md"
@@ -413,7 +413,7 @@ export function AiChat({
         )}
 
         {/* Input */}
-        <div className="px-4 py-3 border-t border-border/50">
+        <div className="px-3 py-2 md:px-4 md:py-3 border-t border-border/50">
           <div className="max-w-3xl mx-auto flex gap-2">
             <textarea
               ref={inputRef}
@@ -442,7 +442,7 @@ export function AiChat({
 
       {/* Thread sidebar — right side */}
       <div
-        className={`border-l border-border/50 flex flex-col bg-muted/30 transition-all duration-200 ${
+        className={`border-l border-border/50 flex-col bg-muted/30 transition-all duration-200 hidden sm:flex ${
           sidebarOpen ? "w-64" : "w-0 overflow-hidden"
         }`}
       >

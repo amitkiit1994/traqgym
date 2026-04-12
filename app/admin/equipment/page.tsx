@@ -146,12 +146,12 @@ export default function EquipmentPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Equipment</h1>
         <Button onClick={openCreate}>Add Equipment</Button>
       </div>
 
-      <div className="flex gap-3 items-end flex-wrap">
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
         <div>
           <Label>Location</Label>
           <Select value={filterLocation} onValueChange={(v) => setFilterLocation(v ?? "")}>
@@ -207,10 +207,10 @@ export default function EquipmentPage() {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Category</TableHead>
-            <TableHead>Location</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
             <TableHead>Condition</TableHead>
-            <TableHead>Last Service</TableHead>
-            <TableHead>Next Service</TableHead>
+            <TableHead className="hidden lg:table-cell">Last Service</TableHead>
+            <TableHead className="hidden md:table-cell">Next Service</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -226,18 +226,18 @@ export default function EquipmentPage() {
                   {item.category.replace("_", " ")}
                 </Badge>
               </TableCell>
-              <TableCell>{item.locationName}</TableCell>
+              <TableCell className="hidden md:table-cell">{item.locationName}</TableCell>
               <TableCell>
                 <Badge className={conditionColor(item.condition)}>
                   {item.condition.replace("_", " ")}
                 </Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden lg:table-cell">
                 {item.lastServiceDate
                   ? new Date(item.lastServiceDate).toLocaleDateString("en-IN")
                   : "-"}
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">
                 {item.nextServiceDate ? (
                   <span
                     className={item.needsService ? "text-status-grace-foreground font-semibold" : ""}

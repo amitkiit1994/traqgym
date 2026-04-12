@@ -103,19 +103,20 @@ export default function PlansPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Plans</h1>
         <Button onClick={openCreate}>Add Plan</Button>
       </div>
 
+      <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>ID</TableHead>
+            <TableHead className="hidden md:table-cell">ID</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Price</TableHead>
-            <TableHead>Expire Days</TableHead>
-            <TableHead>Occasions</TableHead>
+            <TableHead className="hidden md:table-cell">Expire Days</TableHead>
+            <TableHead className="hidden md:table-cell">Occasions</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -123,11 +124,11 @@ export default function PlansPage() {
         <TableBody>
           {plans.map((plan) => (
             <TableRow key={plan.id}>
-              <TableCell>{plan.id}</TableCell>
+              <TableCell className="hidden md:table-cell">{plan.id}</TableCell>
               <TableCell>{plan.name}</TableCell>
               <TableCell>{Number(plan.price).toFixed(2)}</TableCell>
-              <TableCell>{plan.expireDays}</TableCell>
-              <TableCell>{plan.occasions ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{plan.expireDays}</TableCell>
+              <TableCell className="hidden md:table-cell">{plan.occasions ?? "-"}</TableCell>
               <TableCell>
                 <Badge variant={plan.isActive ? "default" : "secondary"}>
                   {plan.isActive ? "Active" : "Inactive"}
@@ -163,6 +164,7 @@ export default function PlansPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">

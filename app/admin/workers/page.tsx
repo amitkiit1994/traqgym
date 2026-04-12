@@ -173,7 +173,7 @@ export default function WorkersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Workers</h1>
         <Button onClick={openCreate}>Add Worker</Button>
       </div>
@@ -182,9 +182,9 @@ export default function WorkersPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
+            <TableHead className="hidden md:table-cell">Email</TableHead>
             <TableHead>Role</TableHead>
-            <TableHead>Location</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -195,9 +195,9 @@ export default function WorkersPage() {
               <TableCell>
                 {w.firstname} {w.lastname}
               </TableCell>
-              <TableCell>{w.email}</TableCell>
+              <TableCell className="hidden md:table-cell">{w.email}</TableCell>
               <TableCell>{w.role}</TableCell>
-              <TableCell>{w.location?.name ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{w.location?.name ?? "-"}</TableCell>
               <TableCell>
                 <Badge variant={w.isActive ? "default" : "secondary"}>
                   {w.isActive ? "Active" : "Inactive"}

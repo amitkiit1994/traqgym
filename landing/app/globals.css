@@ -360,3 +360,32 @@ body {
 ::-webkit-scrollbar-track { background: #050507; }
 ::-webkit-scrollbar-thumb { background: rgba(129, 140, 248, 0.15); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(129, 140, 248, 0.3); }
+
+/* ─── Mobile responsive fixes ─── */
+@media (max-width: 640px) {
+  .orb-violet { width: 250px; height: 250px; }
+  .orb-cyan { width: 200px; height: 200px; }
+  .orb-pink { width: 150px; height: 150px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .particle { display: none; }
+}
+
+@media (max-width: 640px) {
+  .aurora::before, .aurora::after {
+    width: 100%;
+    left: 0;
+    filter: blur(30px);
+  }
+}
+
+@media (hover: none) {
+  .glass:hover { transform: none; box-shadow: none; }
+  .glow-card:hover { transform: none; }
+}

@@ -154,7 +154,7 @@ export default function DietPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Diet Plans</h1>
         <Button onClick={openCreate}>Create Plan</Button>
       </div>
@@ -164,7 +164,7 @@ export default function DietPage() {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Meals</TableHead>
-            <TableHead>Created By</TableHead>
+            <TableHead className="hidden md:table-cell">Created By</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -183,7 +183,7 @@ export default function DietPage() {
               <TableCell>
                 <Badge variant="outline">{p._count.meals} meals</Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">
                 {p.createdBy
                   ? `${p.createdBy.firstname} ${p.createdBy.lastname}`
                   : "-"}
@@ -250,7 +250,7 @@ export default function DietPage() {
                 <p className="text-xs text-destructive">{errors.meals}</p>
               )}
               {meals.map((meal, i) => (
-                <div key={i} className="grid grid-cols-4 gap-2 items-end border rounded-md p-2">
+                <div key={i} className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end border rounded-md p-2">
                   <div>
                     <Label className="text-xs">Type</Label>
                     <select

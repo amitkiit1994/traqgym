@@ -135,7 +135,7 @@ export default function POSPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Point of Sale</h1>
       </div>
 
@@ -143,7 +143,7 @@ export default function POSPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Category</TableHead>
+            <TableHead className="hidden md:table-cell">Category</TableHead>
             <TableHead className="text-right">Price</TableHead>
             <TableHead className="text-right">Stock</TableHead>
             <TableHead>Actions</TableHead>
@@ -153,7 +153,7 @@ export default function POSPage() {
           {products.map((p) => (
             <TableRow key={p.id}>
               <TableCell className="font-medium">{p.name}</TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">
                 <Badge variant="outline" className="capitalize">
                   {p.category}
                 </Badge>
@@ -168,7 +168,7 @@ export default function POSPage() {
                 )}
               </TableCell>
               <TableCell>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
                   <Button
                     variant="default"
                     size="sm"

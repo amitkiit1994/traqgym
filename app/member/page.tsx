@@ -146,7 +146,7 @@ export default async function MemberHomePage() {
   const dayNames = ["M", "T", "W", "T", "F", "S", "S"];
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
       <h1 className="text-2xl font-bold">Welcome, {session.user.name}</h1>
 
       {/* Announcements */}
@@ -212,9 +212,9 @@ export default async function MemberHomePage() {
 
       {/* Membership Status Hero Card */}
       <Card className={`${statusBorderColor} gradient-border-card shine dark:bg-card/80`}>
-        <CardContent className="flex items-center gap-6 py-5">
+        <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 py-5">
           <div className="flex flex-col items-center justify-center shrink-0">
-            <div className={`text-4xl font-bold ${statusColor} stat-value-glow`}>
+            <div className={`text-2xl sm:text-4xl font-bold ${statusColor} stat-value-glow`}>
               {activeTicket ? daysRemaining : 0}
             </div>
             <div className="text-xs text-muted-foreground mt-1">days left</div>
@@ -260,7 +260,7 @@ export default async function MemberHomePage() {
       </Card>
 
       {/* Quick Stats Row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
             <CalendarCheck className="size-5 text-blue-500 shrink-0" />
@@ -292,7 +292,7 @@ export default async function MemberHomePage() {
 
       {/* Attendance Streak */}
       <Card className="gradient-border-card dark:bg-card/80">
-        <CardContent className="flex items-center justify-between py-4 px-4">
+        <CardContent className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 py-4 px-4">
           <div className="flex items-center gap-3">
             <Flame className={`size-5 ${streak > 0 ? "text-orange-500" : "text-muted-foreground"}`} />
             <div>

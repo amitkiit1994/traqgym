@@ -55,8 +55,8 @@ export default function ActivityPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Activity Feed</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-semibold">Activity Feed</h1>
         <Button variant="outline" size="sm" onClick={load} disabled={isPending}>
           {isPending ? "Loading..." : "Refresh"}
         </Button>
@@ -65,7 +65,7 @@ export default function ActivityPage() {
       <div className="space-y-2 max-w-2xl">
         {items.map((item) => (
           <Card key={item.id} className={`${typeBg[item.type] || ""}`}>
-            <CardContent className="py-3 px-4 flex items-start justify-between gap-4">
+            <CardContent className="py-3 px-3 sm:px-4 flex items-start justify-between gap-2 sm:gap-4">
               <div className="flex-1">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {typeIcons[item.type] || item.type}

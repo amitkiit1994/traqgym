@@ -121,7 +121,7 @@ export default function FacilityBookingsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Facility Bookings</h1>
       </div>
 
@@ -182,7 +182,7 @@ export default function FacilityBookingsPage() {
       {/* Slot Viewer */}
       {selectedFacility && (
         <div className="space-y-3">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
             <h2 className="text-lg font-semibold">
               Slots:{" "}
               {facilities.find((f) => f.id === selectedFacility)?.name}
@@ -199,8 +199,8 @@ export default function FacilityBookingsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Booked</TableHead>
+                <TableHead className="hidden md:table-cell">Capacity</TableHead>
+                <TableHead className="hidden md:table-cell">Booked</TableHead>
                 <TableHead>Available</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
@@ -212,8 +212,8 @@ export default function FacilityBookingsPage() {
                   <TableCell>
                     {s.startTime} - {s.endTime}
                   </TableCell>
-                  <TableCell>{s.maxCapacity}</TableCell>
-                  <TableCell>{s.bookedCount}</TableCell>
+                  <TableCell className="hidden md:table-cell">{s.maxCapacity}</TableCell>
+                  <TableCell className="hidden md:table-cell">{s.bookedCount}</TableCell>
                   <TableCell>{s.available}</TableCell>
                   <TableCell>
                     <Badge

@@ -18,7 +18,7 @@ type ChartData = {
 
 export function WeightChart({ data }: { data: ChartData[] }) {
   return (
-    <ResponsiveContainer width="100%" height={250}>
+    <ResponsiveContainer width="100%" height={200}>
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
         <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />

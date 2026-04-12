@@ -291,9 +291,9 @@ export function DashboardClient({
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
+        <h1 className="text-xl md:text-2xl font-bold">Dashboard</h1>
         {locations.length > 1 ? (
           <Select
             value={currentLocationId ? String(currentLocationId) : "all"}
@@ -446,7 +446,7 @@ export function DashboardClient({
       )}
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">
@@ -454,7 +454,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">{stats.activeMembers}</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.activeMembers}</p>
             <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
               {membersTrend !== null ? (
                 <>
@@ -484,7 +484,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">
               {new Intl.NumberFormat("en-IN", {
                 style: "currency",
                 currency: "INR",
@@ -520,7 +520,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">
               {stats.expiringIn3Days.length}
             </p>
           </CardContent>
@@ -533,7 +533,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">{stats.todayCheckIns}</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.todayCheckIns}</p>
           </CardContent>
         </Card>
 
@@ -544,7 +544,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">{stats.expiredMembers}</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.expiredMembers}</p>
           </CardContent>
         </Card>
 
@@ -555,7 +555,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">{stats.totalMembers}</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.totalMembers}</p>
           </CardContent>
         </Card>
 
@@ -566,7 +566,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold">
               {new Intl.NumberFormat("en-IN", {
                 style: "currency",
                 currency: "INR",
@@ -589,7 +589,7 @@ export function DashboardClient({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold stat-value-glow">{stats.currentlyInGym.length}</p>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.currentlyInGym.length}</p>
           </CardContent>
         </Card>
       </div>
@@ -600,7 +600,7 @@ export function DashboardClient({
           <CardTitle>Profit / Loss (This Month)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-sm text-muted-foreground">Revenue</p>
               <p className="text-xl font-bold text-financial-positive">
@@ -651,7 +651,7 @@ export function DashboardClient({
             <div className="space-y-3">
               <div className="text-center">
                 <p className="text-sm text-muted-foreground">{forecast.totalExpiring} members expiring</p>
-                <p className="text-2xl font-bold">
+                <p className="text-xl md:text-2xl font-bold">
                   {formatINR(forecast.totalPotentialRevenue)}
                   <span className="text-sm font-normal text-muted-foreground ml-1">if all renew</span>
                 </p>
@@ -701,15 +701,16 @@ export function DashboardClient({
                     return `${d.getDate()}/${d.getMonth() + 1}`;
                   }}
                   stroke="var(--color-muted-foreground)"
-                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }}
+                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
                   axisLine={{ stroke: "var(--color-border)" }}
                   tickLine={false}
                 />
                 <YAxis
                   stroke="var(--color-muted-foreground)"
-                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }}
+                  tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
                   axisLine={false}
                   tickLine={false}
+                  width={40}
                 />
                 <Tooltip
                   labelFormatter={(v) => new Date(v).toLocaleDateString("en-IN")}
@@ -736,7 +737,7 @@ export function DashboardClient({
       </Card>
 
       {/* Attendance Trend (30 Days) + Staff Leaderboard */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Attendance Trend */}
         <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
           <CardHeader>
@@ -772,6 +773,7 @@ export function DashboardClient({
                     tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
                     axisLine={false}
                     tickLine={false}
+                    width={40}
                   />
                   <Tooltip
                     labelFormatter={(v) => new Date(v).toLocaleDateString("en-IN")}
@@ -843,7 +845,7 @@ export function DashboardClient({
                   );
                 })}
               </div>
-              <Link href="/admin/reports/staff-performance">
+              <Link href="/admin/staff-performance">
                 <Button variant="link" size="sm" className="mt-3 px-0 h-auto text-xs">
                   View full report
                 </Button>

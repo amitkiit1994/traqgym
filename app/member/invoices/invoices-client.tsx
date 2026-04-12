@@ -57,7 +57,7 @@ export function InvoicesClient({ invoices, totalPaid, page, totalPages, search }
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
       <h1 className="text-2xl font-bold">Invoices</h1>
 
       {/* Total paid summary */}
@@ -66,7 +66,7 @@ export function InvoicesClient({ invoices, totalPaid, page, totalPages, search }
           <CardTitle className="text-sm text-muted-foreground">Total Paid</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-3xl font-bold">{formatINR(totalPaid)}</p>
+          <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{formatINR(totalPaid)}</p>
         </CardContent>
       </Card>
 
@@ -103,8 +103,8 @@ export function InvoicesClient({ invoices, totalPaid, page, totalPages, search }
               <TableRow>
                 <TableHead>Invoice #</TableHead>
                 <TableHead>Amount</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Date</TableHead>
+                <TableHead className="hidden md:table-cell">Status</TableHead>
                 <TableHead>Download</TableHead>
               </TableRow>
             </TableHeader>
@@ -115,10 +115,10 @@ export function InvoicesClient({ invoices, totalPaid, page, totalPages, search }
                     {inv.invoiceNumber}
                   </TableCell>
                   <TableCell>{formatINR(inv.amount)}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     {new Date(inv.date).toLocaleDateString("en-IN")}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <Badge
                       variant={
                         inv.status === "paid" ? "default" : "secondary"

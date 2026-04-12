@@ -133,9 +133,9 @@ export default function BalanceDuePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Balance Due Report</h1>
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-bold">Balance Due Report</h1>
         <div className="flex gap-2 items-center">
           <Button variant="outline" size="sm" onClick={handleExport} disabled={data.length === 0}>
             <Download className="size-4" />
@@ -184,12 +184,12 @@ export default function BalanceDuePage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Member</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Plan</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="hidden md:table-cell">Phone</TableHead>
+                    <TableHead className="hidden md:table-cell">Plan</TableHead>
+                    <TableHead className="hidden md:table-cell text-right">Total</TableHead>
+                    <TableHead className="hidden md:table-cell text-right">Paid</TableHead>
                     <TableHead className="text-right">Due</TableHead>
-                    <TableHead>Due Date</TableHead>
+                    <TableHead className="hidden md:table-cell">Due Date</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -208,22 +208,22 @@ export default function BalanceDuePage() {
                       <TableCell className="font-medium">
                         {row.memberName}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {row.phone ? (
                           <a href={`tel:${row.phone}`} className="hover:underline">{row.phone}</a>
                         ) : "-"}
                       </TableCell>
-                      <TableCell>{row.planName}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="hidden md:table-cell">{row.planName}</TableCell>
+                      <TableCell className="hidden md:table-cell text-right">
                         {row.totalAmount?.toLocaleString("en-IN") ?? "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="hidden md:table-cell text-right">
                         {row.amountPaid.toLocaleString("en-IN")}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-red-600">
                         {row.balanceDue.toLocaleString("en-IN")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {row.dueDate
                           ? new Date(row.dueDate).toLocaleDateString("en-IN")
                           : "-"}

@@ -166,7 +166,7 @@ export default function ClassesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Classes</h1>
         <Button onClick={openCreate}>New Class</Button>
       </div>
@@ -176,10 +176,10 @@ export default function ClassesPage() {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Type</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Instructor</TableHead>
-            <TableHead>Capacity</TableHead>
-            <TableHead>Schedule</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
+            <TableHead className="hidden md:table-cell">Instructor</TableHead>
+            <TableHead className="hidden lg:table-cell">Capacity</TableHead>
+            <TableHead className="hidden lg:table-cell">Schedule</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -200,10 +200,10 @@ export default function ClassesPage() {
                   {c.classType.replace("_", " ")}
                 </Badge>
               </TableCell>
-              <TableCell>{c.locationName}</TableCell>
-              <TableCell>{c.instructorName || "-"}</TableCell>
-              <TableCell>{c.maxCapacity}</TableCell>
-              <TableCell className="text-xs max-w-48 truncate">
+              <TableCell className="hidden md:table-cell">{c.locationName}</TableCell>
+              <TableCell className="hidden md:table-cell">{c.instructorName || "-"}</TableCell>
+              <TableCell className="hidden lg:table-cell">{c.maxCapacity}</TableCell>
+              <TableCell className="hidden lg:table-cell text-xs max-w-48 truncate">
                 {formatSchedule(c.schedules)}
               </TableCell>
               <TableCell>

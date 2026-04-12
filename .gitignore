@@ -55,3 +55,7 @@ public/uploads/
 # landing site build artifacts
 landing/node_modules/
 landing/.next/
+
+# Capacitor
+android/app/build/
+android/.gradle/

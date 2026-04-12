@@ -83,8 +83,8 @@ export default function ClassDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <Link href="/admin/classes">
           <Button variant="ghost" size="sm">
             &larr; Back
@@ -98,7 +98,7 @@ export default function ClassDetailPage() {
         </Badge>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Class Info</CardTitle>
@@ -174,7 +174,7 @@ export default function ClassDetailPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-base">Bookings</CardTitle>
             <div className="flex items-center gap-2">
               <Label htmlFor="bookingDate" className="text-sm">
@@ -195,7 +195,7 @@ export default function ClassDetailPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Member</TableHead>
-                <TableHead>Phone</TableHead>
+                <TableHead className="hidden sm:table-cell">Phone</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -203,7 +203,7 @@ export default function ClassDetailPage() {
               {bookings.map((b) => (
                 <TableRow key={b.id}>
                   <TableCell className="font-medium">{b.userName}</TableCell>
-                  <TableCell>{b.phone || "-"}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{b.phone || "-"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
                       {b.status}

@@ -120,8 +120,8 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Announcements</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-semibold">Announcements</h1>
         <Button onClick={() => { setErrors({}); setDialogOpen(true); }}>
           New Announcement
         </Button>
@@ -130,8 +130,8 @@ export default function AnnouncementsPage() {
       <div className="grid gap-4">
         {announcements.map((a) => (
           <Card key={a.id} className={!a.isActive ? "opacity-50" : ""}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div className="flex items-center gap-2">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0 pb-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-base">{a.title}</CardTitle>
                 <Badge className={priorityColor(a.priority)}>
                   {a.priority}
@@ -150,7 +150,7 @@ export default function AnnouncementsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm">{a.content}</p>
-              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
+              <div className="mt-2 flex flex-wrap gap-2 sm:gap-4 text-xs text-muted-foreground">
                 <span>Location: {a.locationName}</span>
                 <span>
                   Created: {new Date(a.createdAt).toLocaleDateString("en-IN")}

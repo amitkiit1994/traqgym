@@ -118,7 +118,7 @@ export default function GiftCardsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Gift Cards</h1>
         <Button onClick={openCreate}>Create Gift Card</Button>
       </div>
@@ -145,12 +145,12 @@ export default function GiftCardsPage() {
           <TableRow>
             <TableHead>Code</TableHead>
             <TableHead className="text-right">Amount</TableHead>
-            <TableHead className="text-right">Balance</TableHead>
+            <TableHead className="text-right hidden sm:table-cell">Balance</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Recipient</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Expires</TableHead>
-            <TableHead>Created</TableHead>
+            <TableHead className="hidden md:table-cell">Recipient</TableHead>
+            <TableHead className="hidden lg:table-cell">Phone</TableHead>
+            <TableHead className="hidden md:table-cell">Expires</TableHead>
+            <TableHead className="hidden lg:table-cell">Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -158,18 +158,18 @@ export default function GiftCardsPage() {
             <TableRow key={c.id}>
               <TableCell className="font-mono font-medium">{c.code}</TableCell>
               <TableCell className="text-right">{fmt(c.amount)}</TableCell>
-              <TableCell className="text-right">{fmt(c.balance)}</TableCell>
+              <TableCell className="text-right hidden sm:table-cell">{fmt(c.balance)}</TableCell>
               <TableCell>
                 <Badge className={statusColor(c.status)}>{c.status}</Badge>
               </TableCell>
-              <TableCell>{c.recipientName ?? "-"}</TableCell>
-              <TableCell>{c.recipientPhone ?? "-"}</TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">{c.recipientName ?? "-"}</TableCell>
+              <TableCell className="hidden lg:table-cell">{c.recipientPhone ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">
                 {c.expiresAt
                   ? new Date(c.expiresAt).toLocaleDateString("en-IN")
                   : "-"}
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden lg:table-cell">
                 {new Date(c.createdAt).toLocaleDateString("en-IN")}
               </TableCell>
             </TableRow>

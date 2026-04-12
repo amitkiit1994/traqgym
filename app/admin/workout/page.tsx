@@ -161,7 +161,7 @@ export default function WorkoutPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Workout Plans</h1>
         <Button onClick={openCreate}>Create Plan</Button>
       </div>
@@ -171,7 +171,7 @@ export default function WorkoutPage() {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Exercises</TableHead>
-            <TableHead>Created By</TableHead>
+            <TableHead className="hidden md:table-cell">Created By</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -190,7 +190,7 @@ export default function WorkoutPage() {
               <TableCell>
                 <Badge variant="outline">{p._count.exercises} exercises</Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">
                 {p.createdBy
                   ? `${p.createdBy.firstname} ${p.createdBy.lastname}`
                   : "-"}
@@ -257,7 +257,7 @@ export default function WorkoutPage() {
                 <p className="text-xs text-destructive">{errors.exercises}</p>
               )}
               {exercises.map((ex, i) => (
-                <div key={i} className="grid grid-cols-6 gap-2 items-end border rounded-md p-2">
+                <div key={i} className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end border rounded-md p-2">
                   <div className="col-span-2">
                     <Label className="text-xs">Name</Label>
                     <Input

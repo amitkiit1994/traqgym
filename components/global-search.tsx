@@ -191,7 +191,7 @@ export function GlobalSearch() {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative w-72" onKeyDown={handleKeyDown}>
+    <div ref={containerRef} className="relative w-full max-w-72" onKeyDown={handleKeyDown}>
       <div className="relative">
         <Input
           ref={inputRef}

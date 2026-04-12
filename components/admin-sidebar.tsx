@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { GymBrand } from "@/components/gym-brand";
 import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  Drawer,
+  DrawerTrigger,
+  DrawerContent,
+} from "@/components/ui/drawer";
 import {
   LayoutDashboard,
   Users,
@@ -46,6 +51,7 @@ import {
   FileCheck,
   Apple,
   Bot,
+  Menu,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -173,7 +179,7 @@ export function AdminSidebar({
   return (
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-sidebar-border bg-sidebar/70 backdrop-blur-xl backdrop-saturate-[1.4] dark:bg-card/40 dark:backdrop-blur-2xl transition-all duration-200",
+        "hidden md:flex h-full flex-col border-r border-sidebar-border bg-sidebar/70 backdrop-blur-xl backdrop-saturate-[1.4] dark:bg-card/40 dark:backdrop-blur-2xl transition-all duration-200",
         collapsed ? "w-14" : "w-56",
       )}
     >
@@ -325,5 +331,128 @@ export function AdminSidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+export function AdminMobileMenu({
+  role = "admin",
+  counts,
+}: {
+  role?: string;
+  counts?: SidebarCounts;
+}) {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // Close drawer on route change
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <Drawer open={open} onOpenChange={setOpen}>
+      <DrawerTrigger
+        className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors md:hidden"
+        aria-label="Open menu"
+      >
+        <Menu className="size-5" />
+      </DrawerTrigger>
+      <DrawerContent showCloseButton>
+        {/* Header */}
+        <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+          <GymBrand size="sm" className="text-primary" />
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto space-y-1 p-2">
+          {navGroups.map((group) => {
+            const visibleItems = group.items.filter(
+              (item) => !(item.adminOnly && role === "staff")
+            );
+            if (visibleItems.length === 0) return null;
+
+            return (
+              <div key={group.label}>
+                <span className="flex w-full items-center gap-1 px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+                  {group.label}
+                </span>
+                <div className="space-y-0.5 mt-0.5">
+                  {visibleItems.map((item) => {
+                    const active =
+                      item.href === "/admin/dashboard"
+                        ? pathname === "/admin/dashboard"
+                        : pathname.startsWith(item.href);
+                    const Icon = item.icon;
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                          active
+                            ? "sidebar-active-glow text-primary font-semibold"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        )}
+                      >
+                        <Icon className={cn("size-4 shrink-0", active && "drop-shadow-[0_0_4px_rgba(129,140,248,0.4)]")} />
+                        {item.label}
+                        {counts &&
+                          BADGE_MAP[item.href] &&
+                          counts[BADGE_MAP[item.href]] > 0 && (
+                            <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-medium">
+                              {counts[BADGE_MAP[item.href]]}
+                            </span>
+                          )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Bottom section */}
+        <div className="border-t border-sidebar-border space-y-1 p-2">
+          <Link
+            href="/admin/ai"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+              pathname === "/admin/ai"
+                ? "bg-primary/15 text-primary font-semibold"
+                : "bg-primary/8 text-primary hover:bg-primary/15 glow-btn shine"
+            )}
+          >
+            <Sparkles className={cn("size-4 shrink-0", pathname === "/admin/ai" && "drop-shadow-[0_0_4px_rgba(129,140,248,0.4)]")} />
+            Ask AI
+          </Link>
+          <Link
+            href="/admin/ai-activity"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all duration-200",
+              pathname.startsWith("/admin/ai-activity")
+                ? "sidebar-active-glow text-primary font-semibold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            )}
+          >
+            <Bot className="size-4 shrink-0" />
+            AI Activity
+          </Link>
+          <div className="flex items-center justify-between px-3 py-1">
+            <span className="text-xs text-muted-foreground">Theme</span>
+            <ThemeToggle size="sm" />
+          </div>
+          <button
+            type="button"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
+          >
+            <LogOut className="size-4 shrink-0" />
+            Logout
+          </button>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }

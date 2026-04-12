@@ -221,11 +221,11 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 sm:p-6">
       <h1 className="text-xl font-semibold">Settings</h1>
 
       {/* Card 1: Gym Identity */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Gym Identity</CardTitle>
         </CardHeader>
@@ -366,7 +366,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 2: Financial */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Financial</CardTitle>
         </CardHeader>
@@ -420,7 +420,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 3: Membership Policy */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Membership Policy</CardTitle>
         </CardHeader>
@@ -480,7 +480,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 4: Leave Policy */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Leave Policy</CardTitle>
         </CardHeader>
@@ -528,7 +528,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 5: Kiosk & Check-in */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Kiosk &amp; Check-in</CardTitle>
         </CardHeader>
@@ -564,7 +564,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 5: Communication */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Communication</CardTitle>
         </CardHeader>
@@ -639,7 +639,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 6: Automation / Cron Jobs */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Automation</CardTitle>
         </CardHeader>
@@ -749,7 +749,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Card 7: Integrations */}
-      <Card className="max-w-lg">
+      <Card className="max-w-lg w-full">
         <CardHeader>
           <CardTitle>Integrations</CardTitle>
         </CardHeader>
@@ -867,7 +867,7 @@ export default function SettingsPage() {
           {/* Email (SMTP) */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold">Email (SMTP)</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="smtp-host">SMTP Host</Label>
                 <Input
@@ -1014,7 +1014,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Save */}
-      <div className="flex items-center gap-3 max-w-lg">
+      <div className="flex items-center gap-3 max-w-lg w-full">
         <Button onClick={handleSave} disabled={isPending}>
           {isPending ? "Saving..." : "Save Settings"}
         </Button>

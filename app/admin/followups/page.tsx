@@ -131,10 +131,10 @@ export default function FollowupsPage() {
   const totalDue = data.reduce((s, d) => s + d.amountDue, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Payment Followups</h1>
-        <div className="flex gap-2">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-bold">Payment Followups</h1>
+        <div className="flex gap-2 flex-wrap">
           {["all", ...STATUS_OPTIONS].map((s) => (
             <Button
               key={s}
@@ -168,14 +168,14 @@ export default function FollowupsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Member</TableHead>
-                    <TableHead>Phone</TableHead>
+                    <TableHead className="hidden md:table-cell">Phone</TableHead>
                     <TableHead className="text-right">Amount Due</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Days Overdue</TableHead>
-                    <TableHead>Priority</TableHead>
+                    <TableHead className="hidden md:table-cell">Due Date</TableHead>
+                    <TableHead className="hidden md:table-cell">Days Overdue</TableHead>
+                    <TableHead className="hidden lg:table-cell">Priority</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Last Contacted</TableHead>
+                    <TableHead className="hidden lg:table-cell">Assigned To</TableHead>
+                    <TableHead className="hidden lg:table-cell">Last Contacted</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -187,7 +187,7 @@ export default function FollowupsPage() {
                       <TableCell className="font-medium">
                         {f.memberName}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <div className="flex items-center gap-1">
                           {f.phone ? (
                             <a href={`tel:${f.phone}`} className="hover:underline">{f.phone}</a>
@@ -207,10 +207,10 @@ export default function FollowupsPage() {
                       <TableCell className="text-right font-semibold">
                         Rs {f.amountDue.toLocaleString("en-IN")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {new Date(f.dueDate).toLocaleDateString("en-IN")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {days > 0 ? (
                           <span className="text-destructive font-medium">{days}d overdue</span>
                         ) : days >= -3 ? (
@@ -219,7 +219,7 @@ export default function FollowupsPage() {
                           <span className="text-muted-foreground">Due in {Math.abs(days)}d</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         <Badge
                           variant={
                             (priorityColor[f.priority] as "destructive" | "secondary" | "outline" | "default") ||
@@ -239,10 +239,10 @@ export default function FollowupsPage() {
                           {f.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         {f.assignedTo?.name || "-"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         {f.lastContactedAt
                           ? new Date(f.lastContactedAt).toLocaleDateString("en-IN")
                           : "-"}

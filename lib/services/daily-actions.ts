@@ -102,7 +102,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "payment_followup",
       label: "Payment follow-ups overdue",
       count: overduePayments,
-      href: "/admin/payments/followups",
+      href: "/admin/followups",
       priority: "high",
     });
   }
@@ -142,7 +142,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "pending_leave",
       label: "Pending leave requests",
       count: pendingLeaves,
-      href: "/admin/workers",
+      href: "/admin/leaves",
       priority: "low",
     });
   }

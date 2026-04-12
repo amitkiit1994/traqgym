@@ -45,6 +45,7 @@ export function GymBrand({ size = "md", className = "", showName = true }: GymBr
           height={s.logo}
           className="object-contain"
           unoptimized
+          priority
         />
       )}
       {showName && (

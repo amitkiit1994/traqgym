@@ -205,7 +205,7 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Expenses</h1>
         <Button onClick={openCreate}>New Expense</Button>
       </div>
@@ -219,7 +219,7 @@ export default function ExpensesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{fmt(summary.total)}</p>
+            <p className="text-xl md:text-2xl font-bold">{fmt(summary.total)}</p>
           </CardContent>
         </Card>
         {summary.byCategory.slice(0, 3).map((c) => (
@@ -230,14 +230,14 @@ export default function ExpensesPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{fmt(c.total)}</p>
+              <p className="text-xl md:text-2xl font-bold">{fmt(c.total)}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 items-end flex-wrap">
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
         <Button variant="outline" size="sm" onClick={handleExport} disabled={expenses.length === 0} className="self-end">
           <Download className="size-4" />
           Export
@@ -248,7 +248,7 @@ export default function ExpensesPage() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="w-40"
+            className="w-full sm:w-40"
           />
         </div>
         {locations.length > 1 ? (
@@ -305,14 +305,14 @@ export default function ExpensesPage() {
                 Category <SortIcon field="category" current={sortField} dir={sortDir} />
               </button>
             </TableHead>
-            <TableHead>Description</TableHead>
+            <TableHead className="hidden md:table-cell">Description</TableHead>
             <TableHead className="text-right">
               <button type="button" className="flex items-center gap-1 hover:text-foreground ml-auto" onClick={() => toggleSort("amount")}>
                 Amount <SortIcon field="amount" current={sortField} dir={sortDir} />
               </button>
             </TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Paid By</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
+            <TableHead className="hidden md:table-cell">Paid By</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -327,10 +327,10 @@ export default function ExpensesPage() {
                   {exp.category}
                 </Badge>
               </TableCell>
-              <TableCell>{exp.description}</TableCell>
+              <TableCell className="hidden md:table-cell">{exp.description}</TableCell>
               <TableCell className="text-right">{fmt(exp.amount)}</TableCell>
-              <TableCell>{exp.locationName}</TableCell>
-              <TableCell className="capitalize">{exp.paidBy ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{exp.locationName}</TableCell>
+              <TableCell className="hidden md:table-cell capitalize">{exp.paidBy ?? "-"}</TableCell>
               <TableCell>
                 <Button
                   variant="outline"

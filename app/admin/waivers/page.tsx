@@ -83,7 +83,7 @@ export default function WaiversPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Waiver Templates</h1>
         <Button onClick={openCreate}>Create Template</Button>
       </div>
@@ -94,7 +94,7 @@ export default function WaiversPage() {
             <TableHead>Name</TableHead>
             <TableHead>Required</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Created</TableHead>
+            <TableHead className="hidden sm:table-cell">Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -123,7 +123,7 @@ export default function WaiversPage() {
                   {t.isActive ? "Active" : "Inactive"}
                 </Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden sm:table-cell">
                 {new Date(t.createdAt).toLocaleDateString("en-IN")}
               </TableCell>
             </TableRow>

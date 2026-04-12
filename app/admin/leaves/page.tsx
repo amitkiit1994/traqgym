@@ -136,7 +136,7 @@ export default function LeavesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Leaves</h1>
         <Button onClick={() => { setShowForm(!showForm); setFormResult(null); }}>
           {showForm ? "Cancel" : "Request Leave"}
@@ -145,12 +145,12 @@ export default function LeavesPage() {
 
       {/* Leave Balance */}
       {balance && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {(["casual", "sick", "personal"] as const).map((type) => (
             <Card key={type}>
               <CardContent className="pt-4">
                 <p className="text-xs text-muted-foreground capitalize">{type} Leave</p>
-                <p className="text-2xl font-semibold">
+                <p className="text-xl md:text-2xl font-semibold">
                   {balance[type].remaining}
                   <span className="text-sm font-normal text-muted-foreground"> / {balance[type].quota}</span>
                 </p>
@@ -242,9 +242,9 @@ export default function LeavesPage() {
           <TableRow>
             <TableHead>Worker</TableHead>
             <TableHead>Type</TableHead>
-            <TableHead>Start</TableHead>
-            <TableHead>End</TableHead>
-            <TableHead>Reason</TableHead>
+            <TableHead className="hidden md:table-cell">Start</TableHead>
+            <TableHead className="hidden md:table-cell">End</TableHead>
+            <TableHead className="hidden md:table-cell">Reason</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Action</TableHead>
           </TableRow>
@@ -254,9 +254,9 @@ export default function LeavesPage() {
             <TableRow key={r.id}>
               <TableCell>{r.workerName}</TableCell>
               <TableCell className="capitalize">{r.leaveType}</TableCell>
-              <TableCell>{formatDate(r.startDate)}</TableCell>
-              <TableCell>{formatDate(r.endDate)}</TableCell>
-              <TableCell>{r.reason || "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{formatDate(r.startDate)}</TableCell>
+              <TableCell className="hidden md:table-cell">{formatDate(r.endDate)}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.reason || "-"}</TableCell>
               <TableCell>
                 <Badge variant={statusBadgeVariant(r.status)} className="capitalize">
                   {r.status}

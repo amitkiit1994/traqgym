@@ -85,10 +85,10 @@ export default function AdminInAppNotificationsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Alerts</h1>
+          <h1 className="text-xl md:text-2xl font-bold">Alerts</h1>
           <p className="text-sm text-muted-foreground">
             {unreadCount > 0
               ? `${unreadCount} unread`
@@ -122,7 +122,7 @@ export default function AdminInAppNotificationsPage() {
                 <div
                   key={n.id}
                   className={cn(
-                    "w-full text-left px-5 py-4 hover:bg-muted/50 transition-colors",
+                    "w-full text-left px-3 py-3 sm:px-5 sm:py-4 hover:bg-muted/50 transition-colors",
                     !n.readAt && "bg-primary/5"
                   )}
                 >

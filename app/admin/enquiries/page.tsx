@@ -184,7 +184,7 @@ export default function EnquiriesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Enquiries</h1>
         <Button onClick={() => setNewOpen(true)}>New Enquiry</Button>
       </div>
@@ -211,11 +211,11 @@ export default function EnquiriesPage() {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="px-4 py-2 text-left font-medium">Name</th>
-                  <th className="px-4 py-2 text-left font-medium">Phone</th>
-                  <th className="px-4 py-2 text-left font-medium">Source</th>
+                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Phone</th>
+                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Source</th>
                   <th className="px-4 py-2 text-left font-medium">Interest</th>
                   <th className="px-4 py-2 text-left font-medium">Status</th>
-                  <th className="px-4 py-2 text-left font-medium">Follow-up</th>
+                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Follow-up</th>
                   <th className="px-4 py-2 text-left font-medium">Actions</th>
                 </tr>
               </thead>
@@ -227,15 +227,15 @@ export default function EnquiriesPage() {
                     onClick={() => handleEdit(e)}
                   >
                     <td className="px-4 py-2">{e.name}</td>
-                    <td className="px-4 py-2">{e.phone}</td>
-                    <td className="px-4 py-2">{sourceLabels[e.source] || e.source}</td>
+                    <td className="px-4 py-2 hidden md:table-cell">{e.phone}</td>
+                    <td className="px-4 py-2 hidden md:table-cell">{sourceLabels[e.source] || e.source}</td>
                     <td className="px-4 py-2">{e.interest || "-"}</td>
                     <td className="px-4 py-2">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusColors[e.status] || ""}`}>
                         {e.status.replace("_", " ")}
                       </span>
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 hidden md:table-cell">
                       {e.followUpDate ? new Date(e.followUpDate).toLocaleDateString("en-IN") : "-"}
                     </td>
                     <td className="px-4 py-2">

@@ -163,8 +163,8 @@ export default function LocationsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Locations</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl md:text-2xl font-semibold">Locations</h1>
         <Button onClick={openCreate}>Add Location</Button>
       </div>
 
@@ -173,8 +173,8 @@ export default function LocationsPage() {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Code</TableHead>
-            <TableHead>Address</TableHead>
-            <TableHead>Phone</TableHead>
+            <TableHead className="hidden md:table-cell">Address</TableHead>
+            <TableHead className="hidden sm:table-cell">Phone</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -185,14 +185,15 @@ export default function LocationsPage() {
             <TableRow>
               <TableCell>{loc.name}</TableCell>
               <TableCell>{loc.code}</TableCell>
-              <TableCell>{loc.address ?? "-"}</TableCell>
-              <TableCell>{loc.phone ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{loc.address ?? "-"}</TableCell>
+              <TableCell className="hidden sm:table-cell">{loc.phone ?? "-"}</TableCell>
               <TableCell>
                 <Badge variant={loc.isActive ? "default" : "secondary"}>
                   {loc.isActive ? "Active" : "Inactive"}
                 </Badge>
               </TableCell>
-              <TableCell className="space-x-2">
+              <TableCell>
+                <div className="flex flex-wrap gap-1">
                 <Button variant="outline" size="sm" onClick={() => openEdit(loc)}>
                   Edit
                 </Button>
@@ -211,6 +212,7 @@ export default function LocationsPage() {
                 >
                   {hoursLocationId === loc.id ? "Hide Hours" : "Hours"}
                 </Button>
+                </div>
               </TableCell>
             </TableRow>
             {hoursLocationId === loc.id && (

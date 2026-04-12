@@ -94,7 +94,7 @@ export default function AuditPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Audit Log</h1>
 
-      <div className="flex gap-3 items-end flex-wrap">
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
         <div>
           <Label>From</Label>
           <Input
@@ -130,7 +130,7 @@ export default function AuditPage() {
             <TableHead>Timestamp</TableHead>
             <TableHead>Action</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Actor</TableHead>
+            <TableHead className="hidden md:table-cell">Actor</TableHead>
             <TableHead>Details</TableHead>
           </TableRow>
         </TableHeader>
@@ -149,7 +149,7 @@ export default function AuditPage() {
                     {log.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   {log.actorType
                     ? `${log.actorType}:${log.actorId}`
                     : "system"}

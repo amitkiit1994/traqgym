@@ -95,7 +95,7 @@ export default function PromosPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Promo Codes</h1>
         <Button onClick={() => setNewOpen(true)}>New Promo</Button>
       </div>
@@ -107,11 +107,11 @@ export default function PromosPage() {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="px-4 py-2 text-left font-medium">Code</th>
-                  <th className="px-4 py-2 text-left font-medium">Type</th>
+                  <th className="px-4 py-2 text-left font-medium hidden sm:table-cell">Type</th>
                   <th className="px-4 py-2 text-left font-medium">Value</th>
-                  <th className="px-4 py-2 text-left font-medium">Valid From</th>
-                  <th className="px-4 py-2 text-left font-medium">Valid To</th>
-                  <th className="px-4 py-2 text-left font-medium">Uses</th>
+                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Valid From</th>
+                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Valid To</th>
+                  <th className="px-4 py-2 text-left font-medium hidden sm:table-cell">Uses</th>
                   <th className="px-4 py-2 text-left font-medium">Status</th>
                   <th className="px-4 py-2 text-left font-medium">Actions</th>
                 </tr>
@@ -120,15 +120,15 @@ export default function PromosPage() {
                 {promos.map((p) => (
                   <tr key={p.id} className="border-b">
                     <td className="px-4 py-2 font-mono font-medium">{p.code}</td>
-                    <td className="px-4 py-2 capitalize">{p.discountType}</td>
+                    <td className="px-4 py-2 capitalize hidden sm:table-cell">{p.discountType}</td>
                     <td className="px-4 py-2">
                       {p.discountType === "percentage"
                         ? `${p.discountValue}%`
                         : `Rs.${p.discountValue}`}
                     </td>
-                    <td className="px-4 py-2">{new Date(p.validFrom).toLocaleDateString("en-IN")}</td>
-                    <td className="px-4 py-2">{new Date(p.validTo).toLocaleDateString("en-IN")}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 hidden md:table-cell">{new Date(p.validFrom).toLocaleDateString("en-IN")}</td>
+                    <td className="px-4 py-2 hidden md:table-cell">{new Date(p.validTo).toLocaleDateString("en-IN")}</td>
+                    <td className="px-4 py-2 hidden sm:table-cell">
                       {p.usedCount}{p.maxUses ? `/${p.maxUses}` : ""}
                     </td>
                     <td className="px-4 py-2">

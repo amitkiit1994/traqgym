@@ -246,7 +246,7 @@ export default function BiometricPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <h1 className="text-xl font-semibold">Biometric Attendance</h1>
 
       {/* SDK Connection Status Banner */}
@@ -296,9 +296,9 @@ export default function BiometricPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Device</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Last Sync</TableHead>
+                  <TableHead className="hidden sm:table-cell">Location</TableHead>
+                  <TableHead className="hidden md:table-cell">Type</TableHead>
+                  <TableHead className="hidden md:table-cell">Last Sync</TableHead>
                   <TableHead>SDK Sync</TableHead>
                 </TableRow>
               </TableHeader>
@@ -306,11 +306,11 @@ export default function BiometricPage() {
                 {devices.map((d) => (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">{d.name}</TableCell>
-                    <TableCell>{d.location.name}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">{d.location.name}</TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <Badge variant="secondary">{d.deviceType}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {formatDate(d.lastSyncAt)}
                     </TableCell>
                     <TableCell>
@@ -331,7 +331,7 @@ export default function BiometricPage() {
           )}
 
           {availableLocations.length > 0 ? (
-            <div className="flex gap-3 items-end flex-wrap border-t pt-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap border-t pt-4">
               <div>
                 <Label>Device Name</Label>
                 <Input
@@ -388,7 +388,7 @@ export default function BiometricPage() {
             <p className="text-xs text-muted-foreground">
               Format: deviceUserId, eventTimestamp, eventType (check_in / check_out)
             </p>
-            <div className="flex gap-3 items-end flex-wrap">
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
               {devices.length > 1 ? (
                 <div>
                   <Label>Device</Label>
@@ -429,7 +429,7 @@ export default function BiometricPage() {
                 {importResult.warning && (
                   <p className="text-status-expiring text-sm mb-2">{importResult.warning}</p>
                 )}
-                <div className="grid grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-muted-foreground">Total</span>
                     <p className="text-lg font-semibold">{importResult.total}</p>
@@ -476,8 +476,8 @@ export default function BiometricPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Device User ID</TableHead>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead className="hidden sm:table-cell">Timestamp</TableHead>
+                      <TableHead className="hidden sm:table-cell">Type</TableHead>
                       <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -485,8 +485,8 @@ export default function BiometricPage() {
                     {unmatchedEvents.map((evt) => (
                       <TableRow key={evt.id}>
                         <TableCell className="font-mono text-sm">{evt.deviceUserId}</TableCell>
-                        <TableCell className="text-sm">{formatDate(evt.eventTimestamp)}</TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell text-sm">{formatDate(evt.eventTimestamp)}</TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Badge variant="secondary">{evt.eventType}</Badge>
                         </TableCell>
                         <TableCell>
@@ -564,9 +564,9 @@ export default function BiometricPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Matched</TableHead>
-                    <TableHead>Unmatched</TableHead>
-                    <TableHead>Duplicates</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead className="hidden sm:table-cell">Unmatched</TableHead>
+                    <TableHead className="hidden md:table-cell">Duplicates</TableHead>
+                    <TableHead className="hidden sm:table-cell">Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -582,9 +582,9 @@ export default function BiometricPage() {
                       </TableCell>
                       <TableCell>{run.totalRecords}</TableCell>
                       <TableCell className="text-status-active">{run.matchedRecords}</TableCell>
-                      <TableCell className="text-status-grace">{run.unmatchedRecords}</TableCell>
-                      <TableCell className="text-muted-foreground">{run.duplicateRecords}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="hidden sm:table-cell text-status-grace">{run.unmatchedRecords}</TableCell>
+                      <TableCell className="hidden md:table-cell text-muted-foreground">{run.duplicateRecords}</TableCell>
+                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                         {formatDate(run.completedAt || run.createdAt)}
                       </TableCell>
                     </TableRow>

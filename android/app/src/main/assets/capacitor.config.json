@@ -1,0 +1,9 @@
+{
+	"appId": "com.traqgym.app",
+	"appName": "TraqGym",
+	"webDir": "out",
+	"server": {
+		"url": "https://freeformfitness.traqgym.com",
+		"cleartext": false
+	}
+}

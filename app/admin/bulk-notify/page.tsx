@@ -175,7 +175,7 @@ export default function BulkNotifyPage() {
       <h1 className="text-xl font-semibold">Notifications</h1>
 
       {/* Tab switcher */}
-      <div className="flex gap-1 max-w-lg">
+      <div className="flex gap-1 max-w-lg flex-wrap">
         <Button
           variant={tab === "bulk" ? "default" : "outline"}
           size="sm"
@@ -194,7 +194,7 @@ export default function BulkNotifyPage() {
 
       {/* Bulk Send */}
       {tab === "bulk" && (
-        <Card className="max-w-lg">
+        <Card className="max-w-lg w-full">
           <CardHeader>
             <CardTitle>Bulk Notification</CardTitle>
           </CardHeader>
@@ -269,7 +269,7 @@ export default function BulkNotifyPage() {
               </div>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={handlePreview} disabled={isPending}>
                 {isPending ? "Loading..." : "Preview Recipients"}
               </Button>
@@ -318,7 +318,7 @@ export default function BulkNotifyPage() {
 
       {/* Targeted Send */}
       {tab === "targeted" && (
-        <Card className="max-w-lg">
+        <Card className="max-w-lg w-full">
           <CardHeader>
             <CardTitle>Send to Selected Members</CardTitle>
           </CardHeader>
@@ -409,7 +409,7 @@ export default function BulkNotifyPage() {
               />
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"

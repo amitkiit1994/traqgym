@@ -96,8 +96,8 @@ export default function UnmatchedPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Unmatched Attendance Events</h1>
+    <div className="space-y-4 md:space-y-6 p-3 md:p-6">
+      <h1 className="text-xl md:text-2xl font-bold">Unmatched Attendance Events</h1>
 
       <Card>
         <CardContent>
@@ -105,8 +105,8 @@ export default function UnmatchedPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Device User ID</TableHead>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Device</TableHead>
+                <TableHead className="hidden sm:table-cell">Timestamp</TableHead>
+                <TableHead className="hidden sm:table-cell">Device</TableHead>
                 <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -114,10 +114,10 @@ export default function UnmatchedPage() {
               {events.map((e) => (
                 <TableRow key={e.id}>
                   <TableCell className="font-mono">{e.deviceUserId}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden sm:table-cell">
                     {new Date(e.eventTimestamp).toLocaleString("en-IN")}
                   </TableCell>
-                  <TableCell>{e.device.name}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{e.device.name}</TableCell>
                   <TableCell>
                     <Button size="sm" onClick={() => openResolve(e)}>
                       Resolve

@@ -24,6 +24,20 @@ export const metadata: Metadata = {
     template: `%s | ${gymName}`,
   },
   description: `${gymName} — powered by TraqGym`,
+  robots: {
+    index: false,
+    follow: false,
+  },
+  other: { "theme-color": "#09090b" },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: gymName,
+  },
+  icons: {
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export default function RootLayout({

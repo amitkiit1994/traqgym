@@ -246,9 +246,9 @@ export default function MembersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Members</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={handleExport} disabled={members.length === 0}>
             <Download className="size-4" />
             Export
@@ -380,7 +380,7 @@ export default function MembersPage() {
             updateUrl({ q, status: statusFilter, page: "1", sort: sortBy, order: sortOrder });
           }}
           isPending={isPending}
-          className="max-w-md"
+          className="w-full sm:w-auto sm:min-w-[250px]"
         />
         <div className="flex gap-1">
           {[
@@ -410,11 +410,11 @@ export default function MembersPage() {
         <TableHeader>
           <TableRow>
             <SortableHead field="name">Name</SortableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Phone</TableHead>
+            <TableHead className="hidden md:table-cell">Email</TableHead>
+            <TableHead className="hidden md:table-cell">Phone</TableHead>
             <SortableHead field="location">Location</SortableHead>
             <SortableHead field="status">Status</SortableHead>
-            <TableHead>Risk</TableHead>
+            <TableHead className="hidden sm:table-cell">Risk</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -424,15 +424,15 @@ export default function MembersPage() {
               <TableCell>
                 {m.firstname} {m.lastname}
               </TableCell>
-              <TableCell>{m.email}</TableCell>
-              <TableCell>{m.phone ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{m.email}</TableCell>
+              <TableCell className="hidden md:table-cell">{m.phone ?? "-"}</TableCell>
               <TableCell>{m.locationName}</TableCell>
               <TableCell>
                 <Badge variant={statusVariant[m.status]}>
                   {statusLabel[m.status]}
                 </Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden sm:table-cell">
                 <Badge variant={riskVariant[m.riskLevel]} title={m.riskReason}>
                   {riskLabel[m.riskLevel]}
                 </Badge>

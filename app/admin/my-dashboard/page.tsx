@@ -139,7 +139,7 @@ export default function MyDashboardPage() {
         <p className="text-sm text-muted-foreground">{message}</p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {/* My Attendance Today */}
         <Card>
           <CardHeader className="pb-2">
@@ -261,22 +261,22 @@ export default function MyDashboardPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Member</TableHead>
-                <TableHead>Plan</TableHead>
+                <TableHead className="hidden sm:table-cell">Plan</TableHead>
                 <TableHead>Amount</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead className="hidden md:table-cell">Mode</TableHead>
+                <TableHead className="hidden sm:table-cell">Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {dashboard.recentCollections.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell>{c.memberName}</TableCell>
-                  <TableCell>{c.planName}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{c.planName}</TableCell>
                   <TableCell>{formatCurrency(c.amount)}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <Badge variant="secondary">{c.paymentMode}</Badge>
                   </TableCell>
-                  <TableCell>{formatDate(c.date)}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{formatDate(c.date)}</TableCell>
                 </TableRow>
               ))}
               {dashboard.recentCollections.length === 0 && (

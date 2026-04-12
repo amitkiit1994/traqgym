@@ -309,7 +309,7 @@ export default function AttendancePage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 items-end flex-wrap">
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
         <div className="space-y-1">
           <Label>Date</Label>
           <DateQuickSelect value={date} onChange={(d) => { setDate(d); updateUrl({ tab, date: d, location: locationFilter }); }} />
@@ -344,7 +344,7 @@ export default function AttendancePage() {
       {/* Member Attendance Tab */}
       {tab === "member" && (
         <>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-2 sm:gap-4">
             <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Total check-ins:</span>
               <span className="font-semibold">{rows.length}</span>
@@ -367,9 +367,9 @@ export default function AttendancePage() {
                     Check-in <SortIcon field="checkIn" current={sortField} dir={sortDir} />
                   </button>
                 </TableHead>
-                <TableHead>Check-out</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>
+                <TableHead className="hidden md:table-cell">Check-out</TableHead>
+                <TableHead className="hidden md:table-cell">Source</TableHead>
+                <TableHead className="hidden md:table-cell">
                   <button type="button" className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort("location")}>
                     Location <SortIcon field="location" current={sortField} dir={sortDir} />
                   </button>
@@ -381,11 +381,11 @@ export default function AttendancePage() {
                 <TableRow key={r.id}>
                   <TableCell>{r.memberName}</TableCell>
                   <TableCell>{formatTime(r.checkIn)}</TableCell>
-                  <TableCell>{r.checkOut ? formatTime(r.checkOut) : "-"}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">{r.checkOut ? formatTime(r.checkOut) : "-"}</TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <Badge variant="secondary">{r.source}</Badge>
                   </TableCell>
-                  <TableCell>{r.locationName}</TableCell>
+                  <TableCell className="hidden md:table-cell">{r.locationName}</TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
@@ -485,7 +485,7 @@ export default function AttendancePage() {
       {/* Staff Attendance Tab */}
       {tab === "staff" && (
         <>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-2 sm:gap-4">
             <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Total check-ins:</span>
               <span className="font-semibold">{workerRows.length}</span>
@@ -503,15 +503,15 @@ export default function AttendancePage() {
                     Worker <SortIcon field="worker" current={staffSortField} dir={staffSortDir} />
                   </button>
                 </TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead className="hidden md:table-cell">Role</TableHead>
                 <TableHead>
                   <button type="button" className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleStaffSort("checkIn")}>
                     Check-in <SortIcon field="checkIn" current={staffSortField} dir={staffSortDir} />
                   </button>
                 </TableHead>
-                <TableHead>Check-out</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>
+                <TableHead className="hidden md:table-cell">Check-out</TableHead>
+                <TableHead className="hidden md:table-cell">Source</TableHead>
+                <TableHead className="hidden md:table-cell">
                   <button type="button" className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleStaffSort("location")}>
                     Location <SortIcon field="location" current={staffSortField} dir={staffSortDir} />
                   </button>
@@ -523,15 +523,15 @@ export default function AttendancePage() {
               {sortedWorkerRows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{r.workerName}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <Badge variant="secondary">{r.workerRole}</Badge>
                   </TableCell>
                   <TableCell>{formatTime(r.checkIn)}</TableCell>
-                  <TableCell>{r.checkOut ? formatTime(r.checkOut) : "-"}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">{r.checkOut ? formatTime(r.checkOut) : "-"}</TableCell>
+                  <TableCell className="hidden md:table-cell">
                     <Badge variant="secondary">{r.source}</Badge>
                   </TableCell>
-                  <TableCell>{r.locationName}</TableCell>
+                  <TableCell className="hidden md:table-cell">{r.locationName}</TableCell>
                   <TableCell>
                     {!r.checkOut && (
                       <Button

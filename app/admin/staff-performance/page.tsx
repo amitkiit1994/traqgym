@@ -59,7 +59,7 @@ export default function StaffPerformancePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Staff Performance</h1>
         <div className="flex items-center gap-2">
           <Label>Month:</Label>
@@ -67,7 +67,7 @@ export default function StaffPerformancePage() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="w-40"
+            className="w-full sm:w-40"
           />
         </div>
       </div>
@@ -80,8 +80,8 @@ export default function StaffPerformancePage() {
                 <tr className="border-b bg-muted/50">
                   <th className="px-4 py-2 text-left font-medium">Staff Name</th>
                   <th className="px-4 py-2 text-right font-medium">Renewals</th>
-                  <th className="px-4 py-2 text-right font-medium">Cash Collected</th>
-                  <th className="px-4 py-2 text-right font-medium">UPI Collected</th>
+                  <th className="px-4 py-2 text-right font-medium hidden md:table-cell">Cash Collected</th>
+                  <th className="px-4 py-2 text-right font-medium hidden md:table-cell">UPI Collected</th>
                   <th className="px-4 py-2 text-right font-medium">Total</th>
                 </tr>
               </thead>
@@ -93,8 +93,8 @@ export default function StaffPerformancePage() {
                       <span className="ml-1 text-xs text-muted-foreground capitalize">({s.role})</span>
                     </td>
                     <td className="px-4 py-2 text-right">{s.renewalCount}</td>
-                    <td className="px-4 py-2 text-right">Rs.{s.cashCollected.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-2 text-right">Rs.{s.upiCollected.toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{s.cashCollected.toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{s.upiCollected.toLocaleString("en-IN")}</td>
                     <td className="px-4 py-2 text-right font-medium">Rs.{s.totalCollected.toLocaleString("en-IN")}</td>
                   </tr>
                 ))}
@@ -102,8 +102,8 @@ export default function StaffPerformancePage() {
                   <tr className="border-t-2 font-semibold bg-muted/30">
                     <td className="px-4 py-2">Totals</td>
                     <td className="px-4 py-2 text-right">{totals.renewals}</td>
-                    <td className="px-4 py-2 text-right">Rs.{totals.cash.toLocaleString("en-IN")}</td>
-                    <td className="px-4 py-2 text-right">Rs.{totals.upi.toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{totals.cash.toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-2 text-right hidden md:table-cell">Rs.{totals.upi.toLocaleString("en-IN")}</td>
                     <td className="px-4 py-2 text-right">Rs.{totals.total.toLocaleString("en-IN")}</td>
                   </tr>
                 )}
@@ -118,7 +118,7 @@ export default function StaffPerformancePage() {
           <CardTitle className="text-base">Total Member Check-ins This Month</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-2xl font-bold">{totalCheckIns}</p>
+          <p className="text-xl md:text-2xl font-bold">{totalCheckIns}</p>
         </CardContent>
       </Card>
     </div>

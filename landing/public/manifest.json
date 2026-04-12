@@ -1,0 +1,16 @@
+{
+  "name": "TraqGym",
+  "short_name": "TraqGym",
+  "description": "AI-Native Gym Management Software",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050507",
+  "theme_color": "#818cf8",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}

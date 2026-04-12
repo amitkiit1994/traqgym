@@ -132,7 +132,7 @@ export default function FamilyPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Family Groups</h1>
         <Button
           onClick={() => {
@@ -185,12 +185,12 @@ export default function FamilyPage() {
                     <TableCell className="pl-8">
                       {m.name}
                       {m.isPrimary && (
-                        <Badge className="ml-2 bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300">
+                        <Badge className="ml-2 bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 hidden sm:inline-flex">
                           Primary
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{m.email}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{m.email}</TableCell>
                     <TableCell>
                       {!m.isPrimary && (
                         <Button

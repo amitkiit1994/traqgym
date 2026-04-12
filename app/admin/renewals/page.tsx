@@ -191,7 +191,7 @@ export default function RenewalsPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Renewals</h1>
 
-      <Card className="max-w-lg">
+      <Card className="max-w-lg mx-auto sm:mx-0">
         <CardHeader>
           <CardTitle>Renew Membership</CardTitle>
         </CardHeader>
@@ -201,8 +201,8 @@ export default function RenewalsPage() {
             <div className="space-y-2">
               <Label>Member</Label>
               {selectedMember ? (
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="max-w-full truncate">
                     {selectedMember.firstname} {selectedMember.lastname} ({selectedMember.email})
                   </Badge>
                   <Button

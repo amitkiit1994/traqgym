@@ -94,7 +94,7 @@ function DashboardContent() {
   }, [showAI, msgIndex, currentConvo.length]);
 
   return (
-    <div className="flex min-h-[480px]">
+    <div className="flex min-h-[300px] md:min-h-[480px]">
       {/* Sidebar */}
       <div className="w-48 border-r border-white/[0.06] bg-surface/50 p-4 hidden md:block shrink-0">
         <div className="flex items-center gap-2 mb-6">
@@ -125,7 +125,7 @@ function DashboardContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 mb-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-5">
             {[
               { label: "Active Members", value: "342", change: "+12", color: "text-green-400" },
               { label: "Today's Check-ins", value: "87", change: "+5", color: "text-green-400" },
@@ -142,8 +142,8 @@ function DashboardContent() {
             ))}
           </div>
 
-          <div className="grid grid-cols-5 gap-3">
-            <div className="col-span-3 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+            <div className="md:col-span-3 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-[12px] font-medium">Revenue Overview</p>
                 <div className="flex gap-3">
@@ -165,7 +165,7 @@ function DashboardContent() {
                 ))}
               </div>
             </div>
-            <div className="col-span-2 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
+            <div className="md:col-span-2 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
               <p className="text-[12px] font-medium mb-3">Recent Members</p>
               {[
                 { name: "Priya Sharma", plan: "6 Month", status: "Active" },
@@ -331,6 +331,7 @@ const iconColorMap: Record<string, string> = {
 
 /* ═══════════════════════════════════════ */
 export default function Home() {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const hero = useInView(0.1);
   const dash = useInView(0.1);
   const feat = useInView(0.1);
@@ -341,24 +342,42 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       {/* Nav */}
+      <header>
       <nav className="fixed top-0 inset-x-0 z-50 border-b border-white/[0.04] bg-[#050507]/60 backdrop-blur-2xl">
         <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <Image src="/logo.png" alt="TraqGym" width={28} height={28} className="drop-shadow-[0_0_8px_rgba(129,140,248,0.3)]" />
+            <Image src="/logo.png" alt="TraqGym" width={28} height={28} className="drop-shadow-[0_0_8px_rgba(129,140,248,0.3)]" priority />
             <span className="text-[15px] font-semibold tracking-tight">TraqGym</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-[13px] text-dim hover:text-accent transition-colors">Features</a>
             <a href="#pricing" className="text-[13px] text-dim hover:text-accent transition-colors">Pricing</a>
           </div>
-          <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="glow-btn text-[13px] font-medium bg-gradient-to-r from-accent to-cyan-brand text-white px-5 py-2 rounded-lg transition-all hover:scale-[1.03]">
+          <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="hidden md:inline-flex glow-btn text-[13px] font-medium bg-gradient-to-r from-accent to-cyan-brand text-white px-5 py-2 rounded-lg transition-all hover:scale-[1.03]">
             Get Started
           </a>
+          <button onClick={() => setMobileNavOpen(v => !v)} className="md:hidden p-2 text-dim hover:text-white transition-colors" aria-label="Toggle menu">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {mobileNavOpen
+                ? <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                : <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              }
+            </svg>
+          </button>
         </div>
+        {mobileNavOpen && (
+          <div className="md:hidden border-t border-white/[0.04] bg-[#050507]/95 backdrop-blur-2xl px-6 py-3 space-y-2">
+            <a href="#features" onClick={() => setMobileNavOpen(false)} className="block text-sm text-dim hover:text-accent py-2">Features</a>
+            <a href="#pricing" onClick={() => setMobileNavOpen(false)} className="block text-sm text-dim hover:text-accent py-2">Pricing</a>
+            <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="block text-sm font-medium text-accent py-2">Get Started</a>
+          </div>
+        )}
       </nav>
+      </header>
 
+      <main>
       {/* Hero */}
-      <section ref={hero.ref} className="relative pt-36 pb-28 overflow-hidden">
+      <section ref={hero.ref} className="relative pt-24 pb-16 md:pt-36 md:pb-28 overflow-hidden">
         <div className="aurora" />
         <Particles />
         <div className="orb-violet -top-40 left-1/2 -translate-x-1/2" />
@@ -382,18 +401,18 @@ export default function Home() {
           </p>
 
           <div className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 ${hero.inView ? "anim-fade-up d-300" : "opacity-0"}`}>
-            <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="glow-btn group bg-gradient-to-r from-accent via-accent-bright to-cyan-brand text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.04] shadow-lg shadow-accent/20">
+            <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="glow-btn group bg-gradient-to-r from-accent via-accent-bright to-cyan-brand text-white px-5 md:px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.04] shadow-lg shadow-accent/20">
               Get Started
               <span className="inline-block ml-2 group-hover:translate-x-1 transition-transform">&rarr;</span>
             </a>
-            <a href="#features" className="group border border-accent/15 px-8 py-3.5 rounded-xl text-sm font-medium hover:bg-accent/[0.05] hover:border-accent/25 transition-all flex items-center gap-2">
+            <a href="#features" className="group border border-accent/15 px-5 md:px-8 py-3.5 rounded-xl text-sm font-medium hover:bg-accent/[0.05] hover:border-accent/25 transition-all flex items-center gap-2">
               See Features
               <span className="inline-block group-hover:translate-x-1 transition-transform">&darr;</span>
             </a>
           </div>
 
           {/* Stats */}
-          <div className={`mt-24 grid grid-cols-3 gap-8 max-w-xl mx-auto ${hero.inView ? "anim-fade-up d-400" : "opacity-0"}`}>
+          <div className={`mt-24 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-8 max-w-xl mx-auto ${hero.inView ? "anim-fade-up d-400" : "opacity-0"}`}>
             {[
               { value: "< 2 min", l: "Setup Time" },
               { value: "Zero", l: "Spreadsheets Needed" },
@@ -412,7 +431,7 @@ export default function Home() {
       </section>
 
       {/* Dashboard Preview */}
-      <section ref={dash.ref} className="pb-28 -mt-8 relative overflow-hidden">
+      <section ref={dash.ref} className="pb-16 md:pb-28 -mt-8 relative overflow-hidden">
         <div className="relative mx-auto max-w-5xl px-6">
           <div className={`${dash.inView ? "anim-fade-up d-200" : "opacity-0"}`}>
             {/* Browser frame */}
@@ -444,7 +463,7 @@ export default function Home() {
       <div className="gradient-line" />
 
       {/* Features */}
-      <section id="features" ref={feat.ref} className="py-28 relative overflow-hidden">
+      <section id="features" ref={feat.ref} className="py-16 md:py-28 relative overflow-hidden">
         <div className="dot-grid absolute inset-0 opacity-60" />
         <Particles />
 
@@ -461,7 +480,7 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {features.map((f, i) => (
-              <div key={f.title} className={`glass shine rounded-2xl p-7 group ${feat.inView ? `anim-fade-up d-${(i + 1) * 100}` : "opacity-0"}`}>
+              <div key={f.title} className={`glass shine rounded-2xl p-5 md:p-7 group ${feat.inView ? `anim-fade-up d-${(i + 1) * 100}` : "opacity-0"}`}>
                 <div className={`w-11 h-11 rounded-xl border flex items-center justify-center mb-5 transition-all ${iconColorMap[f.color]}`}>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d={f.icon} />
@@ -478,7 +497,7 @@ export default function Home() {
       <div className="gradient-line" />
 
       {/* Pricing */}
-      <section id="pricing" ref={price.ref} className="py-28 relative overflow-hidden">
+      <section id="pricing" ref={price.ref} className="py-16 md:py-28 relative overflow-hidden">
         <div className="orb-cyan -bottom-40 right-0 opacity-25" />
         <div className="orb-violet -top-40 -left-40 opacity-20" />
 
@@ -497,7 +516,7 @@ export default function Home() {
             {plans.map((plan, i) => (
               <div
                 key={plan.name}
-                className={`rounded-2xl p-7 transition-all duration-400 hover:scale-[1.03] relative ${
+                className={`rounded-2xl p-5 md:p-7 transition-all duration-400 hover:scale-[1.03] relative ${
                   plan.featured
                     ? "animated-border !overflow-visible bg-gradient-to-b from-accent/[0.06] to-transparent shadow-[0_0_60px_rgba(129,140,248,0.08)]"
                     : "glow-card"
@@ -530,7 +549,7 @@ export default function Home() {
             ))}
           </div>
           <div className={`text-center mt-10 ${price.inView ? "anim-fade-up d-400" : "opacity-0"}`}>
-            <a href="mailto:contactus@traqgym.com?subject=TraqGym Pricing Enquiry" className="glow-btn inline-flex items-center gap-2 bg-gradient-to-r from-accent to-cyan-brand text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.03] shadow-lg shadow-accent/20">
+            <a href="mailto:contactus@traqgym.com?subject=TraqGym Pricing Enquiry" className="glow-btn inline-flex items-center gap-2 bg-gradient-to-r from-accent to-cyan-brand text-white px-5 md:px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.03] shadow-lg shadow-accent/20">
               Get Started
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
             </a>
@@ -542,12 +561,12 @@ export default function Home() {
       <div className="gradient-line" />
 
       {/* Partners */}
-      <section ref={partner.ref} className="py-28 relative overflow-hidden">
+      <section ref={partner.ref} className="py-16 md:py-28 relative overflow-hidden">
         <div className="relative mx-auto max-w-6xl px-6">
           <p className={`text-[11px] text-dim uppercase tracking-[0.2em] font-semibold text-center mb-14 ${partner.inView ? "anim-fade-up" : "opacity-0"}`}>
             Trusted by gyms across India
           </p>
-          <div className="flex justify-center gap-6 max-w-2xl mx-auto mb-20">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-6 max-w-2xl mx-auto mb-20">
             {partners.map((p, i) => (
               <div key={p.name} className={`glass shine rounded-2xl p-6 text-center flex-1 max-w-xs ${partner.inView ? `anim-fade-up d-${(i + 1) * 100}` : "opacity-0"}`}>
                 <p className="font-semibold text-[16px] text-white/90">{p.name}</p>
@@ -591,7 +610,7 @@ export default function Home() {
       <div className="gradient-line" />
 
       {/* CTA */}
-      <section ref={cta.ref} className="py-28 relative overflow-hidden">
+      <section ref={cta.ref} className="py-16 md:py-28 relative overflow-hidden">
         <Particles />
         <div className="mx-auto max-w-6xl px-6">
           <div className={`relative rounded-3xl border border-accent/15 overflow-hidden ${cta.inView ? "anim-scale-in" : "opacity-0"}`}>
@@ -602,7 +621,7 @@ export default function Home() {
             <div className="orb-cyan bottom-0 left-0 opacity-30" />
             <div className="orb-pink top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20" />
 
-            <div className="relative py-16 md:py-24 px-8 text-center">
+            <div className="relative py-12 md:py-24 px-5 md:px-8 text-center">
               <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-5">
                 Ready to <span className="gradient-text">transform</span> your gym?
               </h2>
@@ -617,6 +636,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      </main>
 
       {/* Footer */}
       <footer className="border-t border-white/[0.04] py-10">

@@ -103,7 +103,7 @@ function CollectionReport({ locations }: { locations: LocationOption[] }) {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <Label>Date</Label>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-40" />
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full sm:w-40" />
         </div>
         {locations.length > 1 ? (
           <div>
@@ -136,9 +136,9 @@ function CollectionReport({ locations }: { locations: LocationOption[] }) {
             <TableHead>Plan</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Mode</TableHead>
-            <TableHead>UPI Ref</TableHead>
-            <TableHead>Collected By</TableHead>
-            <TableHead>Time</TableHead>
+            <TableHead className="hidden md:table-cell">UPI Ref</TableHead>
+            <TableHead className="hidden md:table-cell">Collected By</TableHead>
+            <TableHead className="hidden md:table-cell">Time</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -148,9 +148,9 @@ function CollectionReport({ locations }: { locations: LocationOption[] }) {
               <TableCell>{r.planName}</TableCell>
               <TableCell className="text-right">{r.amount.toFixed(2)}</TableCell>
               <TableCell>{r.paymentMode}</TableCell>
-              <TableCell>{r.upiReference ?? "-"}</TableCell>
-              <TableCell>{r.collectedBy}</TableCell>
-              <TableCell>{fmtTime(r.time)}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.upiReference ?? "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.collectedBy}</TableCell>
+              <TableCell className="hidden md:table-cell">{fmtTime(r.time)}</TableCell>
             </TableRow>
           ))}
           {rows.length === 0 && (
@@ -254,26 +254,26 @@ function MemberReport({ locations }: { locations: LocationOption[] }) {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
+            <TableHead className="hidden md:table-cell">Email</TableHead>
             <TableHead>Phone</TableHead>
-            <TableHead>Location</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
             <TableHead>Plan</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Expiry</TableHead>
+            <TableHead className="hidden md:table-cell">Expiry</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((r) => (
             <TableRow key={r.id}>
               <TableCell>{r.name}</TableCell>
-              <TableCell>{r.email}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.email}</TableCell>
               <TableCell>{r.phone}</TableCell>
-              <TableCell>{r.location}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.location}</TableCell>
               <TableCell>{r.plan}</TableCell>
               <TableCell>
                 <Badge variant={statusVariant[r.status]}>{r.status}</Badge>
               </TableCell>
-              <TableCell>{r.expiry === "-" ? "-" : fmt(r.expiry)}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.expiry === "-" ? "-" : fmt(r.expiry)}</TableCell>
             </TableRow>
           ))}
           {rows.length === 0 && (
@@ -331,11 +331,11 @@ function AttendanceReport({ locations }: { locations: LocationOption[] }) {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <Label>From</Label>
-          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-40" />
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full sm:w-40" />
         </div>
         <div>
           <Label>To</Label>
-          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-40" />
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full sm:w-40" />
         </div>
         {locations.length > 1 ? (
           <div>
@@ -367,9 +367,9 @@ function AttendanceReport({ locations }: { locations: LocationOption[] }) {
             <TableHead>Date</TableHead>
             <TableHead>Member</TableHead>
             <TableHead>Check In</TableHead>
-            <TableHead>Check Out</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead>Location</TableHead>
+            <TableHead className="hidden md:table-cell">Check Out</TableHead>
+            <TableHead className="hidden md:table-cell">Source</TableHead>
+            <TableHead className="hidden md:table-cell">Location</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -378,9 +378,9 @@ function AttendanceReport({ locations }: { locations: LocationOption[] }) {
               <TableCell>{fmt(r.date)}</TableCell>
               <TableCell>{r.memberName}</TableCell>
               <TableCell>{fmtTime(r.checkIn)}</TableCell>
-              <TableCell>{r.checkOut ? fmtTime(r.checkOut) : "-"}</TableCell>
-              <TableCell>{r.source}</TableCell>
-              <TableCell>{r.location}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.checkOut ? fmtTime(r.checkOut) : "-"}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.source}</TableCell>
+              <TableCell className="hidden md:table-cell">{r.location}</TableCell>
             </TableRow>
           ))}
           {rows.length === 0 && (
@@ -430,11 +430,11 @@ function LoginHistoryReport() {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <Label>From</Label>
-          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-40" />
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="w-full sm:w-40" />
         </div>
         <div>
           <Label>To</Label>
-          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-40" />
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="w-full sm:w-40" />
         </div>
         <Button onClick={load} disabled={isPending}>Load</Button>
         <Button variant="outline" onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
@@ -565,15 +565,15 @@ function PnlReport({ locations }: { locations: LocationOption[] }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Revenue</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold text-green-600">{data.revenue.toFixed(2)}</p></CardContent>
+          <CardContent><p className="text-xl md:text-2xl font-bold text-green-600">{data.revenue.toFixed(2)}</p></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Expenses</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold text-red-600">{data.expenses.toFixed(2)}</p></CardContent>
+          <CardContent><p className="text-xl md:text-2xl font-bold text-red-600">{data.expenses.toFixed(2)}</p></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Net Profit/Loss</CardTitle></CardHeader>
-          <CardContent><p className={`text-2xl font-bold ${data.net >= 0 ? "text-green-600" : "text-red-600"}`}>{data.net.toFixed(2)}</p></CardContent>
+          <CardContent><p className={`text-xl md:text-2xl font-bold ${data.net >= 0 ? "text-green-600" : "text-red-600"}`}>{data.net.toFixed(2)}</p></CardContent>
         </Card>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -817,7 +817,7 @@ export default function ReportsPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Reports</h1>
       <Tabs defaultValue="collection">
-        <TabsList>
+        <TabsList className="overflow-x-auto max-w-full">
           <TabsTrigger value="collection">Daily Collection</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
