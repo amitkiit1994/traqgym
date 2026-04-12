@@ -26,13 +26,21 @@ export default async function DashboardPage({
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
+  const emptyForecast: Awaited<ReturnType<typeof getRevenueForecast>> = {
+    totalExpiring: 0,
+    totalPotentialRevenue: 0,
+    likely: { count: 0, revenue: 0 },
+    atRisk: { count: 0, revenue: 0 },
+    unlikely: { count: 0, revenue: 0 },
+  };
+
   const [stats, profitLoss, announcements, staffPerf, prevStats, forecast] = await Promise.all([
     getCachedStats(locationId),
     getCachedProfitLoss(currentMonth, locationId),
     getAnnouncements("staff", locationId),
     getCachedStaffPerformance(monthStart.toISOString(), monthEnd.toISOString()),
     getCachedPreviousMonthStats(locationId),
-    getRevenueForecast(locationId),
+    getRevenueForecast(locationId).catch((e) => { console.error("Revenue forecast failed:", e); return emptyForecast; }),
   ]);
   const locations = await prisma.location.findMany({
     where: { isActive: true },

@@ -193,15 +193,15 @@ export async function getStats(locationId?: number) {
         SELECT id, firstname, lastname, phone,
           CASE
             WHEN EXTRACT(MONTH FROM birthdate) = 2 AND EXTRACT(DAY FROM birthdate) = 29
-              AND NOT (${thisYear} % 4 = 0 AND (${thisYear} % 100 != 0 OR ${thisYear} % 400 = 0))
-              THEN MAKE_DATE(${thisYear}, 3, 1)
-            ELSE MAKE_DATE(${thisYear}, EXTRACT(MONTH FROM birthdate)::int, EXTRACT(DAY FROM birthdate)::int)
+              AND NOT (${thisYear}::int % 4 = 0 AND (${thisYear}::int % 100 != 0 OR ${thisYear}::int % 400 = 0))
+              THEN MAKE_DATE(${thisYear}::int, 3, 1)
+            ELSE MAKE_DATE(${thisYear}::int, EXTRACT(MONTH FROM birthdate)::int, EXTRACT(DAY FROM birthdate)::int)
           END as this_year_bd,
           CASE
             WHEN EXTRACT(MONTH FROM birthdate) = 2 AND EXTRACT(DAY FROM birthdate) = 29
-              AND NOT (${thisYear + 1} % 4 = 0 AND (${thisYear + 1} % 100 != 0 OR ${thisYear + 1} % 400 = 0))
-              THEN MAKE_DATE(${thisYear + 1}, 3, 1)
-            ELSE MAKE_DATE(${thisYear + 1}, EXTRACT(MONTH FROM birthdate)::int, EXTRACT(DAY FROM birthdate)::int)
+              AND NOT (${thisYear + 1}::int % 4 = 0 AND (${thisYear + 1}::int % 100 != 0 OR ${thisYear + 1}::int % 400 = 0))
+              THEN MAKE_DATE(${thisYear + 1}::int, 3, 1)
+            ELSE MAKE_DATE(${thisYear + 1}::int, EXTRACT(MONTH FROM birthdate)::int, EXTRACT(DAY FROM birthdate)::int)
           END as next_year_bd
         FROM "User"
         WHERE birthdate IS NOT NULL
