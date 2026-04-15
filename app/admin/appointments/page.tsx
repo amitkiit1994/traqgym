@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, useCallback } from "react";
+import { useEffect, useState, useMemo, useTransition, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -84,6 +85,7 @@ export default function AppointmentsPage() {
   const [filterTrainer, setFilterTrainer] = useState<number | undefined>(undefined);
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [isPending, startTransition] = useTransition();
 
@@ -203,14 +205,30 @@ export default function AppointmentsPage() {
     });
   };
 
+  const filtered = useMemo(() => {
+    if (!searchQuery) return appointments;
+    const q = searchQuery.toLowerCase();
+    return appointments.filter(
+      (a) =>
+        a.userName.toLowerCase().includes(q) ||
+        a.trainerName.toLowerCase().includes(q)
+    );
+  }, [appointments, searchQuery]);
+
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Appointments</h1>
         <Button onClick={openBookDialog}>Book Appointment</Button>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
+      <SearchInput
+        placeholder="Search by member or trainer name..."
+        onSearch={setSearchQuery}
+        className="max-w-sm"
+      />
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
           <Label className="text-sm">Date:</Label>
@@ -253,8 +271,10 @@ export default function AppointmentsPage() {
           </select>
         </div>
       </div>
+      </div>
 
       {/* Appointments Table */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -268,7 +288,7 @@ export default function AppointmentsPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {appointments.map((a) => (
+          {filtered.map((a) => (
             <TableRow key={a.id}>
               <TableCell className="whitespace-nowrap">{a.date}</TableCell>
               <TableCell className="whitespace-nowrap">
@@ -314,7 +334,7 @@ export default function AppointmentsPage() {
               </TableCell>
             </TableRow>
           ))}
-          {appointments.length === 0 && (
+          {filtered.length === 0 && (
             <TableRow>
               <TableCell colSpan={7} className="text-center text-muted-foreground">
                 No appointments found
@@ -323,6 +343,7 @@ export default function AppointmentsPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {/* Book Dialog */}
       <Dialog open={bookOpen} onOpenChange={setBookOpen}>

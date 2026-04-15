@@ -34,9 +34,16 @@ export async function recordPartialPaymentAction(params: {
   }
 }
 
-export async function getBalanceDueReportAction(locationId?: number) {
-  try { await requireWorker(); } catch { return []; }
-  return getBalanceDueReport(locationId);
+export async function getBalanceDueReportAction(filters?: {
+  locationId?: number;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
+  try { await requireWorker(); } catch { return { data: [], total: 0, totalDue: 0 }; }
+  return getBalanceDueReport(filters);
 }
 
 export async function getMemberBalanceAction(userId: number) {

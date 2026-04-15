@@ -281,7 +281,8 @@ export default function AttendancePage() {
     field === current ? (dir === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <h1 className="text-xl font-semibold">Attendance</h1>
 
       {/* Tabs */}
@@ -340,10 +341,11 @@ export default function AttendancePage() {
           Export
         </Button>
       </div>
+      </div>
 
       {/* Member Attendance Tab */}
       {tab === "member" && (
-        <>
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
           <div className="flex flex-wrap gap-2 sm:gap-4">
             <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Total check-ins:</span>
@@ -479,12 +481,12 @@ export default function AttendancePage() {
               )}
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
 
       {/* Staff Attendance Tab */}
       {tab === "staff" && (
-        <>
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
           <div className="flex flex-wrap gap-2 sm:gap-4">
             <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
               <span className="text-muted-foreground">Total check-ins:</span>
@@ -606,7 +608,7 @@ export default function AttendancePage() {
               )}
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
     </div>
   );

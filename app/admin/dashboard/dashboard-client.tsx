@@ -51,6 +51,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { getActivePlans, getActiveLocations, submitRenewal } from "@/lib/actions/renewals";
+import { getRevenueChartAction } from "@/lib/actions/revenue";
 import { ActionList } from "./action-list";
 
 const RevenueChart = dynamic(
@@ -142,11 +143,6 @@ type TodayCounts = {
   newMembers: number;
 };
 
-type FinancialSplit = {
-  billed: number;
-  received: number;
-  due: number;
-};
 
 type AnniversaryItem = {
   id: number;
@@ -200,6 +196,7 @@ type Props = {
     upiThisMonth: number;
     currentlyInGym: CurrentlyInGymMember[];
     overdueMembers: OverdueMember[];
+    overdueFollowupsCount: number;
     planDistribution: PlanDistItem[];
     todayBirthdays: BirthdayItem[];
     upcomingBirthdays: UpcomingBirthdayItem[];
@@ -210,7 +207,6 @@ type Props = {
     dailyCollection: number;
     posSales: number;
     todayCounts: TodayCounts;
-    financialSplit: FinancialSplit;
     todayAnniversaries: AnniversaryItem[];
     upcomingAnniversaries: UpcomingAnniversaryItem[];
   };
@@ -230,6 +226,88 @@ const formatINR = (amount: number) =>
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(amount);
+
+const REVENUE_RANGES = [
+  { label: "7 days", days: 7 },
+  { label: "30 days", days: 30 },
+  { label: "This month", days: 0 },
+  { label: "Last month", days: -1 },
+  { label: "3 months", days: 90 },
+];
+
+function RevenueChartWithRange({
+  defaultData,
+  locationId,
+}: {
+  defaultData: RevenueChartItem[];
+  locationId?: number;
+}) {
+  const [selectedRange, setSelectedRange] = useState("7 days");
+  const [chartData, setChartData] = useState(defaultData);
+  const [loading, startLoading] = useTransition();
+
+  const handleRangeChange = (label: string) => {
+    setSelectedRange(label);
+    if (label === "7 days") {
+      setChartData(defaultData);
+      return;
+    }
+
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+
+    const range = REVENUE_RANGES.find((r) => r.label === label);
+    if (!range) return;
+
+    if (label === "This month") {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    } else if (label === "Last month") {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else {
+      start = new Date(now);
+      start.setDate(start.getDate() - range.days);
+      end = new Date(now);
+      end.setDate(end.getDate() + 1);
+    }
+
+    startLoading(async () => {
+      const data = await getRevenueChartAction(
+        start.toISOString(),
+        end.toISOString(),
+        locationId
+      );
+      setChartData(data);
+    });
+  };
+
+  const title = loading ? "Loading..." : `Revenue (${selectedRange})`;
+
+  return (
+    <RevenueChart
+      data={chartData}
+      title={title}
+      toolbar={
+        <div className="flex gap-1 flex-wrap">
+          {REVENUE_RANGES.map((r) => (
+            <Button
+              key={r.label}
+              variant={selectedRange === r.label ? "default" : "outline"}
+              size="sm"
+              className="text-xs h-7"
+              onClick={() => handleRangeChange(r.label)}
+              disabled={loading}
+            >
+              {r.label}
+            </Button>
+          ))}
+        </div>
+      }
+    />
+  );
+}
 
 export function DashboardClient({
   stats,
@@ -305,18 +383,9 @@ export function DashboardClient({
   const [actionExpanded, setActionExpanded] = useState(true);
 
   // Action required counts
-  const overdueCount = stats.overdueMembers.length;
-  const expiringTomorrowCount = stats.expiringIn3Days.filter((t) => {
-    const expDate = new Date(t.expireDate);
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return (
-      expDate.getFullYear() === tomorrow.getFullYear() &&
-      expDate.getMonth() === tomorrow.getMonth() &&
-      expDate.getDate() === tomorrow.getDate()
-    );
-  }).length;
-  const totalActionItems = overdueCount + expiringTomorrowCount;
+  const overdueCount = stats.overdueFollowupsCount;
+  const expiringCount = stats.expiringIn3Days.length;
+  const totalActionItems = overdueCount + expiringCount;
 
   // Trend calculations
   const membersTrend = previousMonthStats
@@ -400,18 +469,18 @@ export function DashboardClient({
             <CardContent>
               <div className="flex flex-wrap gap-4">
                 {overdueCount > 0 && (
-                  <Link href="/admin/members?status=expired">
+                  <Link href="/admin/followups?status=pending">
                     <div className="flex items-center gap-2 rounded-lg border border-status-expired/30 bg-status-expired-bg px-3 py-2 text-xs sm:text-sm hover:bg-status-expired-bg/80 transition-colors">
                       <Badge variant="destructive">{overdueCount}</Badge>
                       <span>overdue payments</span>
                     </div>
                   </Link>
                 )}
-                {expiringTomorrowCount > 0 && (
+                {expiringCount > 0 && (
                   <Link href="/admin/members?status=expiring">
                     <div className="flex items-center gap-2 rounded-lg border border-status-expiring/30 bg-status-expiring-bg px-3 py-2 text-xs sm:text-sm hover:bg-status-expiring-bg/80 transition-colors">
-                      <Badge variant="secondary">{expiringTomorrowCount}</Badge>
-                      <span>expiring tomorrow</span>
+                      <Badge variant="secondary">{expiringCount}</Badge>
+                      <span>expiring in 3 days</span>
                     </div>
                   </Link>
                 )}
@@ -757,29 +826,6 @@ export function DashboardClient({
         </CardContent>
       </Card>
 
-      {/* Billed vs Received vs Due */}
-      <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
-        <CardHeader>
-          <CardTitle>Billed vs Received vs Due (Active Tickets)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-sm text-muted-foreground">Billed</p>
-              <p className="text-xl font-bold">{formatINR(stats.financialSplit.billed)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Received</p>
-              <p className="text-xl font-bold text-financial-positive">{formatINR(stats.financialSplit.received)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Due</p>
-              <p className="text-xl font-bold text-financial-negative">{formatINR(stats.financialSplit.due)}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Club Targets */}
       {targetProgress.target && targetProgress.progress && (
         <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
@@ -882,8 +928,11 @@ export function DashboardClient({
         </Card>
       )}
 
-      {/* Revenue Bar Chart */}
-      <RevenueChart data={stats.revenueChartData} />
+      {/* Revenue Bar Chart with Date Range Selector */}
+      <RevenueChartWithRange
+        defaultData={stats.revenueChartData}
+        locationId={currentLocationId}
+      />
 
       {/* Attendance Trend (30 Days) + Staff Leaderboard */}
       <AttendanceAndStaffSection
@@ -1039,6 +1088,7 @@ export function DashboardClient({
             <CardTitle>Birthdays</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="max-h-[300px] overflow-y-auto">
             {stats.todayBirthdays.length > 0 && (
               <div className="mb-4">
                 <p className="text-sm font-medium mb-2">Today</p>
@@ -1073,6 +1123,7 @@ export function DashboardClient({
                 ))}
               </div>
             )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1084,6 +1135,7 @@ export function DashboardClient({
             <CardTitle>Anniversaries</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="max-h-[300px] overflow-y-auto">
             {stats.todayAnniversaries.length > 0 && (
               <div className="mb-4">
                 <p className="text-sm font-medium mb-2">Today</p>
@@ -1118,6 +1170,7 @@ export function DashboardClient({
                 ))}
               </div>
             )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1129,7 +1182,7 @@ export function DashboardClient({
             <CardTitle>Plan Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
+            <div className="max-h-[250px] overflow-y-auto space-y-2">
               {stats.planDistribution.map((p) => (
                 <div key={p.planName} className="flex items-center justify-between">
                   <span className="text-sm">{p.planName}</span>

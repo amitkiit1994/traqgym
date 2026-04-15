@@ -17,9 +17,15 @@ import { MessageSquare, Loader2 } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +33,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { SearchInput } from "@/components/ui/search-input";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 type Enquiry = {
   id: number;
@@ -69,18 +78,23 @@ const sourceLabels: Record<string, string> = {
 };
 
 const statusOptions = ["all", "new", "contacted", "follow_up", "converted", "lost"];
+const PAGE_SIZE = 25;
 
 export default function EnquiriesPage() {
   const searchParams = useSearchParams();
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [locations, setLocations] = useState<Location[]>([]);
   const [filter, setFilter] = useState(() => {
     const urlStatus = searchParams.get("status");
-    // "overdue" from dashboard maps to follow_up filter
     if (urlStatus === "overdue") return "follow_up";
     if (urlStatus && statusOptions.includes(urlStatus)) return urlStatus;
     return "all";
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [isPending, startTransition] = useTransition();
 
   // New enquiry dialog
@@ -108,18 +122,43 @@ export default function EnquiriesPage() {
   const [convertEnquiryId, setConvertEnquiryId] = useState<number | null>(null);
   const [convertError, setConvertError] = useState("");
 
-  const load = () => {
+  const load = (p?: number, search?: string) => {
+    const currentPage = p ?? page;
+    const currentSearch = search ?? searchQuery;
     startTransition(async () => {
-      const [data, locs] = await Promise.all([
-        getEnquiries(filter === "all" ? undefined : filter),
+      const [result, locs] = await Promise.all([
+        getEnquiries({
+          status: filter === "all" ? undefined : filter,
+          search: currentSearch || undefined,
+          page: currentPage,
+          pageSize: PAGE_SIZE,
+          sortBy,
+          sortOrder,
+        }),
         getActiveLocations(),
       ]);
-      setEnquiries(data);
+      setEnquiries(result.data);
+      setTotal(result.total);
       setLocations(locs);
     });
   };
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => {
+    setPage(1);
+    load(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, sortBy, sortOrder]);
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleCreate = () => {
     startTransition(async () => {
@@ -190,91 +229,127 @@ export default function EnquiriesPage() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold">Enquiries</h1>
-        <Button onClick={() => setNewOpen(true)}>New Enquiry</Button>
-      </div>
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold">Enquiries</h1>
+          <Button onClick={() => setNewOpen(true)}>New Enquiry</Button>
+        </div>
 
-      {/* Status Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {statusOptions.map((s) => (
-          <Button
-            key={s}
-            variant={filter === s ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilter(s)}
-          >
-            {s === "all" ? "All" : s.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-          </Button>
-        ))}
+        {/* Status Filter */}
+        <div className="flex gap-2 flex-wrap">
+          {statusOptions.map((s) => (
+            <Button
+              key={s}
+              variant={filter === s ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilter(s)}
+            >
+              {s === "all" ? "All" : s.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            </Button>
+          ))}
+        </div>
+
+        <SearchInput
+          placeholder="Search by name or phone..."
+          defaultValue={searchQuery}
+          onSearch={(q) => {
+            setSearchQuery(q);
+            setPage(1);
+            load(1, q);
+          }}
+          isPending={isPending}
+          className="w-full sm:w-72"
+        />
       </div>
 
       {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Name</th>
-                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Phone</th>
-                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Source</th>
-                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Interest</th>
-                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Status</th>
-                  <th className="px-4 py-2 text-left font-medium hidden md:table-cell">Follow-up</th>
-                  <th className="px-2 sm:px-4 py-2 text-left font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {enquiries.map((e) => (
-                  <tr
-                    key={e.id}
-                    className="border-b hover:bg-muted/30 cursor-pointer"
-                    onClick={() => handleEdit(e)}
-                  >
-                    <td className="px-2 sm:px-4 py-2">{e.name}</td>
-                    <td className="px-4 py-2 hidden md:table-cell">{e.phone}</td>
-                    <td className="px-4 py-2 hidden md:table-cell">{sourceLabels[e.source] || e.source}</td>
-                    <td className="px-2 sm:px-4 py-2">{e.interest || "-"}</td>
-                    <td className="px-2 sm:px-4 py-2">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusColors[e.status] || ""}`}>
-                        {e.status.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 hidden md:table-cell">
-                      {e.followUpDate ? new Date(e.followUpDate).toLocaleDateString("en-IN") : "-"}
-                    </td>
-                    <td className="px-2 sm:px-4 py-2">
-                      {e.status === "converted" ? (
-                        <Badge variant="active">Converted</Badge>
-                      ) : e.status !== "lost" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(ev) => { ev.stopPropagation(); handleConvertClick(e); }}
-                        >
-                          Convert
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-                {enquiries.length === 0 && (
-                  <tr>
-                    <td colSpan={7}>
-                      <div className="flex flex-col items-center gap-2 py-8">
-                        <MessageSquare className="size-8 text-muted-foreground/50" />
-                        <p className="text-sm text-muted-foreground">No enquiries found</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+      <Card className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <CardContent className="flex-1 min-h-0 overflow-y-auto p-0">
+          {enquiries.length === 0 && !isPending ? (
+            <div className="flex flex-col items-center gap-2 py-8">
+              <MessageSquare className="size-8 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">No enquiries found</p>
+            </div>
+          ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortableTableHead field="name" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort}>Name</SortableTableHead>
+                    <SortableTableHead field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="hidden md:table-cell">Phone</SortableTableHead>
+                    <SortableTableHead field="source" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="hidden md:table-cell">Source</SortableTableHead>
+                    <TableHead>Interest</TableHead>
+                    <SortableTableHead field="status" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort}>Status</SortableTableHead>
+                    <SortableTableHead field="followUpDate" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="hidden md:table-cell">Follow-up</SortableTableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {enquiries.map((e) => {
+                    const daysSinceCreated = Math.floor(
+                      (Date.now() - new Date(e.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+                    );
+                    const isStale = daysSinceCreated > 30 && !["converted", "lost"].includes(e.status);
+                    return (
+                    <TableRow
+                      key={e.id}
+                      className={`cursor-pointer hover:bg-muted/30 ${isStale ? "opacity-60" : ""}`}
+                      onClick={() => handleEdit(e)}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-1.5">
+                          {e.name}
+                          {isStale && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">Stale</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">{e.phone}</TableCell>
+                      <TableCell className="hidden md:table-cell">{sourceLabels[e.source] || e.source}</TableCell>
+                      <TableCell>{e.interest || "-"}</TableCell>
+                      <TableCell>
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusColors[e.status] || ""}`}>
+                          {e.status.replace("_", " ")}
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {e.followUpDate ? new Date(e.followUpDate).toLocaleDateString("en-IN") : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {e.status === "converted" ? (
+                          <Badge variant="active">Converted</Badge>
+                        ) : e.status !== "lost" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(ev) => { ev.stopPropagation(); handleConvertClick(e); }}
+                          >
+                            Convert
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+          )}
         </CardContent>
       </Card>
+
+      <div className="shrink-0">
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={PAGE_SIZE}
+          onPageChange={(p) => {
+            setPage(p);
+            load(p);
+          }}
+          disabled={isPending}
+        />
+      </div>
 
       {/* New Enquiry Dialog */}
       <Dialog open={newOpen} onOpenChange={setNewOpen}>

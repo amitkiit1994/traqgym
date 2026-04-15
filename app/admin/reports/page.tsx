@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { getCollectionReport, getMemberReport, getAttendanceReport, getLoginHistory, getProfitLossReport, getMembershipMatrix, getSourceAnalysis } from "@/lib/actions/reports";
 import { getLocations } from "@/lib/actions/locations";
+import { getMonthlyRevenueTrendAction } from "@/lib/actions/revenue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -868,6 +869,7 @@ export default function ReportsPage() {
           <TabsTrigger value="pnl">P&L Report</TabsTrigger>
           <TabsTrigger value="matrix">Membership Matrix</TabsTrigger>
           <TabsTrigger value="source">Source Analysis</TabsTrigger>
+          <TabsTrigger value="monthly-revenue">Monthly Revenue</TabsTrigger>
         </TabsList>
         <TabsContent value="collection">
           <Card>
@@ -939,7 +941,88 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="monthly-revenue">
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Revenue Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MonthlyRevenueTrend />
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function MonthlyRevenueTrend() {
+  const [data, setData] = useState<{
+    month: string;
+    revenue: number;
+    expenses: number;
+    net: number;
+    cash: number;
+    upi: number;
+    renewals: number;
+    newMembers: number;
+  }[]>([]);
+  const [loading, startLoading] = useTransition();
+
+  useEffect(() => {
+    startLoading(async () => {
+      const result = await getMonthlyRevenueTrendAction(12);
+      setData(result);
+    });
+  }, []);
+
+  const formatMonth = (m: string) => {
+    const [y, mo] = m.split("-");
+    const d = new Date(Number(y), Number(mo) - 1);
+    return d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+  };
+
+  const fmtINR = (n: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(n);
+
+  if (loading) return <p className="text-muted-foreground py-4 text-center">Loading...</p>;
+
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Month</TableHead>
+            <TableHead className="text-right">Revenue</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Expenses</TableHead>
+            <TableHead className="text-right">Net</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Cash</TableHead>
+            <TableHead className="text-right hidden md:table-cell">UPI</TableHead>
+            <TableHead className="text-right hidden lg:table-cell">Renewals</TableHead>
+            <TableHead className="text-right hidden lg:table-cell">New Members</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.month}>
+              <TableCell className="font-medium">{formatMonth(row.month)}</TableCell>
+              <TableCell className="text-right">{fmtINR(row.revenue)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmtINR(row.expenses)}</TableCell>
+              <TableCell className={`text-right font-semibold ${row.net >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {fmtINR(row.net)}
+              </TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmtINR(row.cash)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">{fmtINR(row.upi)}</TableCell>
+              <TableCell className="text-right hidden lg:table-cell">{row.renewals}</TableCell>
+              <TableCell className="text-right hidden lg:table-cell">{row.newMembers}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -5,19 +5,68 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
 import { createEnquirySchema, updateEnquirySchema, zodErrors } from "@/lib/validations";
 
-export async function getEnquiries(status?: string, locationId?: number) {
-  try { await requireWorker(); } catch { return []; }
-  const where: Record<string, unknown> = {};
+export async function getEnquiries(filters?: {
+  status?: string;
+  locationId?: number;
+  showArchived?: boolean;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
+  try { await requireWorker(); } catch { return { data: [], total: 0 }; }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = {};
+  const status = filters?.status;
   if (status && status !== "all") where.status = status;
-  if (locationId) where.locationId = locationId;
+  if (filters?.locationId) where.locationId = filters.locationId;
 
-  const rows = await prisma.enquiry.findMany({
-    where,
-    include: { location: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+  // Default: scope to recent enquiries (created within 120 days)
+  // Hides ancient migrated data that's not actionable
+  if (!filters?.showArchived) {
+    const oneHundredTwentyDaysAgo = new Date();
+    oneHundredTwentyDaysAgo.setDate(oneHundredTwentyDaysAgo.getDate() - 120);
+    where.createdAt = { gte: oneHundredTwentyDaysAgo };
+  }
 
-  return rows.map((r) => ({
+  // Search by name or phone
+  if (filters?.search) {
+    const q = filters.search.trim();
+    if (q) {
+      where.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { phone: { contains: q } },
+      ];
+    }
+  }
+
+  // Build orderBy
+  const sortField = filters?.sortBy || "createdAt";
+  const sortDir = filters?.sortOrder || "desc";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let orderBy: any;
+  if (sortField === "name" || sortField === "phone" || sortField === "source" || sortField === "status" || sortField === "followUpDate" || sortField === "createdAt") {
+    orderBy = { [sortField]: sortDir };
+  } else {
+    orderBy = { createdAt: "desc" };
+  }
+
+  const page = filters?.page ?? 1;
+  const pageSize = filters?.pageSize ?? 25;
+
+  const [rows, total] = await Promise.all([
+    prisma.enquiry.findMany({
+      where,
+      include: { location: { select: { name: true } } },
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.enquiry.count({ where }),
+  ]);
+
+  const data = rows.map((r) => ({
     id: r.id,
     name: r.name,
     phone: r.phone,
@@ -33,6 +82,8 @@ export async function getEnquiries(status?: string, locationId?: number) {
     convertedUserId: r.convertedUserId,
     createdAt: r.createdAt.toISOString(),
   }));
+
+  return { data, total };
 }
 
 export async function createEnquiry(data: {

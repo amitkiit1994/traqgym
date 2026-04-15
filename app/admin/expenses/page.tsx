@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   getExpenses,
   createExpense,
@@ -22,6 +22,7 @@ import {
   TableRow,
   TableFooter,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -90,6 +91,7 @@ export default function ExpensesPage() {
   const [isPending, startTransition] = useTransition();
   const [sortField, setSortField] = useState<"date" | "amount" | "category">("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = () => {
     startTransition(async () => {
@@ -178,6 +180,16 @@ export default function ExpensesPage() {
     return sortDir === "asc" ? cmp : -cmp;
   });
 
+  const filteredExpenses = useMemo(() => {
+    if (!searchQuery) return sortedExpenses;
+    const q = searchQuery.toLowerCase();
+    return sortedExpenses.filter(
+      (e) =>
+        e.description.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q)
+    );
+  }, [sortedExpenses, searchQuery]);
+
   const handleExport = () => {
     const headers = ["Date", "Description", "Category", "Amount", "Location", "Added By"];
     const rows = sortedExpenses.map((e) => [
@@ -201,10 +213,11 @@ export default function ExpensesPage() {
   const SortIcon = ({ field, current, dir }: { field: string; current: string; dir: "asc" | "desc" }) =>
     field === current ? (dir === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />) : null;
 
-  const total = expenses.reduce((s, e) => s + e.amount, 0);
+  const total = filteredExpenses.reduce((s, e) => s + e.amount, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Expenses</h1>
         <Button onClick={openCreate}>New Expense</Button>
@@ -238,6 +251,11 @@ export default function ExpensesPage() {
 
       {/* Filters */}
       <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
+        <SearchInput
+          placeholder="Search description or category..."
+          onSearch={setSearchQuery}
+          className="w-full sm:w-64"
+        />
         <Button variant="outline" size="sm" onClick={handleExport} disabled={expenses.length === 0} className="self-end">
           <Download className="size-4" />
           Export
@@ -291,8 +309,10 @@ export default function ExpensesPage() {
           </Select>
         </div>
       </div>
+      </div>
 
-      <Table>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>
@@ -317,7 +337,7 @@ export default function ExpensesPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedExpenses.map((exp) => (
+          {filteredExpenses.map((exp) => (
             <TableRow key={exp.id}>
               <TableCell>
                 {new Date(exp.expenseDate).toLocaleDateString("en-IN")}
@@ -370,6 +390,7 @@ export default function ExpensesPage() {
           </TableFooter>
         )}
       </Table>
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">

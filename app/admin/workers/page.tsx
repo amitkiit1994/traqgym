@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   getWorkers,
   createWorker,
@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -64,6 +65,7 @@ export default function WorkersPage() {
   const [selectedRole, setSelectedRole] = useState("staff");
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
   const [isPending, startTransition] = useTransition();
+  const [searchQuery, setSearchQuery] = useState("");
   const [resetPwOpen, setResetPwOpen] = useState(false);
   const [resetPwWorkerId, setResetPwWorkerId] = useState<number | null>(null);
   const [resetPwMsg, setResetPwMsg] = useState("");
@@ -164,6 +166,16 @@ export default function WorkersPage() {
     setTimeout(() => setResetPwOpen(false), 1500);
   };
 
+  const filteredWorkers = useMemo(() => {
+    if (!searchQuery) return workers;
+    const q = searchQuery.toLowerCase();
+    return workers.filter(
+      (w) =>
+        `${w.firstname} ${w.lastname}`.toLowerCase().includes(q) ||
+        w.email.toLowerCase().includes(q)
+    );
+  }, [workers, searchQuery]);
+
   const handleToggle = (id: number) => {
     startTransition(async () => {
       await toggleWorkerActive(id);
@@ -172,12 +184,21 @@ export default function WorkersPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Workers</h1>
         <Button onClick={openCreate}>Add Worker</Button>
       </div>
 
+      <SearchInput
+        placeholder="Search name or email..."
+        onSearch={setSearchQuery}
+        className="w-full sm:w-64"
+      />
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -190,7 +211,7 @@ export default function WorkersPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {workers.map((w) => (
+          {filteredWorkers.map((w) => (
             <TableRow key={w.id}>
               <TableCell>
                 {w.firstname} {w.lastname}
@@ -233,6 +254,7 @@ export default function WorkersPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       <Dialog open={resetPwOpen} onOpenChange={setResetPwOpen}>
         <DialogContent className="sm:max-w-sm">

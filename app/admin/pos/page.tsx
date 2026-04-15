@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   getProductsAction,
   sellProductAction,
@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ export default function POSPage() {
   const [selected, setSelected] = useState<Product | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = () => {
     startTransition(async () => {
@@ -126,6 +128,12 @@ export default function POSPage() {
     });
   };
 
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery) return products;
+    const q = searchQuery.toLowerCase();
+    return products.filter((p) => p.name.toLowerCase().includes(q));
+  }, [products, searchQuery]);
+
   const fmt = (n: number) =>
     new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -134,11 +142,20 @@ export default function POSPage() {
     }).format(n);
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Point of Sale</h1>
       </div>
 
+      <SearchInput
+        placeholder="Search product name..."
+        onSearch={setSearchQuery}
+        className="w-full sm:w-64"
+      />
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -150,7 +167,7 @@ export default function POSPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {products.map((p) => (
+          {filteredProducts.map((p) => (
             <TableRow key={p.id}>
               <TableCell className="font-medium">{p.name}</TableCell>
               <TableCell className="hidden md:table-cell">
@@ -197,6 +214,7 @@ export default function POSPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {/* Sell Dialog */}
       <Dialog open={sellOpen} onOpenChange={setSellOpen}>

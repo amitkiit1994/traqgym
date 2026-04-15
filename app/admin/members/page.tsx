@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronUp, ChevronDown, Users, Loader2, Download } from "lucide-react";
+import { ChevronUp, ChevronDown, Users, Loader2, Download, Archive } from "lucide-react";
 import { toCsv } from "@/lib/utils/csv-export";
 import Link from "next/link";
 
@@ -112,6 +112,7 @@ export default function MembersPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(() => {
     return searchParams.get("order") === "desc" ? "desc" : "asc";
   });
+  const [showAllExpired, setShowAllExpired] = useState(false);
   const [selectedGender, setSelectedGender] = useState("");
   const [selectedLocationId, setSelectedLocationId] = useState("");
 
@@ -129,9 +130,10 @@ export default function MembersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const load = (q?: string, p?: number, status?: string) => {
+  const load = (q?: string, p?: number, status?: string, allExpired?: boolean) => {
     const currentPage = p ?? page;
     const currentStatus = status ?? statusFilter;
+    const currentAllExpired = allExpired ?? showAllExpired;
     startTransition(async () => {
       const data = await getMembers({
         search: q || undefined,
@@ -141,6 +143,7 @@ export default function MembersPage() {
         birthday: birthdayFilter || undefined,
         sortBy,
         sortOrder,
+        showAllExpired: currentStatus === "expired" ? currentAllExpired : undefined,
       });
       setMembers(data.members);
       setTotal(data.total);
@@ -251,7 +254,8 @@ export default function MembersPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Members</h1>
         <div className="flex flex-wrap gap-2">
@@ -412,8 +416,26 @@ export default function MembersPage() {
             </Button>
           ))}
         </div>
+        {statusFilter === "expired" && (
+          <Button
+            variant={showAllExpired ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              const next = !showAllExpired;
+              setShowAllExpired(next);
+              setPage(1);
+              load(search, 1, "expired", next);
+            }}
+            className="gap-1.5"
+          >
+            <Archive className="size-3.5" />
+            {showAllExpired ? "Showing all expired" : "Show all time"}
+          </Button>
+        )}
+      </div>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg ring-1 ring-foreground/5 dark:ring-white/[0.06]">
       <Table>
         <TableHeader>
           <TableRow>
@@ -469,28 +491,31 @@ export default function MembersPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1 || isPending}
-            onClick={() => goToPage(page - 1)}
-          >
-            Prev
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages || isPending}
-            onClick={() => goToPage(page + 1)}
-          >
-            Next
-          </Button>
+        <div className="shrink-0">
+          <div className="flex items-center justify-center gap-4 py-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || isPending}
+              onClick={() => goToPage(page - 1)}
+            >
+              Prev
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || isPending}
+              onClick={() => goToPage(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
     </div>

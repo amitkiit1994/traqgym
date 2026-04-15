@@ -91,7 +91,8 @@ export default function AuditPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <h1 className="text-xl font-semibold">Audit Log</h1>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-end sm:flex-wrap">
@@ -123,7 +124,9 @@ export default function AuditPage() {
           />
         </div>
       </div>
+      </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -188,8 +191,10 @@ export default function AuditPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {totalPages > 1 && (
+        <div className="shrink-0">
         <div className="flex items-center justify-center gap-4">
           <Button
             variant="outline"
@@ -210,6 +215,7 @@ export default function AuditPage() {
           >
             Next
           </Button>
+        </div>
         </div>
       )}
     </div>

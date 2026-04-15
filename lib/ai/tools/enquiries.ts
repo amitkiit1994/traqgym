@@ -17,8 +17,8 @@ export const enquiryTools = [
       locationId: z.number().nullable().describe("Filter by location"),
     }),
     async execute(input) {
-      const enquiries = await getEnquiries(input.status ?? undefined, input.locationId ?? undefined);
-      return JSON.stringify(enquiries);
+      const { data } = await getEnquiries({ status: input.status ?? undefined, locationId: input.locationId ?? undefined });
+      return JSON.stringify(data);
     },
   }),
 
