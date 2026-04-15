@@ -53,7 +53,7 @@ function DrawerContent({
       <DrawerPrimitive.Popup
         data-slot="drawer-content"
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[min(288px,85vw)] flex-col bg-sidebar/95 backdrop-blur-2xl backdrop-saturate-[1.4] dark:bg-card/95 dark:backdrop-blur-2xl shadow-[4px_0_40px_oklch(0.565_0.20_275_/_8%)] dark:shadow-none text-sm text-sidebar-foreground duration-200 outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(288px,85vw)] flex-col bg-sidebar/95 backdrop-blur-2xl backdrop-saturate-[1.4] dark:bg-card/95 dark:backdrop-blur-2xl shadow-[4px_0_40px_oklch(0.565_0.20_25_/_8%)] dark:shadow-none text-sm text-sidebar-foreground duration-200 outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left",
           className
         )}
         {...props}
