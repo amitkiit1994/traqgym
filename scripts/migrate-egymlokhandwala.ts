@@ -657,10 +657,10 @@ async function main() {
       where: { userId },
       orderBy: { buyDate: "desc" },
     });
-    if (ticket && ticket.balanceDue === 0) {
+    if (ticket && Number(ticket.balanceDue) === 0) {
       await prisma.memberTicket.update({
         where: { id: ticket.id },
-        data: { balanceDue: balanceAmt, amountPaid: ticket.totalAmount - balanceAmt },
+        data: { balanceDue: balanceAmt, amountPaid: Number(ticket.totalAmount ?? 0) - balanceAmt },
       });
       balanceUpdated++;
     }
