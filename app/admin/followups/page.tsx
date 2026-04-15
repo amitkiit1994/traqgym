@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   getFollowupsAction,
   updateFollowupAction,
@@ -75,8 +76,15 @@ const statusColor: Record<string, string> = {
 };
 
 export default function FollowupsPage() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<Followup[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>("pending");
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    const urlStatus = searchParams.get("status");
+    // "overdue" from dashboard maps to pending (overdue payments are pending followups)
+    if (urlStatus === "overdue") return "pending";
+    if (urlStatus && STATUS_OPTIONS.includes(urlStatus)) return urlStatus;
+    return "pending";
+  });
   const [loading, startTransition] = useTransition();
   const [editDialog, setEditDialog] = useState<Followup | null>(null);
   const [editStatus, setEditStatus] = useState("");

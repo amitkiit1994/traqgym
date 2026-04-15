@@ -7,7 +7,7 @@ import { requireWorker } from "@/lib/auth-guard";
 import { createMemberSchema, zodErrors } from "@/lib/validations";
 import { calculateChurnRiskBatch } from "@/lib/services/churn-risk";
 
-export async function getMembers(params?: string | { search?: string; page?: number; pageSize?: number; status?: "active" | "expired" | "no_plan"; sortBy?: "name" | "status" | "location"; sortOrder?: "asc" | "desc" }) {
+export async function getMembers(params?: string | { search?: string; page?: number; pageSize?: number; status?: "active" | "expired" | "no_plan" | "expiring" | "inactive"; birthday?: string; sortBy?: "name" | "status" | "location"; sortOrder?: "asc" | "desc" }) {
   try { await requireWorker(); } catch { return { members: [], total: 0 }; }
 
   // Support legacy call signature: getMembers("searchTerm")
@@ -15,6 +15,7 @@ export async function getMembers(params?: string | { search?: string; page?: num
   const page = (typeof params === "object" ? params?.page : undefined) ?? 1;
   const pageSize = (typeof params === "object" ? params?.pageSize : undefined) ?? 25;
   const statusFilter = typeof params === "object" ? params?.status : undefined;
+  const birthdayFilter = typeof params === "object" ? params?.birthday : undefined;
   const sortBy = (typeof params === "object" ? params?.sortBy : undefined) ?? "name";
   const sortOrder = (typeof params === "object" ? params?.sortOrder : undefined) ?? "asc";
   const skip = (page - 1) * pageSize;
@@ -53,6 +54,30 @@ export async function getMembers(params?: string | { search?: string; page?: num
     };
   } else if (statusFilter === "no_plan") {
     where.memberTickets = { none: {} };
+  } else if (statusFilter === "expiring") {
+    const threeDaysFromNow = new Date(today.getTime() + 3 * 86400000);
+    where.memberTickets = {
+      some: {
+        expireDate: { gte: today, lte: threeDaysFromNow },
+        status: "active",
+      },
+    };
+  } else if (statusFilter === "inactive") {
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 86400000);
+    where.memberTickets = {
+      some: {
+        expireDate: { gte: today },
+        status: "active",
+      },
+    };
+    where.attendanceLogs = {
+      none: { checkIn: { gte: sevenDaysAgo } },
+    };
+  }
+
+  // Birthday filter: fetch all matching users with birthdate, then filter in JS
+  if (birthdayFilter === "today") {
+    where.birthdate = { not: null };
   }
 
   const [users, total] = await Promise.all([
@@ -68,11 +93,49 @@ export async function getMembers(params?: string | { search?: string; page?: num
       orderBy: sortBy === "location"
         ? { location: { name: sortOrder } }
         : { firstname: sortOrder },
-      skip,
-      take: pageSize,
+      ...(birthdayFilter !== "today" ? { skip, take: pageSize } : {}),
     }),
     prisma.user.count({ where }),
   ]);
+
+  let filteredUsers = users;
+  if (birthdayFilter === "today") {
+    const todayMonth = today.getMonth();
+    const todayDay = today.getDate();
+    filteredUsers = users.filter((u) => {
+      if (!u.birthdate) return false;
+      const bd = new Date(u.birthdate);
+      return bd.getMonth() === todayMonth && bd.getDate() === todayDay;
+    });
+    // Manual pagination for birthday filter
+    const birthdayTotal = filteredUsers.length;
+    filteredUsers = filteredUsers.slice(skip, skip + pageSize);
+
+    const memberIds = filteredUsers.map((u) => u.id);
+    const riskMap = await calculateChurnRiskBatch(memberIds);
+
+    const members = filteredUsers.map((user) => {
+      let status: "active" | "expired" | "no_plan" = "no_plan";
+      if (user.memberTickets.length > 0) {
+        const latest = user.memberTickets[0];
+        status = new Date(latest.expireDate) >= today ? "active" : "expired";
+      }
+      const risk = riskMap.get(user.id);
+      return {
+        id: user.id,
+        firstname: user.firstname,
+        lastname: user.lastname,
+        email: user.email,
+        phone: user.phone,
+        locationName: user.location?.name ?? "N/A",
+        status,
+        riskLevel: risk?.level ?? ("low" as const),
+        riskReason: risk?.reason ?? "",
+      };
+    });
+
+    return { members, total: birthdayTotal };
+  }
 
   const memberIds = users.map((u) => u.id);
   const riskMap = await calculateChurnRiskBatch(memberIds);

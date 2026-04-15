@@ -357,7 +357,7 @@ export function DashboardClient({
             <CardContent>
               <div className="flex flex-wrap gap-4">
                 {overdueCount > 0 && (
-                  <Link href="/admin/renewals">
+                  <Link href="/admin/members?status=expired">
                     <div className="flex items-center gap-2 rounded-lg border border-status-expired/30 bg-status-expired-bg px-3 py-2 text-xs sm:text-sm hover:bg-status-expired-bg/80 transition-colors">
                       <Badge variant="destructive">{overdueCount}</Badge>
                       <span>overdue payments</span>
@@ -365,7 +365,7 @@ export function DashboardClient({
                   </Link>
                 )}
                 {expiringTomorrowCount > 0 && (
-                  <Link href="/admin/renewals">
+                  <Link href="/admin/members?status=expiring">
                     <div className="flex items-center gap-2 rounded-lg border border-status-expiring/30 bg-status-expiring-bg px-3 py-2 text-xs sm:text-sm hover:bg-status-expiring-bg/80 transition-colors">
                       <Badge variant="secondary">{expiringTomorrowCount}</Badge>
                       <span>expiring tomorrow</span>
@@ -460,6 +460,7 @@ export function DashboardClient({
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+        <Link href="/admin/members?status=active" className="cursor-pointer">
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">
@@ -489,6 +490,7 @@ export function DashboardClient({
             </div>
           </CardContent>
         </Card>
+        </Link>
 
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
@@ -526,6 +528,7 @@ export function DashboardClient({
           </CardContent>
         </Card>
 
+        <Link href="/admin/members?status=expiring" className="cursor-pointer">
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">
@@ -538,7 +541,9 @@ export function DashboardClient({
             </p>
           </CardContent>
         </Card>
+        </Link>
 
+        <Link href="/admin/attendance" className="cursor-pointer">
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">
@@ -549,7 +554,9 @@ export function DashboardClient({
             <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.todayCheckIns}</p>
           </CardContent>
         </Card>
+        </Link>
 
+        <Link href="/admin/members?status=expired" className="cursor-pointer">
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">
@@ -560,6 +567,7 @@ export function DashboardClient({
             <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.expiredMembers}</p>
           </CardContent>
         </Card>
+        </Link>
 
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
@@ -595,6 +603,7 @@ export function DashboardClient({
           </CardContent>
         </Card>
 
+        <Link href="/admin/attendance" className="cursor-pointer">
         <Card className="gradient-border-card card-hover-lift shine">
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">
@@ -605,6 +614,7 @@ export function DashboardClient({
             <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{stats.currentlyInGym.length}</p>
           </CardContent>
         </Card>
+        </Link>
       </div>
 
       {/* Profit/Loss Card */}

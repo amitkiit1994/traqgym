@@ -54,16 +54,20 @@ type LocationOption = {
   isActive: boolean;
 };
 
-const statusVariant: Record<string, "active" | "expired" | "secondary"> = {
+const statusVariant: Record<string, "active" | "expired" | "secondary" | "expiring"> = {
   active: "active",
   expired: "expired",
   no_plan: "secondary",
+  expiring: "expiring",
+  inactive: "secondary",
 };
 
 const statusLabel: Record<string, string> = {
   active: "Active",
   expired: "Expired",
   no_plan: "No Plan",
+  expiring: "Expiring",
+  inactive: "Inactive 7d",
 };
 
 const riskVariant: Record<string, "active" | "expiring" | "destructive"> = {
@@ -99,6 +103,7 @@ export default function MembersPage() {
   const [csvResult, setCsvResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [birthdayFilter] = useState<string>(() => searchParams.get("birthday") ?? "");
   const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get("status") ?? "all");
   const [sortBy, setSortBy] = useState<"name" | "status" | "location">(() => {
     const s = searchParams.get("sort");
@@ -132,7 +137,8 @@ export default function MembersPage() {
         search: q || undefined,
         page: currentPage,
         pageSize: PAGE_SIZE,
-        status: currentStatus !== "all" ? currentStatus as "active" | "expired" | "no_plan" : undefined,
+        status: currentStatus !== "all" ? currentStatus as "active" | "expired" | "no_plan" | "expiring" | "inactive" : undefined,
+        birthday: birthdayFilter || undefined,
         sortBy,
         sortOrder,
       });
@@ -387,6 +393,8 @@ export default function MembersPage() {
             { value: "all", label: "All" },
             { value: "active", label: "Active" },
             { value: "expired", label: "Expired" },
+            { value: "expiring", label: "Expiring" },
+            { value: "inactive", label: "Inactive 7d" },
             { value: "no_plan", label: "No Plan" },
           ].map((s) => (
             <Button

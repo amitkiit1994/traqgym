@@ -28,6 +28,7 @@ model Location {
   equipment        Equipment[]
   enquiries        Enquiry[]
   classes          GymClass[]
+  lockers          Locker[]
 }
 
 model User {
@@ -63,6 +64,10 @@ model User {
   userWorkoutPlans  UserWorkoutPlan[]
   userDietPlans         UserDietPlan[]
   inAppNotifications   InAppNotification[] @relation("UserInAppNotifications")
+  extensions           MembershipExtension[]
+  lockers              Locker[]
+  feedbacks            Feedback[]
+  appointments         Appointment[]
   alternatePhone       String?
   address              String?
   occupation           String?
@@ -97,6 +102,7 @@ model Worker {
   createdWorkoutPlans WorkoutPlan[]
   createdDietPlans    DietPlan[]
   inAppNotifications  InAppNotification[] @relation("WorkerInAppNotifications")
+  appointments        Appointment[]
 }
 
 model TicketPlan {
@@ -138,6 +144,7 @@ model MemberTicket {
 
   payments Payment[]
   freezes  MembershipFreeze[]
+  extensions MembershipExtension[]
 
   @@index([userId, expireDate])
   @@index([locationId, expireDate])
@@ -851,4 +858,66 @@ model AiProactiveLog {
 
   @@index([feature, createdAt])
   @@index([targetType, targetId, createdAt])
+}
+
+model MembershipExtension {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberTicketId Int
+  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Cascade)
+  daysAdded      Int
+  reason         String
+  originalExpiry DateTime
+  newExpiry      DateTime
+  createdById    Int
+  createdAt      DateTime     @default(now())
+
+  @@index([userId])
+  @@index([memberTicketId])
+}
+
+model Locker {
+  id         Int       @id @default(autoincrement())
+  number     String
+  locationId Int
+  location   Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  status     String    @default("available") // available, assigned, maintenance
+  assignedTo Int?
+  user       User?     @relation(fields: [assignedTo], references: [id], onDelete: SetNull)
+  assignedAt DateTime?
+  notes      String?
+  createdAt  DateTime  @default(now())
+
+  @@unique([number, locationId])
+  @@index([locationId, status])
+}
+
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5
+  comment   String?
+  category  String?  // facility, trainer, cleanliness, general
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Appointment {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainerId Int
+  trainer   Worker   @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  startTime String
+  endTime   String
+  status    String   @default("booked") // booked, completed, cancelled, no_show
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@unique([trainerId, date, startTime])
+  @@index([userId, date])
 }

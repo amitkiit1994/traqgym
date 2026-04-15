@@ -92,7 +92,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "enquiry_followup",
       label: "Enquiry follow-ups overdue",
       count: overdueEnquiries,
-      href: "/admin/enquiries",
+      href: "/admin/enquiries?status=overdue",
       priority: "high",
     });
   }
@@ -102,7 +102,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "payment_followup",
       label: "Payment follow-ups overdue",
       count: overduePayments,
-      href: "/admin/followups",
+      href: "/admin/followups?status=overdue",
       priority: "high",
     });
   }
@@ -112,7 +112,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "expiring_member",
       label: "Memberships expiring in 3 days",
       count: expiringMembers,
-      href: "/admin/renewals",
+      href: "/admin/members?status=expiring",
       priority: "medium",
     });
   }
@@ -122,7 +122,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "inactive_member",
       label: "Members inactive 7+ days",
       count: inactiveMembers,
-      href: "/admin/members",
+      href: "/admin/members?status=inactive",
       priority: "medium",
     });
   }
@@ -132,7 +132,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "birthday",
       label: "Member birthdays today",
       count: birthdaysToday,
-      href: "/admin/members",
+      href: "/admin/members?birthday=today",
       priority: "low",
     });
   }

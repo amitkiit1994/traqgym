@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import Link from "next/link";
 
 type Device = {
   id: number;
@@ -255,9 +256,9 @@ export default function BiometricPage() {
           <p className="font-medium">BioMax SDK not configured</p>
           <p className="text-muted-foreground mt-1">
             SDK sync requires connection credentials. Configure them in{" "}
-            <a href="/admin/settings" className="underline font-medium">
+            <Link href="/admin/settings" className="underline font-medium">
               Settings &gt; Integrations
-            </a>
+            </Link>
             . You can still use CSV import without SDK.
           </p>
         </div>
@@ -267,9 +268,9 @@ export default function BiometricPage() {
           <p className="font-medium">SDK connection failed</p>
           <p className="text-muted-foreground mt-1">
             {sdkError} — check your credentials in{" "}
-            <a href="/admin/settings" className="underline font-medium">
+            <Link href="/admin/settings" className="underline font-medium">
               Settings &gt; Integrations
-            </a>
+            </Link>
           </p>
         </div>
       )}
