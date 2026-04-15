@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateMember, toggleMemberActive, cancelMembership } from "@/lib/actions/members";
 import { resetMemberPassword } from "@/lib/actions/password";
 import { freezeMembershipAction, cancelFreezeAction } from "@/lib/actions/freeze";
+import { extendMembershipAction } from "@/lib/actions/extension";
 import { addMeasurement } from "@/lib/actions/measurements";
 import { manualCheckIn } from "@/lib/actions/attendance";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,15 @@ type FreezeData = {
   reason: string | null;
   status: string;
   daysAdded: number;
+};
+
+type ExtensionData = {
+  id: number;
+  daysAdded: number;
+  reason: string;
+  originalExpiry: string;
+  newExpiry: string;
+  createdAt: string;
 };
 
 type PaymentData = {
@@ -129,6 +139,7 @@ type MemberData = {
     location: { name: string };
   }[];
   freezes: FreezeData[];
+  extensions: ExtensionData[];
   payments: PaymentData[];
   measurements: MeasurementData[];
 };
@@ -185,6 +196,9 @@ export function MemberDetailClient({
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [freezeOpen, setFreezeOpen] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extendError, setExtendError] = useState("");
+  const [extendSuccess, setExtendSuccess] = useState("");
   const [measureOpen, setMeasureOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [freezeError, setFreezeError] = useState("");
@@ -296,6 +310,39 @@ export function MemberDetailClient({
       await cancelFreezeAction(freezeId, member.id);
       router.refresh();
     });
+  };
+
+  const handleExtend = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!activeTicket) return;
+    const fd = new FormData(e.currentTarget);
+    const daysToAdd = parseInt(fd.get("daysToAdd") as string, 10);
+    const reason = (fd.get("reason") as string).trim();
+    if (!daysToAdd || daysToAdd <= 0) {
+      setExtendError("Days must be a positive number");
+      return;
+    }
+    if (!reason) {
+      setExtendError("Reason is required");
+      return;
+    }
+    const result = await extendMembershipAction({
+      userId: member.id,
+      memberTicketId: activeTicket.id,
+      daysToAdd,
+      reason,
+    });
+    if (!result.success) {
+      setExtendError(result.error || "Failed to extend");
+      return;
+    }
+    setExtendError("");
+    setExtendSuccess(`Extended by ${daysToAdd} days`);
+    setTimeout(() => {
+      setExtendOpen(false);
+      setExtendSuccess("");
+      router.refresh();
+    }, 1500);
   };
 
   const handleAddMeasurement = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -558,6 +605,11 @@ export function MemberDetailClient({
               </DropdownMenuItem>
             )}
             {activeTicket && (
+              <DropdownMenuItem onClick={() => setExtendOpen(true)}>
+                Extend Membership
+              </DropdownMenuItem>
+            )}
+            {activeTicket && (
               <DropdownMenuItem
                 onClick={async () => {
                   if (!confirm("Cancel this membership? This cannot be undone.")) return;
@@ -707,6 +759,38 @@ export function MemberDetailClient({
             </DialogContent>
           </Dialog>
         )}
+        {/* Extend Dialog */}
+        {activeTicket && (
+          <Dialog open={extendOpen} onOpenChange={(open) => { setExtendOpen(open); if (!open) { setExtendError(""); setExtendSuccess(""); } }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Extend Membership</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleExtend} className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Add days to the membership expiry (e.g., gym closed for holidays).
+                </p>
+                <div>
+                  <Label htmlFor="daysToAdd">Days to extend</Label>
+                  <Input id="daysToAdd" name="daysToAdd" type="number" min={1} required />
+                </div>
+                <div>
+                  <Label htmlFor="extendReason">Reason</Label>
+                  <Textarea id="extendReason" name="reason" rows={2} required />
+                </div>
+                {extendError && (
+                  <p className="text-xs text-destructive">{extendError}</p>
+                )}
+                {extendSuccess && (
+                  <p className="text-xs text-status-active-foreground">{extendSuccess}</p>
+                )}
+                <DialogFooter>
+                  <Button type="submit">Extend Membership</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* Active Freeze Banner */}
@@ -810,6 +894,39 @@ export function MemberDetailClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Extensions History */}
+      {member.extensions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Extensions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Days Added</TableHead>
+                  <TableHead className="hidden sm:table-cell">Original Expiry</TableHead>
+                  <TableHead className="hidden sm:table-cell">New Expiry</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {member.extensions.map((ext) => (
+                  <TableRow key={ext.id}>
+                    <TableCell>{fmt(ext.createdAt)}</TableCell>
+                    <TableCell>+{ext.daysAdded} days</TableCell>
+                    <TableCell className="hidden sm:table-cell">{fmt(ext.originalExpiry)}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{fmt(ext.newExpiry)}</TableCell>
+                    <TableCell>{ext.reason}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payment History */}
       <Card>

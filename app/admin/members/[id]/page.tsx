@@ -20,11 +20,15 @@ export default async function MemberDetailPage({
   const member = await getMember(memberId);
   if (!member) notFound();
 
-  const [locations, payments, measurements, freezes, allPlans, referralCount, anomaly, churnRisk] = await Promise.all([
+  const [locations, payments, measurements, freezes, extensions, allPlans, referralCount, anomaly, churnRisk] = await Promise.all([
     getLocations(),
     getMemberPayments(memberId).then((r) => r.payments),
     getMeasurements(memberId),
     prisma.membershipFreeze.findMany({
+      where: { userId: memberId },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.membershipExtension.findMany({
       where: { userId: memberId },
       orderBy: { createdAt: "desc" },
     }),
@@ -71,6 +75,14 @@ export default async function MemberDetailPage({
       reason: f.reason,
       status: f.status,
       daysAdded: f.daysAdded,
+    })),
+    extensions: extensions.map((e) => ({
+      id: e.id,
+      daysAdded: e.daysAdded,
+      reason: e.reason,
+      originalExpiry: e.originalExpiry.toISOString(),
+      newExpiry: e.newExpiry.toISOString(),
+      createdAt: e.createdAt.toISOString(),
     })),
     payments,
     measurements,
