@@ -1,7 +1,7 @@
 "use server";
 
-import { getDailyActions } from "@/lib/services/daily-actions";
+import { getSmartDailyActions } from "@/lib/services/smart-assignment";
 
-export async function fetchDailyActions() {
-  return getDailyActions();
+export async function fetchDailyActions(workerId?: number) {
+  return getSmartDailyActions(workerId);
 }

@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { todayIST } from "@/lib/utils/date";
+import { getSetting } from "./settings";
 
 export type ActionItem = {
-  type: "enquiry_followup" | "payment_followup" | "expiring_member" | "inactive_member" | "birthday" | "pending_leave";
+  type: "enquiry_followup" | "payment_followup" | "expiring_member" | "inactive_member" | "birthday" | "pending_leave" | "anniversary_today" | "target_gap";
   label: string;
   count: number;
   href: string;
@@ -29,6 +30,8 @@ export async function getDailyActions(): Promise<ActionItem[]> {
     inactiveMembers,
     birthdaysToday,
     pendingLeaves,
+    anniversariesToday,
+    targetGap,
   ] = await Promise.all([
     // Enquiries needing follow-up (updated > 2 days ago, not converted/lost)
     prisma.enquiry.count({
@@ -83,6 +86,43 @@ export async function getDailyActions(): Promise<ActionItem[]> {
     prisma.leaveRequest.count({
       where: { status: "pending" },
     }),
+
+    // Anniversaries today
+    prisma.user.findMany({
+      where: { anniversaryDate: { not: null } },
+      select: { anniversaryDate: true },
+    }).then((users) => {
+      const todayMonth = today.getMonth();
+      const todayDay = today.getDate();
+      return users.filter((u) => {
+        const ad = new Date(u.anniversaryDate!);
+        return ad.getMonth() === todayMonth && ad.getDate() === todayDay;
+      }).length;
+    }),
+
+    // Target gap check
+    (async () => {
+      const targetStr = await getSetting("monthly_revenue_target", "0");
+      const target = parseFloat(targetStr);
+      if (target <= 0) return null;
+
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      const daysSoFar = today.getDate();
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+
+      const revenueResult = await prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: {
+          createdAt: { gte: monthStart, lte: today },
+        },
+      });
+
+      const revenue = revenueResult._sum?.amount?.toNumber() ?? 0;
+      const pace = daysSoFar > 0 ? (revenue * daysInMonth) / daysSoFar : 0;
+
+      if (pace < target) return 1; // flag: behind target
+      return null;
+    })(),
   ]);
 
   const items: ActionItem[] = [];
@@ -144,6 +184,26 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       count: pendingLeaves,
       href: "/admin/leaves",
       priority: "low",
+    });
+  }
+
+  if (anniversariesToday > 0) {
+    items.push({
+      type: "anniversary_today",
+      label: "Member anniversaries today",
+      count: anniversariesToday,
+      href: "/admin/members",
+      priority: "low",
+    });
+  }
+
+  if (targetGap !== null) {
+    items.push({
+      type: "target_gap",
+      label: "Revenue behind target pace",
+      count: 1,
+      href: "/admin/reports/kpi",
+      priority: "medium",
     });
   }
 

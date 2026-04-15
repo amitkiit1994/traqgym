@@ -96,6 +96,8 @@ const ADMIN_ONLY_TOOLS = new Set([
   "extend_membership",
   "book_appointment",
   "cancel_appointment",
+  "get_attendance_patterns",
+  "suggest_schedule",
 ]);
 
 const allTools = [

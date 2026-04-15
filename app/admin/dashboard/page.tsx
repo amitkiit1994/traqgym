@@ -128,6 +128,7 @@ export default async function DashboardPage({
         progress: targetProgress.progress,
         daysRemaining: daysRemaining,
       }}
+      workerId={Number(session.user.id)}
     />
   );
 }

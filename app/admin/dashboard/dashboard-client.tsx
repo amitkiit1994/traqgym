@@ -221,6 +221,7 @@ type Props = {
   locations: { id: number; name: string }[];
   currentLocationId?: number;
   targetProgress: TargetProgressData;
+  workerId?: number;
 };
 
 const formatINR = (amount: number) =>
@@ -237,6 +238,7 @@ export function DashboardClient({
   locations,
   currentLocationId,
   targetProgress,
+  workerId,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -375,7 +377,7 @@ export function DashboardClient({
       </div>
 
       {/* Today's Priorities (AI-powered action list) */}
-      <ActionList />
+      <ActionList workerId={workerId} />
 
       {/* Action Required */}
       {totalActionItems > 0 && (
