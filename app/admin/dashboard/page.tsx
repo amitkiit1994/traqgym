@@ -1,8 +1,13 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getCachedStats, getCachedProfitLoss, getCachedStaffPerformance, getCachedPreviousMonthStats } from "@/lib/services/dashboard";
+import {
+  getCachedStats, getCachedProfitLoss, getCachedStaffPerformance, getCachedPreviousMonthStats,
+  getDailyCollection, getCachedDailyPOSCollection, getCachedTodayCounts, getCachedFinancialSplit,
+  getCachedTodayAnniversaries, getCachedUpcomingAnniversaries,
+} from "@/lib/services/dashboard";
 import { getRevenueForecast } from "@/lib/services/revenue-forecast";
+import { getTargetProgress } from "@/lib/services/gym-targets";
 import { getAnnouncements } from "@/lib/actions/announcements";
 import { prisma } from "@/lib/prisma";
 import { DashboardClient } from "./dashboard-client";
@@ -34,14 +39,38 @@ export default async function DashboardPage({
     unlikely: { count: 0, revenue: 0 },
   };
 
-  const [stats, profitLoss, announcements, staffPerf, prevStats, forecast] = await Promise.all([
+  const [stats, profitLoss, announcements, staffPerf, prevStats, forecast, dailyCollection, posSales, todayCounts, financialSplit, targetProgress, todayAnniversariesRaw, upcomingAnniversariesRaw] = await Promise.all([
     getCachedStats(locationId),
     getCachedProfitLoss(currentMonth, locationId),
     getAnnouncements("staff", locationId),
     getCachedStaffPerformance(monthStart.toISOString(), monthEnd.toISOString()),
     getCachedPreviousMonthStats(locationId),
     getRevenueForecast(locationId).catch((e) => { console.error("Revenue forecast failed:", e); return emptyForecast; }),
+    getDailyCollection(locationId),
+    getCachedDailyPOSCollection(locationId),
+    getCachedTodayCounts(locationId),
+    getCachedFinancialSplit(locationId),
+    getTargetProgress(now.getMonth() + 1, now.getFullYear(), locationId),
+    getCachedTodayAnniversaries(),
+    getCachedUpcomingAnniversaries(7),
   ]);
+  const todayAnniversaries = todayAnniversariesRaw.map((u) => ({
+    id: u.id,
+    name: `${u.firstname} ${u.lastname}`,
+    phone: u.phone || "-",
+  }));
+
+  const upcomingAnniversaries = upcomingAnniversariesRaw.map((u) => ({
+    id: u.id,
+    name: `${u.firstname} ${u.lastname}`,
+    phone: u.phone || "-",
+    daysUntil: Number(u.days_until),
+  }));
+
+  // Calculate days remaining in month
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysRemaining = lastDayOfMonth - now.getDate();
+
   const locations = await prisma.location.findMany({
     where: { isActive: true },
     select: { id: true, name: true },
@@ -82,11 +111,23 @@ export default async function DashboardPage({
           .sort((a, b) => b.totalCollected - a.totalCollected)
           .slice(0, 5)
           .map((s) => ({ name: s.name, total: s.totalCollected, renewals: s.renewalCount })),
+        dailyCollection: dailyCollection.byMode.total,
+        posSales: posSales,
+        todayCounts: todayCounts,
+        financialSplit: financialSplit,
+        todayAnniversaries: todayAnniversaries,
+        upcomingAnniversaries: upcomingAnniversaries,
       }}
       forecast={forecast}
       previousMonthStats={prevStats}
       locations={locations}
       currentLocationId={locationId}
+      targetProgress={{
+        target: targetProgress.target ? { targetRevenue: targetProgress.target.targetRevenue, targetNewMembers: targetProgress.target.targetNewMembers, targetRenewals: targetProgress.target.targetRenewals } : null,
+        actual: targetProgress.actual,
+        progress: targetProgress.progress,
+        daysRemaining: daysRemaining,
+      }}
     />
   );
 }

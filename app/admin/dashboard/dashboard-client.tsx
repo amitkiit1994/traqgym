@@ -135,6 +135,39 @@ type ProfitLossData = {
   netProfitLoss: number;
 };
 
+type TodayCounts = {
+  prospects: number;
+  followups: number;
+  renewals: number;
+  newMembers: number;
+};
+
+type FinancialSplit = {
+  billed: number;
+  received: number;
+  due: number;
+};
+
+type AnniversaryItem = {
+  id: number;
+  name: string;
+  phone: string;
+};
+
+type UpcomingAnniversaryItem = {
+  id: number;
+  name: string;
+  phone: string;
+  daysUntil: number;
+};
+
+type TargetProgressData = {
+  target: { targetRevenue: number; targetNewMembers: number; targetRenewals: number } | null;
+  actual: { revenue: number; newMembers: number; renewals: number };
+  progress: { revenuePercent: number; newMembersPercent: number; renewalsPercent: number } | null;
+  daysRemaining: number;
+};
+
 type AnnouncementItem = {
   id: number;
   title: string;
@@ -174,6 +207,12 @@ type Props = {
     announcements: AnnouncementItem[];
     attendanceChartData: { date: string; count: number }[];
     staffPerformance: { name: string; total: number; renewals: number }[];
+    dailyCollection: number;
+    posSales: number;
+    todayCounts: TodayCounts;
+    financialSplit: FinancialSplit;
+    todayAnniversaries: AnniversaryItem[];
+    upcomingAnniversaries: UpcomingAnniversaryItem[];
   };
   previousMonthStats?: {
     activeMembers: number;
@@ -181,6 +220,7 @@ type Props = {
   };
   locations: { id: number; name: string }[];
   currentLocationId?: number;
+  targetProgress: TargetProgressData;
 };
 
 const formatINR = (amount: number) =>
@@ -196,6 +236,7 @@ export function DashboardClient({
   previousMonthStats,
   locations,
   currentLocationId,
+  targetProgress,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -458,6 +499,34 @@ export function DashboardClient({
         </div>
       )}
 
+      {/* Today's Counts Row */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+        <Card className="glass">
+          <CardContent className="pt-4 pb-3 px-3">
+            <p className="text-xs text-muted-foreground">New Prospects</p>
+            <p className="text-lg font-bold">{stats.todayCounts.prospects}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass">
+          <CardContent className="pt-4 pb-3 px-3">
+            <p className="text-xs text-muted-foreground">Follow-ups</p>
+            <p className="text-lg font-bold">{stats.todayCounts.followups}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass">
+          <CardContent className="pt-4 pb-3 px-3">
+            <p className="text-xs text-muted-foreground">Renewals</p>
+            <p className="text-lg font-bold">{stats.todayCounts.renewals}</p>
+          </CardContent>
+        </Card>
+        <Card className="glass">
+          <CardContent className="pt-4 pb-3 px-3">
+            <p className="text-xs text-muted-foreground">New Members</p>
+            <p className="text-lg font-bold">{stats.todayCounts.newMembers}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Stat Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Link href="/admin/members?status=active" className="cursor-pointer">
@@ -615,6 +684,28 @@ export function DashboardClient({
           </CardContent>
         </Card>
         </Link>
+
+        <Card className="gradient-border-card card-hover-lift shine">
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">
+              Today&apos;s Collection
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{formatINR(stats.dailyCollection)}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="gradient-border-card card-hover-lift shine">
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">
+              POS Sales
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold stat-value-glow">{formatINR(stats.posSales)}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Profit/Loss Card */}
@@ -663,6 +754,88 @@ export function DashboardClient({
           </div>
         </CardContent>
       </Card>
+
+      {/* Billed vs Received vs Due */}
+      <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle>Billed vs Received vs Due (Active Tickets)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-sm text-muted-foreground">Billed</p>
+              <p className="text-xl font-bold">{formatINR(stats.financialSplit.billed)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Received</p>
+              <p className="text-xl font-bold text-financial-positive">{formatINR(stats.financialSplit.received)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Due</p>
+              <p className="text-xl font-bold text-financial-negative">{formatINR(stats.financialSplit.due)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Club Targets */}
+      {targetProgress.target && targetProgress.progress && (
+        <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle>Club Targets (This Month)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Revenue</span>
+                  <span>
+                    {formatINR(targetProgress.actual.revenue)} / {formatINR(targetProgress.target.targetRevenue)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${Math.min(targetProgress.progress.revenuePercent, 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{targetProgress.progress.revenuePercent}% achieved</p>
+              </div>
+              {targetProgress.target.targetNewMembers > 0 && (
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-muted-foreground">New Members</span>
+                    <span>{targetProgress.actual.newMembers} / {targetProgress.target.targetNewMembers}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${Math.min(targetProgress.progress.newMembersPercent, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{targetProgress.progress.newMembersPercent}% achieved</p>
+                </div>
+              )}
+              {targetProgress.target.targetRenewals > 0 && (
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-muted-foreground">Renewals</span>
+                    <span>{targetProgress.actual.renewals} / {targetProgress.target.targetRenewals}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${Math.min(targetProgress.progress.renewalsPercent, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{targetProgress.progress.renewalsPercent}% achieved</p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground text-right">{targetProgress.daysRemaining} day{targetProgress.daysRemaining !== 1 ? "s" : ""} remaining</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Revenue Forecast (Next 30 Days) */}
       {forecast.totalExpiring > 0 && (
@@ -894,6 +1067,51 @@ export function DashboardClient({
                   <div key={b.id} className="flex items-center justify-between py-1">
                     <span className="text-sm">{b.name}</span>
                     <Badge variant="secondary">in {b.daysUntil} day{b.daysUntil > 1 ? "s" : ""}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Anniversaries */}
+      {(stats.todayAnniversaries.length > 0 || stats.upcomingAnniversaries.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Anniversaries</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {stats.todayAnniversaries.length > 0 && (
+              <div className="mb-4">
+                <p className="text-sm font-medium mb-2">Today</p>
+                {stats.todayAnniversaries.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between py-1">
+                    <span className="text-sm">{a.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">{a.phone}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const msg = encodeURIComponent(`Happy Anniversary, ${a.name.split(" ")[0]}! Wishing you many more happy years ahead!`);
+                          window.open(`https://wa.me/${a.phone.replace(/\D/g, "")}?text=${msg}`, "_blank");
+                        }}
+                      >
+                        Send Wish
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {stats.upcomingAnniversaries.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Upcoming (7 days)</p>
+                {stats.upcomingAnniversaries.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between py-1">
+                    <span className="text-sm">{a.name}</span>
+                    <Badge variant="secondary">in {a.daysUntil} day{a.daysUntil > 1 ? "s" : ""}</Badge>
                   </div>
                 ))}
               </div>
