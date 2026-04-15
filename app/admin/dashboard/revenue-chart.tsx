@@ -14,11 +14,20 @@ import {
 
 type RevenueChartItem = { date: string; cash: number; upi: number; other: number };
 
-export function RevenueChart({ data }: { data: RevenueChartItem[] }) {
+export function RevenueChart({
+  data,
+  title = "Revenue (Last 7 Days)",
+  toolbar,
+}: {
+  data: RevenueChartItem[];
+  title?: string;
+  toolbar?: React.ReactNode;
+}) {
   return (
     <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
-      <CardHeader>
-        <CardTitle>Revenue (Last 7 Days)</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle>{title}</CardTitle>
+        {toolbar}
       </CardHeader>
       <CardContent>
         <div className="h-64">

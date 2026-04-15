@@ -271,7 +271,7 @@ export function AdminSidebar({
                           counts &&
                           BADGE_MAP[item.href] &&
                           counts[BADGE_MAP[item.href]] > 0 && (
-                            <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-medium">
+                            <span className="ml-auto inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-destructive text-white text-[10px] font-semibold">
                               {counts[BADGE_MAP[item.href]]}
                             </span>
                           )}
@@ -407,7 +407,7 @@ export function AdminMobileMenu({
                         {counts &&
                           BADGE_MAP[item.href] &&
                           counts[BADGE_MAP[item.href]] > 0 && (
-                            <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-medium">
+                            <span className="ml-auto inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-destructive text-white text-[10px] font-semibold">
                               {counts[BADGE_MAP[item.href]]}
                             </span>
                           )}

@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import {
   getCachedStats, getCachedProfitLoss, getCachedStaffPerformance, getCachedPreviousMonthStats,
-  getDailyCollection, getCachedDailyPOSCollection, getCachedTodayCounts, getCachedFinancialSplit,
+  getDailyCollection, getCachedDailyPOSCollection, getCachedTodayCounts,
   getCachedTodayAnniversaries, getCachedUpcomingAnniversaries,
 } from "@/lib/services/dashboard";
 import { getRevenueForecast } from "@/lib/services/revenue-forecast";
@@ -39,7 +39,7 @@ export default async function DashboardPage({
     unlikely: { count: 0, revenue: 0 },
   };
 
-  const [stats, profitLoss, announcements, staffPerf, prevStats, forecast, dailyCollection, posSales, todayCounts, financialSplit, targetProgress, todayAnniversariesRaw, upcomingAnniversariesRaw] = await Promise.all([
+  const [stats, profitLoss, announcements, staffPerf, prevStats, forecast, dailyCollection, posSales, todayCounts, targetProgress, todayAnniversariesRaw, upcomingAnniversariesRaw, overdueFollowupsCount] = await Promise.all([
     getCachedStats(locationId),
     getCachedProfitLoss(currentMonth, locationId),
     getAnnouncements("staff", locationId),
@@ -49,10 +49,20 @@ export default async function DashboardPage({
     getDailyCollection(locationId),
     getCachedDailyPOSCollection(locationId),
     getCachedTodayCounts(locationId),
-    getCachedFinancialSplit(locationId),
     getTargetProgress(now.getMonth() + 1, now.getFullYear(), locationId),
     getCachedTodayAnniversaries(),
     getCachedUpcomingAnniversaries(7),
+    (() => {
+      const ninetyDaysAgo = new Date(now);
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      return prisma.paymentFollowup.count({
+        where: {
+          status: { in: ["pending", "contacted", "promised"] },
+          dueDate: { gte: ninetyDaysAgo, lt: now },
+          amountDue: { gt: 0 },
+        },
+      });
+    })(),
   ]);
   const todayAnniversaries = todayAnniversariesRaw.map((u) => ({
     id: u.id,
@@ -100,6 +110,7 @@ export default async function DashboardPage({
         upiThisMonth: stats.upiThisMonth,
         currentlyInGym: stats.currentlyInGym,
         overdueMembers: stats.overdueMembers,
+        overdueFollowupsCount,
         planDistribution: stats.planDistribution,
         todayBirthdays: stats.todayBirthdays,
         upcomingBirthdays: stats.upcomingBirthdays,
@@ -114,7 +125,6 @@ export default async function DashboardPage({
         dailyCollection: dailyCollection.byMode.total,
         posSales: posSales,
         todayCounts: todayCounts,
-        financialSplit: financialSplit,
         todayAnniversaries: todayAnniversaries,
         upcomingAnniversaries: upcomingAnniversaries,
       }}

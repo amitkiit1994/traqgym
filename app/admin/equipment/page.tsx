@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   getEquipment,
   createEquipment,
@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -82,6 +83,7 @@ export default function EquipmentPage() {
   const [editing, setEditing] = useState<EquipmentItem | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = () => {
     startTransition(async () => {
@@ -144,8 +146,15 @@ export default function EquipmentPage() {
     });
   };
 
+  const filteredItems = useMemo(() => {
+    if (!searchQuery) return items;
+    const q = searchQuery.toLowerCase();
+    return items.filter((item) => item.name.toLowerCase().includes(q));
+  }, [items, searchQuery]);
+
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Equipment</h1>
         <Button onClick={openCreate}>Add Equipment</Button>
@@ -202,6 +211,14 @@ export default function EquipmentPage() {
         </div>
       </div>
 
+      <SearchInput
+        placeholder="Search equipment name..."
+        onSearch={setSearchQuery}
+        className="w-full sm:w-64"
+      />
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -215,7 +232,7 @@ export default function EquipmentPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <TableRow
               key={item.id}
               className={item.needsService ? "bg-status-grace-bg/50" : ""}
@@ -275,6 +292,7 @@ export default function EquipmentPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">

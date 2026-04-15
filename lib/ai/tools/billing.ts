@@ -53,10 +53,10 @@ export const billingTools = [
         .describe("Filter by location ID"),
     }),
     async execute(input) {
-      const result = await getBalanceDueReportAction(
-        input.locationId ?? undefined
-      );
-      return JSON.stringify(result);
+      const { data } = await getBalanceDueReportAction({
+        locationId: input.locationId ?? undefined,
+      });
+      return JSON.stringify(data);
     },
   }),
 
@@ -137,13 +137,13 @@ export const billingTools = [
         .describe("Filter by location ID"),
     }),
     async execute(input) {
-      const result = await getFollowupsAction({
+      const { data } = await getFollowupsAction({
         status: input.status ?? undefined,
         assignedToId: input.assignedToId ?? undefined,
         priority: input.priority ?? undefined,
         locationId: input.locationId ?? undefined,
       });
-      return JSON.stringify(result);
+      return JSON.stringify(data);
     },
   }),
 

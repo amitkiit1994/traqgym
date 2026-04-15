@@ -110,21 +110,21 @@ export async function getStats(locationId?: number) {
         },
       },
     }),
-    // Cash this month
+    // Cash this month (case-insensitive: "Cash" or "cash")
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: "Cash",
+        paymentMode: { in: ["Cash", "cash"] },
       },
       _sum: { amount: true },
     }),
-    // UPI this month
+    // UPI this month (case-insensitive: "UPI" or "upi")
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: "UPI",
+        paymentMode: { in: ["UPI", "upi"] },
       },
       _sum: { amount: true },
     }),
@@ -140,30 +140,36 @@ export async function getStats(locationId?: number) {
         user: { select: { firstname: true, lastname: true } },
       },
     }),
-    // Overdue members
-    prisma.user.findMany({
-      where: {
-        ...where,
-        memberTickets: {
-          some: {},
-        },
-        NOT: {
+    // Overdue members — scoped to last 90 days (not all-time)
+    (() => {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      return prisma.user.findMany({
+        where: {
+          ...where,
           memberTickets: {
             some: {
-              expireDate: { gte: sevenDaysAgoDate },
+              expireDate: { gte: ninetyDaysAgo, lt: sevenDaysAgoDate },
+            },
+          },
+          NOT: {
+            memberTickets: {
+              some: {
+                expireDate: { gte: sevenDaysAgoDate },
+              },
             },
           },
         },
-      },
-      include: {
-        memberTickets: {
-          orderBy: { expireDate: "desc" },
-          take: 1,
-          include: { plan: { select: { id: true, name: true } } },
+        include: {
+          memberTickets: {
+            orderBy: { expireDate: "desc" },
+            take: 1,
+            include: { plan: { select: { id: true, name: true } } },
+          },
         },
-      },
-      take: 50,
-    }),
+        take: 50,
+      });
+    })(),
     // Plan distribution
     prisma.memberTicket.groupBy({
       by: ["planId"],
@@ -185,6 +191,7 @@ export async function getStats(locationId?: number) {
       WHERE birthdate IS NOT NULL
         AND EXTRACT(MONTH FROM birthdate) = ${todayMonth}
         AND EXTRACT(DAY FROM birthdate) = ${todayDay}
+        AND id IN (SELECT "userId" FROM "MemberTicket" WHERE "expireDate" >= CURRENT_DATE)
     `,
     prisma.$queryRaw<
       { id: number; firstname: string; lastname: string; phone: string | null; days_until: number }[]
@@ -205,6 +212,7 @@ export async function getStats(locationId?: number) {
           END as next_year_bd
         FROM "User"
         WHERE birthdate IS NOT NULL
+          AND id IN (SELECT "userId" FROM "MemberTicket" WHERE "expireDate" >= CURRENT_DATE)
       )
       SELECT id, firstname, lastname, phone,
         CASE
@@ -608,18 +616,19 @@ export async function getTodayCounts(locationId?: number) {
 }
 
 export async function getFinancialSplit(locationId?: number) {
-  const result = await prisma.memberTicket.aggregate({
-    where: {
-      status: "active",
-      ...(locationId ? { locationId } : {}),
-    },
-    _sum: { totalAmount: true, amountPaid: true, balanceDue: true },
+  const locFilter = locationId ? { locationId } : {};
+
+  const all = await prisma.memberTicket.aggregate({
+    where: { status: { not: "cancelled" }, ...locFilter },
+    _sum: { totalAmount: true, amountPaid: true },
   });
 
+  const billed = Number(all._sum.totalAmount || 0);
+  const received = Number(all._sum.amountPaid || 0);
   return {
-    billed: Number(result._sum.totalAmount || 0),
-    received: Number(result._sum.amountPaid || 0),
-    due: Number(result._sum.balanceDue || 0),
+    billed,
+    received,
+    due: billed - received,
   };
 }
 
@@ -636,6 +645,7 @@ export async function getTodayAnniversaries() {
     WHERE "anniversaryDate" IS NOT NULL
       AND EXTRACT(MONTH FROM "anniversaryDate") = ${todayMonth}
       AND EXTRACT(DAY FROM "anniversaryDate") = ${todayDay}
+      AND id IN (SELECT "userId" FROM "MemberTicket" WHERE "expireDate" >= CURRENT_DATE)
   `;
 }
 
@@ -662,6 +672,7 @@ export async function getUpcomingAnniversaries(days: number = 7) {
         END as next_year_ann
       FROM "User"
       WHERE "anniversaryDate" IS NOT NULL
+        AND id IN (SELECT "userId" FROM "MemberTicket" WHERE "expireDate" >= CURRENT_DATE)
     )
     SELECT id, firstname, lastname, phone,
       CASE
@@ -675,6 +686,146 @@ export async function getUpcomingAnniversaries(days: number = 7) {
       END BETWEEN 1 AND ${days}
     ORDER BY days_until
   `;
+}
+
+/**
+ * Revenue chart data for an arbitrary date range.
+ * For ranges >30 days: aggregate by week. For >90 days: by month.
+ */
+export async function getRevenueChartData(
+  startDate: Date,
+  endDate: Date,
+  locationId?: number
+) {
+  const where = locationId ? { locationId } : {};
+  const payments = await prisma.payment.findMany({
+    where: {
+      ...where,
+      createdAt: { gte: startDate, lt: endDate },
+    },
+    select: { amount: true, paymentMode: true, createdAt: true },
+  });
+
+  const diffDays = Math.ceil(
+    (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Determine bucketing: daily / weekly / monthly
+  type Bucket = { cash: number; upi: number; other: number };
+  const bucketMap = new Map<string, Bucket>();
+
+  const getKey = (d: Date): string => {
+    if (diffDays > 90) {
+      // Monthly
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    } else if (diffDays > 30) {
+      // Weekly — ISO week start (Monday)
+      const day = new Date(d);
+      const dow = day.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      day.setDate(day.getDate() + diff);
+      return day.toISOString().split("T")[0];
+    }
+    return d.toISOString().split("T")[0];
+  };
+
+  // Pre-fill buckets
+  const cursor = new Date(startDate);
+  while (cursor < endDate) {
+    const key = getKey(cursor);
+    if (!bucketMap.has(key)) {
+      bucketMap.set(key, { cash: 0, upi: 0, other: 0 });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  for (const p of payments) {
+    const key = getKey(p.createdAt);
+    let entry = bucketMap.get(key);
+    if (!entry) {
+      entry = { cash: 0, upi: 0, other: 0 };
+      bucketMap.set(key, entry);
+    }
+    const amt = Number(p.amount);
+    const mode = p.paymentMode.toLowerCase();
+    if (mode === "cash") entry.cash += amt;
+    else if (mode === "upi") entry.upi += amt;
+    else entry.other += amt;
+  }
+
+  return Array.from(bucketMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, vals]) => ({
+      date,
+      cash: vals.cash,
+      upi: vals.upi,
+      other: vals.other,
+    }));
+}
+
+/**
+ * Monthly revenue trend for the last N months.
+ */
+export async function getMonthlyRevenueTrend(months: number = 12, locationId?: number) {
+  const now = todayIST();
+  const result: {
+    month: string;
+    revenue: number;
+    expenses: number;
+    net: number;
+    cash: number;
+    upi: number;
+    renewals: number;
+    newMembers: number;
+  }[] = [];
+
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    const locFilter = locationId ? { locationId } : {};
+
+    const [payments, cashAgg, upiAgg, expenseAgg, renewalCount, newMemberCount] =
+      await Promise.all([
+        prisma.payment.aggregate({
+          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd } },
+          _sum: { amount: true },
+        }),
+        prisma.payment.aggregate({
+          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["Cash", "cash"] } },
+          _sum: { amount: true },
+        }),
+        prisma.payment.aggregate({
+          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["UPI", "upi"] } },
+          _sum: { amount: true },
+        }),
+        prisma.expense.aggregate({
+          where: { ...locFilter, expenseDate: { gte: monthStart, lt: monthEnd } },
+          _sum: { amount: true },
+        }),
+        prisma.memberTicket.count({
+          where: { ...locFilter, buyDate: { gte: monthStart, lt: monthEnd } },
+        }),
+        prisma.user.count({
+          where: { createdAt: { gte: monthStart, lt: monthEnd } },
+        }),
+      ]);
+
+    const revenue = Number(payments._sum.amount || 0);
+    const expenses = Number(expenseAgg._sum.amount || 0);
+
+    result.push({
+      month: monthStart.toISOString().slice(0, 7),
+      revenue,
+      expenses,
+      net: revenue - expenses,
+      cash: Number(cashAgg._sum.amount || 0),
+      upi: Number(upiAgg._sum.amount || 0),
+      renewals: renewalCount,
+      newMembers: newMemberCount,
+    });
+  }
+
+  return result;
 }
 
 // --- Cached wrappers ---

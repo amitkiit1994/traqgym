@@ -7,7 +7,7 @@ import { requireWorker } from "@/lib/auth-guard";
 import { createMemberSchema, zodErrors } from "@/lib/validations";
 import { calculateChurnRiskBatch } from "@/lib/services/churn-risk";
 
-export async function getMembers(params?: string | { search?: string; page?: number; pageSize?: number; status?: "active" | "expired" | "no_plan" | "expiring" | "inactive"; birthday?: string; sortBy?: "name" | "status" | "location"; sortOrder?: "asc" | "desc" }) {
+export async function getMembers(params?: string | { search?: string; page?: number; pageSize?: number; status?: "active" | "expired" | "no_plan" | "expiring" | "inactive"; birthday?: string; sortBy?: "name" | "status" | "location"; sortOrder?: "asc" | "desc"; showAllExpired?: boolean }) {
   try { await requireWorker(); } catch { return { members: [], total: 0 }; }
 
   // Support legacy call signature: getMembers("searchTerm")
@@ -18,6 +18,7 @@ export async function getMembers(params?: string | { search?: string; page?: num
   const birthdayFilter = typeof params === "object" ? params?.birthday : undefined;
   const sortBy = (typeof params === "object" ? params?.sortBy : undefined) ?? "name";
   const sortOrder = (typeof params === "object" ? params?.sortOrder : undefined) ?? "asc";
+  const showAllExpired = typeof params === "object" ? params?.showAllExpired : undefined;
   const skip = (page - 1) * pageSize;
 
   const today = new Date();
@@ -43,7 +44,12 @@ export async function getMembers(params?: string | { search?: string; page?: num
       },
     };
   } else if (statusFilter === "expired") {
-    where.memberTickets = { some: {} };
+    const ninetyDaysAgo = new Date(today.getTime() - 90 * 86400000);
+    where.memberTickets = {
+      some: {
+        ...(!showAllExpired ? { expireDate: { gte: ninetyDaysAgo, lt: today } } : {}),
+      },
+    };
     where.NOT = {
       memberTickets: {
         some: {

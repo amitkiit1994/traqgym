@@ -14,6 +14,7 @@
     { "path": "/api/cron/ai-post-renewal", "schedule": "0 11 * * *" },
     { "path": "/api/cron/ai-winback", "schedule": "0 12 * * 1" },
     { "path": "/api/cron/ai-onboarding", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/ai-revenue-anomaly", "schedule": "0 21 * * *" }
+    { "path": "/api/cron/ai-revenue-anomaly", "schedule": "0 21 * * *" },
+    { "path": "/api/cron/data-cleanup", "schedule": "0 2 * * *" }
   ]
 }

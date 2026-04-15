@@ -33,22 +33,32 @@ export async function getDailyActions(): Promise<ActionItem[]> {
     anniversariesToday,
     targetGap,
   ] = await Promise.all([
-    // Enquiries needing follow-up (updated > 2 days ago, not converted/lost)
-    prisma.enquiry.count({
-      where: {
-        status: { in: ["new", "follow_up", "interested"] },
-        stage: { notIn: ["converted", "lost"] },
-        updatedAt: { lt: new Date(today.getTime() - 2 * 86400000) },
-      },
-    }),
+    // Enquiries needing follow-up (created within 120 days, not converted/lost)
+    (() => {
+      const onetwentyDaysAgo = new Date(today);
+      onetwentyDaysAgo.setDate(onetwentyDaysAgo.getDate() - 120);
+      return prisma.enquiry.count({
+        where: {
+          status: { in: ["new", "follow_up", "interested"] },
+          stage: { notIn: ["converted", "lost"] },
+          createdAt: { gte: onetwentyDaysAgo },
+          updatedAt: { lt: new Date(today.getTime() - 2 * 86400000) },
+        },
+      });
+    })(),
 
-    // Overdue payment follow-ups
-    prisma.paymentFollowup.count({
-      where: {
-        status: { in: ["pending", "in_progress"] },
-        nextFollowupAt: { lt: today },
-      },
-    }),
+    // Overdue payment follow-ups (amountDue > 0, within 90 days)
+    (() => {
+      const ninetyDaysAgo = new Date(today);
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      return prisma.paymentFollowup.count({
+        where: {
+          status: { in: ["pending", "contacted", "promised"] },
+          dueDate: { gte: ninetyDaysAgo, lt: today },
+          amountDue: { gt: 0 },
+        },
+      });
+    })(),
 
     // Memberships expiring in next 3 days
     prisma.memberTicket.count({
@@ -142,7 +152,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       type: "payment_followup",
       label: "Payment follow-ups overdue",
       count: overduePayments,
-      href: "/admin/followups?status=overdue",
+      href: "/admin/followups?status=pending",
       priority: "high",
     });
   }

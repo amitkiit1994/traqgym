@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useMemo, useTransition } from "react";
 import { getFeedbackAction, getFeedbackStatsAction } from "@/lib/actions/feedback";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageCircle, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,7 @@ function categoryColor(cat: string): string {
 
 export default function FeedbackPage() {
   const [items, setItems] = useState<FeedbackItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterRating, setFilterRating] = useState<number>(0);
@@ -98,13 +100,21 @@ export default function FeedbackPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCategory, filterRating, page]);
 
-  // Client-side rating filter
-  const displayed = filterRating > 0
-    ? items.filter((f) => f.rating === filterRating)
-    : items;
+  // Client-side rating + search filter
+  const displayed = useMemo(() => {
+    let result = filterRating > 0
+      ? items.filter((f) => f.rating === filterRating)
+      : items;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((f) => f.userName.toLowerCase().includes(q));
+    }
+    return result;
+  }, [items, filterRating, searchQuery]);
 
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <h1 className="text-xl font-semibold">Member Feedback</h1>
 
       {/* Stats row */}
@@ -141,7 +151,12 @@ export default function FeedbackPage() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Search + Filters */}
+      <SearchInput
+        placeholder="Search by member name..."
+        onSearch={setSearchQuery}
+        className="max-w-sm"
+      />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
         <div className="flex gap-1 flex-wrap">
           {CATEGORIES.map((cat) => (
@@ -173,8 +188,10 @@ export default function FeedbackPage() {
           ))}
         </div>
       </div>
+      </div>
 
       {/* Table */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -221,9 +238,11 @@ export default function FeedbackPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
+        <div className="shrink-0">
         <div className="flex items-center justify-center gap-2">
           <Button
             variant="outline"
@@ -244,6 +263,7 @@ export default function FeedbackPage() {
           >
             <ChevronRight className="size-4" />
           </Button>
+        </div>
         </div>
       )}
     </div>

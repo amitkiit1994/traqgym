@@ -103,6 +103,13 @@ export default function SettingsPage() {
   const [testingBiomax, setTestingBiomax] = useState(false);
   const [biomaxTestResult, setBiomaxTestResult] = useState<string | null>(null);
 
+  // Data Lifecycle
+  const [dataCleanupEnabled, setDataCleanupEnabled] = useState(true);
+  const [followupArchiveDays, setFollowupArchiveDays] = useState("180");
+  const [enquiryCloseDays, setEnquiryCloseDays] = useState("120");
+  const [runningCleanup, setRunningCleanup] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
+
   // UI state
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
@@ -152,6 +159,9 @@ export default function SettingsPage() {
         setSmtpFrom(data.smtp_from ?? "");
         setBiomaxBaseUrl(data.biomax_sdk_base_url ?? "");
         setBiomaxApiKey(data.biomax_sdk_api_key ?? "");
+        setDataCleanupEnabled(data.data_cleanup_enabled !== "false");
+        setFollowupArchiveDays(data.followup_auto_archive_days ?? "180");
+        setEnquiryCloseDays(data.enquiry_auto_close_days ?? "120");
       })
       .catch(() => setError("Failed to load settings"));
   }, []);
@@ -211,6 +221,9 @@ export default function SettingsPage() {
           smtp_from: smtpFrom,
           biomax_sdk_base_url: biomaxBaseUrl,
           biomax_sdk_api_key: biomaxApiKey,
+          data_cleanup_enabled: dataCleanupEnabled ? "true" : "false",
+          followup_auto_archive_days: followupArchiveDays,
+          enquiry_auto_close_days: enquiryCloseDays,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -1010,6 +1023,78 @@ export default function SettingsPage() {
           <p className="text-xs text-muted-foreground">
             Save settings first, then test. Credentials stored in DB override .env values.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Card: Data Lifecycle */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Data Lifecycle</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Auto-archive stale followups</Label>
+              <p className="text-xs text-muted-foreground">
+                Followups older than threshold are auto-set to &quot;written off&quot;
+              </p>
+            </div>
+            <Switch checked={dataCleanupEnabled} onCheckedChange={setDataCleanupEnabled} />
+          </div>
+          <div className="space-y-2">
+            <Label>Followup archive threshold (days)</Label>
+            <Input
+              type="number"
+              value={followupArchiveDays}
+              onChange={(e) => setFollowupArchiveDays(e.target.value)}
+              min={30}
+              max={365}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Enquiry auto-close threshold (days)</Label>
+            <Input
+              type="number"
+              value={enquiryCloseDays}
+              onChange={(e) => setEnquiryCloseDays(e.target.value)}
+              min={30}
+              max={365}
+            />
+            <p className="text-xs text-muted-foreground">
+              Enquiries with no activity are auto-set to &quot;lost&quot;
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={runningCleanup}
+              onClick={async () => {
+                setRunningCleanup(true);
+                setCleanupResult(null);
+                try {
+                  const { runDataCleanupAction } = await import("@/lib/actions/data-cleanup");
+                  const result = await runDataCleanupAction();
+                  if (result.success && "followupsArchived" in result) {
+                    setCleanupResult(
+                      `Done: ${result.followupsArchived} followups archived, ${result.enquiriesClosed} enquiries closed`
+                    );
+                  } else {
+                    setCleanupResult(result.error || "Failed");
+                  }
+                } catch {
+                  setCleanupResult("Failed to run cleanup");
+                } finally {
+                  setRunningCleanup(false);
+                }
+              }}
+            >
+              {runningCleanup ? "Running..." : "Run cleanup now"}
+            </Button>
+            {cleanupResult && (
+              <p className="text-sm text-muted-foreground">{cleanupResult}</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

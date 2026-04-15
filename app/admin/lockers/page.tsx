@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useMemo, useTransition } from "react";
 import {
   getLockersAction,
   createLockerAction,
@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Dialog,
   DialogContent,
@@ -75,6 +76,7 @@ function statusColor(s: string): string {
 
 export default function LockersPage() {
   const [lockers, setLockers] = useState<LockerItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [locations, setLocations] = useState<Location[]>([]);
   const [stats, setStats] = useState<Stats>({ available: 0, assigned: 0, maintenance: 0, total: 0 });
   const [filterLocation, setFilterLocation] = useState<string>("");
@@ -217,8 +219,19 @@ export default function LockersPage() {
     setMaintenanceOpen(true);
   };
 
+  const filtered = useMemo(() => {
+    if (!searchQuery) return lockers;
+    const q = searchQuery.toLowerCase();
+    return lockers.filter(
+      (l) =>
+        l.number.toLowerCase().includes(q) ||
+        (l.assignedUserName && l.assignedUserName.toLowerCase().includes(q))
+    );
+  }, [lockers, searchQuery]);
+
   return (
-    <div className="space-y-4">
+    <div className="h-full flex flex-col gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold">Locker Management</h1>
         <Button onClick={() => { setError(""); setAddOpen(true); }}>
@@ -285,7 +298,15 @@ export default function LockersPage() {
         <p className="text-sm text-destructive">{error}</p>
       )}
 
+      <SearchInput
+        placeholder="Search by locker number or member name..."
+        onSearch={setSearchQuery}
+        className="max-w-sm"
+      />
+      </div>
+
       {/* Lockers table */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Table>
         <TableHeader>
           <TableRow>
@@ -298,7 +319,7 @@ export default function LockersPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {lockers.map((locker) => (
+          {filtered.map((locker) => (
             <TableRow key={locker.id}>
               <TableCell className="font-medium">{locker.number}</TableCell>
               <TableCell>
@@ -385,7 +406,7 @@ export default function LockersPage() {
               </TableCell>
             </TableRow>
           ))}
-          {lockers.length === 0 && (
+          {filtered.length === 0 && (
             <TableRow>
               <TableCell colSpan={6}>
                 <div className="flex flex-col items-center gap-2 py-8">
@@ -400,6 +421,7 @@ export default function LockersPage() {
           )}
         </TableBody>
       </Table>
+      </div>
 
       {/* Add Locker Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

@@ -78,22 +78,67 @@ export async function recordPartialPayment(params: {
   };
 }
 
-export async function getBalanceDueReport(locationId?: number) {
-  const where: Record<string, unknown> = {
+export async function getBalanceDueReport(filters?: {
+  locationId?: number;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = {
     balanceDue: { gt: 0 },
   };
-  if (locationId) where.locationId = locationId;
+  if (filters?.locationId) where.locationId = filters.locationId;
 
-  const tickets = await prisma.memberTicket.findMany({
-    where,
-    include: {
-      user: { select: { id: true, firstname: true, lastname: true, phone: true } },
-      plan: { select: { name: true } },
-    },
-    orderBy: { balanceDue: "desc" },
-  });
+  if (filters?.search) {
+    const q = filters.search.trim();
+    if (q) {
+      where.user = {
+        OR: [
+          { firstname: { contains: q, mode: "insensitive" } },
+          { lastname: { contains: q, mode: "insensitive" } },
+          { phone: { contains: q } },
+        ],
+      };
+    }
+  }
 
-  return tickets.map((t) => ({
+  const sortField = filters?.sortBy || "balanceDue";
+  const sortDir = filters?.sortOrder || "desc";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let orderBy: any;
+  if (sortField === "memberName") {
+    orderBy = { user: { firstname: sortDir } };
+  } else if (sortField === "balanceDue" || sortField === "totalAmount" || sortField === "dueDate" || sortField === "expireDate") {
+    orderBy = { [sortField]: sortDir };
+  } else {
+    orderBy = { balanceDue: "desc" };
+  }
+
+  const page = filters?.page ?? 1;
+  const pageSize = filters?.pageSize ?? 25;
+
+  const [tickets, total, aggregate] = await Promise.all([
+    prisma.memberTicket.findMany({
+      where,
+      include: {
+        user: { select: { id: true, firstname: true, lastname: true, phone: true } },
+        plan: { select: { name: true } },
+      },
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.memberTicket.count({ where }),
+    prisma.memberTicket.aggregate({
+      where,
+      _sum: { balanceDue: true },
+    }),
+  ]);
+
+  const data = tickets.map((t) => ({
     userId: t.user.id,
     memberName: `${t.user.firstname} ${t.user.lastname}`,
     phone: t.user.phone || "-",
@@ -105,6 +150,10 @@ export async function getBalanceDueReport(locationId?: number) {
     dueDate: t.dueDate?.toISOString() ?? null,
     expireDate: t.expireDate.toISOString(),
   }));
+
+  const totalDue = aggregate._sum.balanceDue?.toNumber() ?? 0;
+
+  return { data, total, totalDue };
 }
 
 export async function getMemberBalance(userId: number) {
