@@ -274,7 +274,7 @@ export default async function MemberHomePage() {
         </Card>
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <Clock className="size-5 text-purple-500 shrink-0" />
+            <Clock className="size-5 text-red-500 shrink-0" />
             <div>
               <p className="text-lg font-bold">{memberSinceMonths}</p>
               <p className="text-xs text-muted-foreground">Months as member</p>
