@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { getCollectionReport, getMemberReport, getAttendanceReport, getLoginHistory, getProfitLossReport, getMembershipMatrix, getSourceAnalysis } from "@/lib/actions/reports";
 import { getLocations } from "@/lib/actions/locations";
 import { Button } from "@/components/ui/button";
@@ -816,6 +817,48 @@ export default function ReportsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Reports</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        <Link href="/admin/reports/irregular">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Irregular Members</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">Active members who haven&apos;t visited recently</p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/reports/conversion-funnel">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Conversion Funnel</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">Enquiry stage progression and conversion rates</p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/reports/kpi">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">KPI Performance</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">Revenue, members, attendance and churn trends</p>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/admin/reports/member-usage">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Member Usage Analysis</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">Visit frequency segmentation: heavy, moderate, light users</p>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
       <Tabs defaultValue="collection">
         <TabsList className="overflow-x-auto max-w-full">
           <TabsTrigger value="collection">Daily Collection</TabsTrigger>
