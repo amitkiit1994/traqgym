@@ -174,6 +174,18 @@ type ChurnRiskData = {
   reason: string;
 };
 
+type SatisfactionScoreData = {
+  score: number;
+  riskLevel: "low" | "medium" | "high";
+  breakdown: {
+    attendance: { score: number; visits: number; expected: number };
+    payment: { score: number; onTime: number; total: number };
+    feedback: { score: number; avgRating: number; count: number };
+    tenure: { score: number; months: number };
+    engagement: { score: number; classBookings: number; facilityBookings: number };
+  };
+};
+
 const riskVariantMap: Record<string, "active" | "expiring" | "destructive"> = {
   low: "active",
   medium: "expiring",
@@ -186,12 +198,14 @@ export function MemberDetailClient({
   plans = [],
   anomaly,
   churnRisk,
+  satisfactionScore,
 }: {
   member: MemberData;
   locations: LocationOption[];
   plans?: PlanOption[];
   anomaly?: AnomalyData;
   churnRisk?: ChurnRiskData;
+  satisfactionScore?: SatisfactionScoreData;
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -584,6 +598,24 @@ export function MemberDetailClient({
         {churnRisk && (
           <Badge variant={riskVariantMap[churnRisk.level]} title={churnRisk.reason}>
             Risk: {churnRisk.level.charAt(0).toUpperCase() + churnRisk.level.slice(1)}
+          </Badge>
+        )}
+        {satisfactionScore && (
+          <Badge
+            variant="secondary"
+            title={`Attendance: ${satisfactionScore.breakdown.attendance.score}, Payment: ${satisfactionScore.breakdown.payment.score}, Feedback: ${satisfactionScore.breakdown.feedback.score}, Tenure: ${satisfactionScore.breakdown.tenure.score}, Engagement: ${satisfactionScore.breakdown.engagement.score}`}
+          >
+            <span
+              className={
+                satisfactionScore.score > 70
+                  ? "text-green-600 dark:text-green-400"
+                  : satisfactionScore.score >= 40
+                    ? "text-yellow-600 dark:text-yellow-400"
+                    : "text-red-600 dark:text-red-400"
+              }
+            >
+              Satisfaction: {satisfactionScore.score}
+            </span>
           </Badge>
         )}
         <DropdownMenu>

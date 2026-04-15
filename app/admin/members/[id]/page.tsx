@@ -9,6 +9,7 @@ import { MemberDetailClient } from "./member-detail-client";
 import { prisma } from "@/lib/prisma";
 import { detectAttendanceAnomaly } from "@/lib/services/attendance-anomaly";
 import { calculateChurnRisk } from "@/lib/services/churn-risk";
+import { computeSatisfactionScore } from "@/lib/services/satisfaction-score";
 
 export default async function MemberDetailPage({
   params,
@@ -20,7 +21,7 @@ export default async function MemberDetailPage({
   const member = await getMember(memberId);
   if (!member) notFound();
 
-  const [locations, payments, measurements, freezes, extensions, allPlans, referralCount, anomaly, churnRisk] = await Promise.all([
+  const [locations, payments, measurements, freezes, extensions, allPlans, referralCount, anomaly, churnRisk, satisfactionScore] = await Promise.all([
     getLocations(),
     getMemberPayments(memberId).then((r) => r.payments),
     getMeasurements(memberId),
@@ -36,6 +37,7 @@ export default async function MemberDetailPage({
     getReferralCount(memberId),
     detectAttendanceAnomaly(memberId),
     calculateChurnRisk(memberId),
+    computeSatisfactionScore(memberId),
   ]);
 
   const activeLocations = locations
@@ -94,7 +96,7 @@ export default async function MemberDetailPage({
 
   return (
     <div className="space-y-4">
-      <MemberDetailClient member={serialized} locations={activeLocations} plans={activePlans} anomaly={anomaly} churnRisk={churnRisk} />
+      <MemberDetailClient member={serialized} locations={activeLocations} plans={activePlans} anomaly={anomaly} churnRisk={churnRisk} satisfactionScore={satisfactionScore} />
       {referralCount > 0 && (
         <div className="max-w-4xl rounded-lg border p-4">
           <h3 className="text-sm font-medium mb-1">Referrals</h3>
