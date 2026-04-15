@@ -110,21 +110,21 @@ export async function getStats(locationId?: number) {
         },
       },
     }),
-    // Cash this month
+    // Cash this month (case-insensitive: "Cash" or "cash")
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: "Cash",
+        paymentMode: { in: ["Cash", "cash"] },
       },
       _sum: { amount: true },
     }),
-    // UPI this month
+    // UPI this month (case-insensitive: "UPI" or "upi")
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: "UPI",
+        paymentMode: { in: ["UPI", "upi"] },
       },
       _sum: { amount: true },
     }),
@@ -791,11 +791,11 @@ export async function getMonthlyRevenueTrend(months: number = 12, locationId?: n
           _sum: { amount: true },
         }),
         prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: "Cash" },
+          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["Cash", "cash"] } },
           _sum: { amount: true },
         }),
         prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: "UPI" },
+          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["UPI", "upi"] } },
           _sum: { amount: true },
         }),
         prisma.expense.aggregate({
