@@ -77,7 +77,7 @@ const sourceLabels: Record<string, string> = {
   other: "Other",
 };
 
-const statusOptions = ["all", "new", "contacted", "follow_up", "converted", "lost"];
+const statusOptions = ["all", "overdue", "new", "contacted", "follow_up", "converted", "lost"];
 const PAGE_SIZE = 25;
 
 export default function EnquiriesPage() {
@@ -88,7 +88,6 @@ export default function EnquiriesPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [filter, setFilter] = useState(() => {
     const urlStatus = searchParams.get("status");
-    if (urlStatus === "overdue") return "follow_up";
     if (urlStatus && statusOptions.includes(urlStatus)) return urlStatus;
     return "all";
   });

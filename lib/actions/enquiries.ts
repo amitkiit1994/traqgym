@@ -19,7 +19,13 @@ export async function getEnquiries(filters?: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {};
   const status = filters?.status;
-  if (status && status !== "all") where.status = status;
+  if (status === "overdue") {
+    // Match daily-actions query: actionable statuses, not updated in 2+ days
+    where.status = { in: ["new", "follow_up", "interested"] };
+    where.updatedAt = { lt: new Date(Date.now() - 2 * 86400000) };
+  } else if (status && status !== "all") {
+    where.status = status;
+  }
   if (filters?.locationId) where.locationId = filters.locationId;
 
   // Default: scope to recent enquiries (created within 120 days)
