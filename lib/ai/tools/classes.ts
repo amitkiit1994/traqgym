@@ -9,6 +9,10 @@ import {
   getClassBookingsAction,
   getUpcomingClassesAction,
 } from "@/lib/actions/classes";
+import {
+  getAttendancePatternsAction,
+  suggestScheduleAction,
+} from "@/lib/actions/smart-scheduling";
 
 export const classTools = [
   tool({
@@ -103,6 +107,32 @@ export const classTools = [
     async execute(input) {
       const classes = await getUpcomingClassesAction(input.locationId ?? undefined);
       return JSON.stringify(classes);
+    },
+  }),
+
+  tool({
+    name: "get_attendance_patterns",
+    description:
+      "Analyze attendance patterns over the last 30 days. Returns heatmap (day x hour), peak hours, and peak days. Admin only.",
+    parameters: z.object({
+      locationId: z.number().nullable().describe("Filter by location"),
+    }),
+    async execute(input) {
+      const result = await getAttendancePatternsAction(input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "suggest_schedule",
+    description:
+      "Use AI to analyze attendance patterns and suggest optimal class schedules. Returns pattern summary and actionable suggestions. Admin only.",
+    parameters: z.object({
+      locationId: z.number().nullable().describe("Filter by location"),
+    }),
+    async execute(input) {
+      const result = await suggestScheduleAction(input.locationId ?? undefined);
+      return JSON.stringify(result);
     },
   }),
 ];

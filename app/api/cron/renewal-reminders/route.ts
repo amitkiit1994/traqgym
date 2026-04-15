@@ -134,6 +134,194 @@ export async function GET(request: Request) {
     }
   }
 
+  // ── Smart AI Renewal: 7-day window ──
+  let aiRenewal7daySent = 0;
+  const aiSmart7dayEnabled = await getSetting("ai_smart_renewal_7day_enabled", "false") === "true";
+  if (aiSmart7dayEnabled) {
+    try {
+      const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
+
+      const target7day = new Date(today);
+      target7day.setDate(target7day.getDate() + 7);
+
+      const expiring7day = await prisma.memberTicket.findMany({
+        where: {
+          expireDate: {
+            gte: target7day,
+            lt: new Date(target7day.getTime() + 86400000),
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstname: true,
+              lastname: true,
+              phone: true,
+              createdAt: true,
+              attendanceLogs: {
+                orderBy: { checkIn: "desc" },
+                take: 30,
+                select: { checkIn: true },
+              },
+            },
+          },
+          plan: { select: { name: true, price: true } },
+        },
+        take: 10,
+      });
+
+      for (const ticket of expiring7day) {
+        if (!ticket.user.phone) continue;
+
+        const tenureMonths = Math.floor(
+          (today.getTime() - new Date(ticket.user.createdAt).getTime()) / (30 * 86400000)
+        );
+        const recentVisits = ticket.user.attendanceLogs.length;
+
+        const prompt = `Draft a personalized WhatsApp renewal reminder for a gym member whose membership expires in 7 days:
+
+Name: ${ticket.user.firstname}
+Plan: ${ticket.plan.name} (₹${ticket.plan.price})
+Expires in: 7 days
+Member tenure: ${tenureMonths} months
+Recent attendance: ${recentVisits} visits in last 30 logged sessions
+
+Write a warm, personal 2-sentence early reminder encouraging renewal. Reference their fitness journey and consistency. Return ONLY the message text.`;
+
+        const { output, tokensUsed } = await runProactiveAgent({
+          feature: "smart_renewal_7day",
+          prompt,
+        });
+
+        if (output && !output.includes("budget exhausted")) {
+          try {
+            await sendWhatsApp({
+              recipient: ticket.user.phone,
+              templateName: "ai_smart_renewal",
+              variables: {
+                name: ticket.user.firstname,
+                message: output.slice(0, 500),
+              },
+            });
+
+            await prisma.aiProactiveLog.create({
+              data: {
+                feature: "smart_renewal_7day",
+                targetType: "user",
+                targetId: ticket.userId,
+                channel: "whatsapp",
+                content: output,
+                tokensUsed,
+                status: "sent",
+              },
+            });
+
+            aiRenewal7daySent++;
+          } catch {
+            // Non-critical
+          }
+        }
+      }
+    } catch {
+      // AI runner not available
+    }
+  }
+
+  // ── Smart AI Renewal: 3-day window ──
+  let aiRenewal3daySent = 0;
+  const aiSmart3dayEnabled = await getSetting("ai_smart_renewal_3day_enabled", "false") === "true";
+  if (aiSmart3dayEnabled) {
+    try {
+      const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
+
+      const target3day = new Date(today);
+      target3day.setDate(target3day.getDate() + 3);
+
+      const expiring3day = await prisma.memberTicket.findMany({
+        where: {
+          expireDate: {
+            gte: target3day,
+            lt: new Date(target3day.getTime() + 86400000),
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstname: true,
+              lastname: true,
+              phone: true,
+              createdAt: true,
+              attendanceLogs: {
+                orderBy: { checkIn: "desc" },
+                take: 30,
+                select: { checkIn: true },
+              },
+            },
+          },
+          plan: { select: { name: true, price: true } },
+        },
+        take: 10,
+      });
+
+      for (const ticket of expiring3day) {
+        if (!ticket.user.phone) continue;
+
+        const tenureMonths = Math.floor(
+          (today.getTime() - new Date(ticket.user.createdAt).getTime()) / (30 * 86400000)
+        );
+        const recentVisits = ticket.user.attendanceLogs.length;
+
+        const prompt = `Draft a personalized WhatsApp renewal reminder for a gym member whose membership expires in 3 days:
+
+Name: ${ticket.user.firstname}
+Plan: ${ticket.plan.name} (₹${ticket.plan.price})
+Expires in: 3 days
+Member tenure: ${tenureMonths} months
+Recent attendance: ${recentVisits} visits in last 30 logged sessions
+
+Write a warm but slightly urgent 2-sentence reminder encouraging renewal. Mention the approaching deadline. Return ONLY the message text.`;
+
+        const { output, tokensUsed } = await runProactiveAgent({
+          feature: "smart_renewal_3day",
+          prompt,
+        });
+
+        if (output && !output.includes("budget exhausted")) {
+          try {
+            await sendWhatsApp({
+              recipient: ticket.user.phone,
+              templateName: "ai_smart_renewal",
+              variables: {
+                name: ticket.user.firstname,
+                message: output.slice(0, 500),
+              },
+            });
+
+            await prisma.aiProactiveLog.create({
+              data: {
+                feature: "smart_renewal_3day",
+                targetType: "user",
+                targetId: ticket.userId,
+                channel: "whatsapp",
+                content: output,
+                tokensUsed,
+                status: "sent",
+              },
+            });
+
+            aiRenewal3daySent++;
+          } catch {
+            // Non-critical
+          }
+        }
+      }
+    } catch {
+      // AI runner not available
+    }
+  }
+
   // ── Smart AI Renewal (personalized message for expiring-today members) ──
   let aiRenewalSent = 0;
   const aiSmartEnabled = await getSetting("ai_smart_renewal_enabled", "false") === "true";
@@ -220,5 +408,5 @@ Write a warm, personal 2-sentence message encouraging renewal. Reference their f
     }
   }
 
-  return Response.json({ success: true, sent, skipped, birthdaySent, aiRenewalSent });
+  return Response.json({ success: true, sent, skipped, birthdaySent, aiRenewal7daySent, aiRenewal3daySent, aiRenewalSent });
 }

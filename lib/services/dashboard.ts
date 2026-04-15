@@ -559,6 +559,124 @@ export async function getProfitLoss(month: string, locationId?: number) {
   };
 }
 
+export async function getDailyPOSCollection(locationId?: number) {
+  const todayStart = todayIST();
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: todayStart, lt: todayEnd },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const result = await prisma.sale.aggregate({
+    where,
+    _sum: { totalAmount: true },
+  });
+
+  return Number(result._sum.totalAmount || 0);
+}
+
+export async function getTodayCounts(locationId?: number) {
+  const now = todayIST();
+  const todayStart = new Date(now);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const [prospects, followups, renewals, newMembers] = await Promise.all([
+    prisma.enquiry.count({
+      where: {
+        createdAt: { gte: todayStart, lte: todayEnd },
+        ...(locationId ? { locationId } : {}),
+      },
+    }),
+    prisma.enquiryFollowup.count({
+      where: { createdAt: { gte: todayStart, lte: todayEnd } },
+    }),
+    prisma.memberTicket.count({
+      where: {
+        buyDate: { gte: todayStart, lte: todayEnd },
+        ...(locationId ? { locationId } : {}),
+      },
+    }),
+    prisma.user.count({
+      where: { createdAt: { gte: todayStart, lte: todayEnd } },
+    }),
+  ]);
+
+  return { prospects, followups, renewals, newMembers };
+}
+
+export async function getFinancialSplit(locationId?: number) {
+  const result = await prisma.memberTicket.aggregate({
+    where: {
+      status: "active",
+      ...(locationId ? { locationId } : {}),
+    },
+    _sum: { totalAmount: true, amountPaid: true, balanceDue: true },
+  });
+
+  return {
+    billed: Number(result._sum.totalAmount || 0),
+    received: Number(result._sum.amountPaid || 0),
+    due: Number(result._sum.balanceDue || 0),
+  };
+}
+
+export async function getTodayAnniversaries() {
+  const now = todayIST();
+  const todayMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+
+  return prisma.$queryRaw<
+    { id: number; firstname: string; lastname: string; phone: string | null }[]
+  >`
+    SELECT id, firstname, lastname, phone
+    FROM "User"
+    WHERE "anniversaryDate" IS NOT NULL
+      AND EXTRACT(MONTH FROM "anniversaryDate") = ${todayMonth}
+      AND EXTRACT(DAY FROM "anniversaryDate") = ${todayDay}
+  `;
+}
+
+export async function getUpcomingAnniversaries(days: number = 7) {
+  const now = todayIST();
+  const thisYear = now.getFullYear();
+
+  return prisma.$queryRaw<
+    { id: number; firstname: string; lastname: string; phone: string | null; days_until: number }[]
+  >`
+    WITH anniversaries AS (
+      SELECT id, firstname, lastname, phone,
+        CASE
+          WHEN EXTRACT(MONTH FROM "anniversaryDate") = 2 AND EXTRACT(DAY FROM "anniversaryDate") = 29
+            AND NOT (${thisYear}::int % 4 = 0 AND (${thisYear}::int % 100 != 0 OR ${thisYear}::int % 400 = 0))
+            THEN MAKE_DATE(${thisYear}::int, 3, 1)
+          ELSE MAKE_DATE(${thisYear}::int, EXTRACT(MONTH FROM "anniversaryDate")::int, EXTRACT(DAY FROM "anniversaryDate")::int)
+        END as this_year_ann,
+        CASE
+          WHEN EXTRACT(MONTH FROM "anniversaryDate") = 2 AND EXTRACT(DAY FROM "anniversaryDate") = 29
+            AND NOT (${thisYear + 1}::int % 4 = 0 AND (${thisYear + 1}::int % 100 != 0 OR ${thisYear + 1}::int % 400 = 0))
+            THEN MAKE_DATE(${thisYear + 1}::int, 3, 1)
+          ELSE MAKE_DATE(${thisYear + 1}::int, EXTRACT(MONTH FROM "anniversaryDate")::int, EXTRACT(DAY FROM "anniversaryDate")::int)
+        END as next_year_ann
+      FROM "User"
+      WHERE "anniversaryDate" IS NOT NULL
+    )
+    SELECT id, firstname, lastname, phone,
+      CASE
+        WHEN this_year_ann > CURRENT_DATE THEN this_year_ann - CURRENT_DATE
+        ELSE next_year_ann - CURRENT_DATE
+      END as days_until
+    FROM anniversaries
+    WHERE CASE
+        WHEN this_year_ann > CURRENT_DATE THEN this_year_ann - CURRENT_DATE
+        ELSE next_year_ann - CURRENT_DATE
+      END BETWEEN 1 AND ${days}
+    ORDER BY days_until
+  `;
+}
+
 // --- Cached wrappers ---
 
 export const getCachedStats = unstable_cache(
@@ -584,4 +702,34 @@ export const getCachedStaffPerformance = unstable_cache(
     getStaffPerformance(new Date(monthStartISO), new Date(monthEndISO)),
   ["dashboard-staff-performance"],
   { tags: ["dashboard", "payments"], revalidate: 120 }
+);
+
+export const getCachedDailyPOSCollection = unstable_cache(
+  async (locationId?: number) => getDailyPOSCollection(locationId),
+  ["dashboard-daily-pos"],
+  { tags: ["dashboard", "pos"], revalidate: 60 }
+);
+
+export const getCachedTodayCounts = unstable_cache(
+  async (locationId?: number) => getTodayCounts(locationId),
+  ["dashboard-today-counts"],
+  { tags: ["dashboard", "members", "enquiries"], revalidate: 60 }
+);
+
+export const getCachedFinancialSplit = unstable_cache(
+  async (locationId?: number) => getFinancialSplit(locationId),
+  ["dashboard-financial-split"],
+  { tags: ["dashboard", "payments"], revalidate: 60 }
+);
+
+export const getCachedTodayAnniversaries = unstable_cache(
+  async () => getTodayAnniversaries(),
+  ["dashboard-today-anniversaries"],
+  { tags: ["dashboard", "members"], revalidate: 300 }
+);
+
+export const getCachedUpcomingAnniversaries = unstable_cache(
+  async (days: number) => getUpcomingAnniversaries(days),
+  ["dashboard-upcoming-anniversaries"],
+  { tags: ["dashboard", "members"], revalidate: 300 }
 );

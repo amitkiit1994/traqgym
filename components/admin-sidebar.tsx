@@ -20,6 +20,7 @@ import {
   MapPin,
   ClipboardCheck,
   CalendarDays,
+  CalendarCheck,
   Fingerprint,
   Bell,
   UserCog,
@@ -31,6 +32,7 @@ import {
   TrendingUp,
   Tag,
   MessageSquare,
+  MessageCircle,
   Activity,
   Wallet,
   ScrollText,
@@ -52,6 +54,7 @@ import {
   Apple,
   Bot,
   Menu,
+  Lock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -87,6 +90,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/facility-bookings", label: "Facilities", icon: Building2 },
       { href: "/admin/workout", label: "Workout Plans", icon: Dumbbell },
       { href: "/admin/diet", label: "Diet Plans", icon: Apple },
+      { href: "/admin/appointments", label: "Appointments", icon: CalendarCheck },
     ],
   },
   {
@@ -118,6 +122,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/workers", label: "Workers", icon: UserCog, adminOnly: true },
       { href: "/admin/leaves", label: "Leaves", icon: CalendarOff },
       { href: "/admin/staff-performance", label: "Performance", icon: TrendingUp, adminOnly: true },
+      { href: "/admin/staff-calendar", label: "Staff Calendar", icon: CalendarDays },
     ],
   },
   {
@@ -126,6 +131,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/notifications", label: "Notifications", icon: Bell },
       { href: "/admin/bulk-notify", label: "Bulk Notify", icon: MessageSquare },
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
+      { href: "/admin/feedback", label: "Feedback", icon: MessageCircle },
     ],
   },
   {
@@ -134,6 +140,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/in-app-notifications", label: "Alerts", icon: AlertCircle },
       { href: "/admin/locations", label: "Locations", icon: MapPin },
       { href: "/admin/equipment", label: "Equipment", icon: Dumbbell },
+      { href: "/admin/lockers", label: "Lockers", icon: Lock, adminOnly: true },
       { href: "/admin/settings", label: "Settings", icon: Settings, adminOnly: true },
       { href: "/admin/audit", label: "Audit Log", icon: ScrollText, adminOnly: true },
       { href: "/admin/activity", label: "Activity", icon: Activity },

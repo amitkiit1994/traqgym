@@ -1,6 +1,7 @@
 import { tool } from "@openai/agents";
 import { z } from "zod";
-import { getLoginHistory, getMembershipMatrix, getSourceAnalysis } from "@/lib/actions/reports";
+import { getLoginHistory, getMembershipMatrix, getSourceAnalysis, getConversionFunnelReport } from "@/lib/actions/reports";
+import { getMemberUsage } from "@/lib/services/member-usage";
 
 export const reportsExtendedTools = [
   tool({
@@ -39,6 +40,38 @@ export const reportsExtendedTools = [
     }),
     async execute(input) {
       const result = await getSourceAnalysis(input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_member_usage_report",
+    description:
+      "Get member usage analysis: segments active members into Heavy (>70%), Moderate (30-70%), and Light (<30%) based on visit frequency vs membership days. Returns segment counts and individual member details sorted by usage (lowest first). Admin only.",
+    parameters: z.object({
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const result = await getMemberUsage(input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_conversion_funnel",
+    description:
+      "Get enquiry conversion funnel: counts at each stage (new, contacted, tour_scheduled, tour_done, trial, negotiation, converted, lost) with conversion rates between stages and overall new-to-converted rate. Admin only.",
+    parameters: z.object({
+      startDate: z.string().nullable().describe("Start date in YYYY-MM-DD format"),
+      endDate: z.string().nullable().describe("End date in YYYY-MM-DD format"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const result = await getConversionFunnelReport(
+        input.startDate ?? undefined,
+        input.endDate ?? undefined,
+        input.locationId ?? undefined
+      );
       return JSON.stringify(result);
     },
   }),

@@ -29,6 +29,8 @@ const ALLOWED_READ_TOOLS = new Set([
   "get_pt_report",
   "get_lead_pipeline",
   "get_class_schedule",
+  "get_attendance_patterns",
+  "suggest_schedule",
   "get_notification_logs",
   "get_notification_analytics",
   "get_overdue_payments",

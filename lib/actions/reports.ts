@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireWorker } from "@/lib/auth-guard";
+import { getIrregularMembers } from "@/lib/services/irregular-members";
+import { getConversionFunnel } from "@/lib/services/conversion-funnel";
 
 export async function getCollectionReport(date: string, locationId?: number) {
   try { await requireWorker(["admin"]); } catch { return []; }
@@ -243,4 +245,24 @@ export async function getSourceAnalysis(locationId?: number) {
       conversionRate: total > 0 ? Math.round((converted / total) * 10000) / 100 : 0,
     };
   });
+}
+
+export async function getIrregularMembersReport(daysThreshold: number = 7, locationId?: number) {
+  try { await requireWorker(["admin"]); } catch { return []; }
+  return getIrregularMembers(daysThreshold, locationId);
+}
+
+export async function getConversionFunnelReport(startDate?: string, endDate?: string, locationId?: number) {
+  try { await requireWorker(["admin"]); } catch { return { stages: [], totalConversionRate: 0 }; }
+  const params: { startDate?: Date; endDate?: Date; locationId?: number } = {};
+  if (startDate) {
+    params.startDate = new Date(startDate);
+    params.startDate.setHours(0, 0, 0, 0);
+  }
+  if (endDate) {
+    params.endDate = new Date(endDate);
+    params.endDate.setHours(23, 59, 59, 999);
+  }
+  if (locationId) params.locationId = locationId;
+  return getConversionFunnel(params);
 }

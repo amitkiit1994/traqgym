@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   getEnquiries,
   createEnquiry,
@@ -71,9 +71,16 @@ const sourceLabels: Record<string, string> = {
 const statusOptions = ["all", "new", "contacted", "follow_up", "converted", "lost"];
 
 export default function EnquiriesPage() {
+  const searchParams = useSearchParams();
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(() => {
+    const urlStatus = searchParams.get("status");
+    // "overdue" from dashboard maps to follow_up filter
+    if (urlStatus === "overdue") return "follow_up";
+    if (urlStatus && statusOptions.includes(urlStatus)) return urlStatus;
+    return "all";
+  });
   const [isPending, startTransition] = useTransition();
 
   // New enquiry dialog

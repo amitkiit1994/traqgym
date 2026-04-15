@@ -1,8 +1,21 @@
 import { tool } from "@openai/agents";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { computeSatisfactionScore } from "@/lib/services/satisfaction-score";
 
 export const memberStatsTools = [
+  tool({
+    name: "get_member_satisfaction_score",
+    description:
+      "Get a member's satisfaction score (0-100) with breakdown by attendance, payment timeliness, feedback, tenure, and engagement",
+    parameters: z.object({
+      userId: z.number().describe("Member user ID"),
+    }),
+    async execute(input) {
+      const result = await computeSatisfactionScore(input.userId);
+      return JSON.stringify(result);
+    },
+  }),
   tool({
     name: "get_attendance_heatmap",
     description:

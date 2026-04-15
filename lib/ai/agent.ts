@@ -45,6 +45,10 @@ import { biometricReadTools } from "./tools/biometric-read";
 import { settingsWriteTools } from "./tools/settings-write";
 import { biometricWriteTools } from "./tools/biometric-write";
 import { inAppWriteTools } from "./tools/in-app-write";
+import { lockerTools } from "./tools/lockers";
+import { extensionTools } from "./tools/extension";
+import { feedbackTools } from "./tools/feedback";
+import { appointmentTools } from "./tools/appointments";
 
 // Tools that require admin role — tool executor will deny access for staff
 const ADMIN_ONLY_TOOLS = new Set([
@@ -86,6 +90,14 @@ const ADMIN_ONLY_TOOLS = new Set([
   "resolve_biometric_mapping",
   "notify_user",
   "notify_worker",
+  "assign_locker",
+  "release_locker",
+  "create_locker",
+  "extend_membership",
+  "book_appointment",
+  "cancel_appointment",
+  "get_attendance_patterns",
+  "suggest_schedule",
 ]);
 
 const allTools = [
@@ -134,6 +146,10 @@ const allTools = [
   ...settingsWriteTools,
   ...biometricWriteTools,
   ...inAppWriteTools,
+  ...lockerTools,
+  ...feedbackTools,
+  ...extensionTools,
+  ...appointmentTools,
 ];
 
 export { allTools };

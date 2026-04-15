@@ -26,6 +26,7 @@ const navItems = [
   { href: "/member/classes", label: "Classes" },
   { href: "/member/announcements", label: "Announcements" },
   { href: "/member/referrals", label: "Referrals" },
+  { href: "/member/feedback", label: "Feedback" },
   { href: "/member/waivers", label: "Waivers" },
   { href: "/member/workout", label: "Workout" },
   { href: "/member/diet", label: "Diet" },
