@@ -84,7 +84,7 @@ export async function runProactiveAgent(params: {
 
   const agent = new Agent({
     name: "TraqGym Proactive AI",
-    model: "gpt-5-pro",
+    model: "gpt-5.4",
     instructions: buildProactivePrompt({
       gymName,
       locationName: location?.name || gymName,

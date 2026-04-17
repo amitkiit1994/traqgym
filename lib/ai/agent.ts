@@ -163,7 +163,7 @@ export function createGymAgent(context: AgentContext) {
 
   return new Agent({
     name: "TraqGym AI",
-    model: "gpt-5-pro",
+    model: "gpt-5.4",
     instructions: buildSystemPrompt(context),
     tools,
   });
