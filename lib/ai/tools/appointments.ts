@@ -18,7 +18,7 @@ export const appointmentTools = [
       date: z.string().describe("Date in YYYY-MM-DD format"),
       startTime: z.string().describe("Start time in HH:MM format (e.g. 09:00)"),
       endTime: z.string().describe("End time in HH:MM format (e.g. 09:30)"),
-      notes: z.string().optional().describe("Optional notes"),
+      notes: z.string().nullable().describe("Optional notes"),
     }),
     async execute(input) {
       const result = await bookAppointmentAction({
@@ -27,7 +27,7 @@ export const appointmentTools = [
         date: input.date,
         startTime: input.startTime,
         endTime: input.endTime,
-        notes: input.notes,
+        notes: input.notes ?? undefined,
       });
       return JSON.stringify(result);
     },
@@ -51,20 +51,20 @@ export const appointmentTools = [
     description:
       "List appointments with optional filters by member, trainer, date, or status",
     parameters: z.object({
-      userId: z.number().optional().describe("Filter by member ID"),
-      trainerId: z.number().optional().describe("Filter by trainer ID"),
-      date: z.string().optional().describe("Filter by date (YYYY-MM-DD)"),
+      userId: z.number().nullable().describe("Filter by member ID"),
+      trainerId: z.number().nullable().describe("Filter by trainer ID"),
+      date: z.string().nullable().describe("Filter by date (YYYY-MM-DD)"),
       status: z
         .enum(["booked", "completed", "cancelled", "no_show"])
-        .optional()
+        .nullable()
         .describe("Filter by status"),
     }),
     async execute(input) {
       const result = await getAppointmentsAction({
-        userId: input.userId,
-        trainerId: input.trainerId,
-        date: input.date,
-        status: input.status,
+        userId: input.userId ?? undefined,
+        trainerId: input.trainerId ?? undefined,
+        date: input.date ?? undefined,
+        status: input.status ?? undefined,
       });
       return JSON.stringify(result);
     },

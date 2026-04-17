@@ -60,7 +60,7 @@ npx tsx scripts/migrate-fitnessboard.ts  # Idempotent, safe to re-run
 - **Auth guard:** `lib/auth-guard.ts` — `requireWorker(["admin"])` for admin-only actions, `requireWorker()` for any worker.
 - **Routes:** `/admin/*` for workers, `/member/*` for members, `/login` for auth.
 - **Middleware:** Protects `/admin/*` (workers only) and `/member/*` (members only). Staff restricted from `/admin/workers`, `/admin/reports`, location create/edit.
-- **Deployment:** One Next.js instance + one PostgreSQL database per gym. Caddy reverse proxy routes subdomains.
+- **Deployment:** One Next.js instance + one PostgreSQL database per gym. Production runs on Vercel (one project per gym, e.g. `traqgym-app` for Free Form Fitness on `main`, `traqgym-egym` for E-GYM Lokhandwala on `egymlokhandwala` branch). Vercel project `rootDirectory` must be set to `freeformfitnessOS`. External managed PostgreSQL per instance (e.g., Railway). Older docker-compose + Caddy setup remains for self-hosted scenarios.
 - **Landing site:** Separate Next.js static app at `landing/` served at `traqgym.com`.
 - **Onboarding:** `scripts/onboard-gym.sh` provisions new gym instances with full identity (phone, address, GSTIN, UPI, logo, integrations).
 - **Gym identity:** Stored in `GymSettings` key-value table (gym_name, gym_phone, gym_address, gym_gstin, gym_logo, etc.).
@@ -113,11 +113,26 @@ Staff can do day-to-day operations: member check-in, renewals, payments, enquiry
 - Admin layout: vertical collapsible sidebar (56px–224px) with grouped nav + badge counts.
 - Member layout: horizontal sticky top bar with pill-shaped nav items.
 
-## Production Data (Free Form Fitness)
+## Production Data
 
+**Free Form Fitness** (`main` branch, Vercel project `traqgym-app`)
 - Admin: admin@freeformfitness.com / password123
 - Staff: e.g. pooja.singh@staff.freeform.local / password123
 - Members: imported from FitnessBoard — email is `{phone}@imported.local`, password is their phone number
 - ~303 users, ~16 plans, ~570 tickets, ~566 payments, 5 enquiries
+
+**E-GYM Lokhandwala** (`egymlokhandwala` branch, Vercel project `traqgym-egym`, Railway PostgreSQL)
+- Theme: red/black (OKLCh hue 25), logo `/egym-logo.png`
+- Admin: carruthersrobin3@gmail.com / Robin@FFF2026
+- Members: imported from E-Gym CSV exports
+- 10,275 users, 102 plans, 9,803 tickets, 14,771 payments, 3,779 enquiries, 7,701 followups
+- Domain target: `egymlokhandwala.traqgym.com`
+- Bulk data load uses `pg_dump --inserts` + `psql -f` (Prisma migration script drops connections on Railway after ~30 min)
+
+## Build Configuration
+
+- `package.json` build script: `prisma generate && next build`
+- `package.json` postinstall: `prisma generate`
+- Without these, Vercel builds fail with `Property 'X' does not exist on type 'PrismaClient'` after schema changes.
 
 @AGENTS.md
