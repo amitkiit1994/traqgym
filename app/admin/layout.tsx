@@ -56,7 +56,7 @@ export default async function AdminLayout({
         </header>
         <main id="main-content" className="flex-1 min-h-0 flex flex-col overflow-hidden p-3 md:p-6">
           <div className="shrink-0"><Breadcrumbs /></div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
             {children}
           </div>
         </main>

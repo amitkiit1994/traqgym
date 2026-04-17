@@ -91,7 +91,8 @@ export default function EnquiriesPage() {
     if (urlStatus && statusOptions.includes(urlStatus)) return urlStatus;
     return "all";
   });
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") || "");
+  const [showArchived, setShowArchived] = useState(() => searchParams.get("showArchived") === "true");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [isPending, startTransition] = useTransition();
@@ -129,6 +130,7 @@ export default function EnquiriesPage() {
         getEnquiries({
           status: filter === "all" ? undefined : filter,
           search: currentSearch || undefined,
+          showArchived,
           page: currentPage,
           pageSize: PAGE_SIZE,
           sortBy,
@@ -146,7 +148,7 @@ export default function EnquiriesPage() {
     setPage(1);
     load(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, sortBy, sortOrder]);
+  }, [filter, sortBy, sortOrder, showArchived]);
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -247,6 +249,14 @@ export default function EnquiriesPage() {
               {s === "all" ? "All" : s.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
             </Button>
           ))}
+          <Button
+            variant={showArchived ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowArchived((v) => !v)}
+            title="Include enquiries older than 120 days"
+          >
+            {showArchived ? "Showing archived" : "Show archived"}
+          </Button>
         </div>
 
         <SearchInput

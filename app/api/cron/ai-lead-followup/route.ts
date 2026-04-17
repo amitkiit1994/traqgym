@@ -19,6 +19,20 @@ export async function GET(request: Request) {
   const maxPerRun = parseInt(await getSetting("ai_lead_followup_max_per_run", "10"), 10);
   const channel = await getSetting("notification_channel", "whatsapp");
 
+  // Guard: don't run if WhatsApp channel selected but MSG91 isn't configured.
+  // Otherwise we burn OpenAI tokens generating messages that get console.log'd.
+  if (channel === "whatsapp" || channel === "both") {
+    const authKey = (await getSetting("msg91_auth_key", "")) || process.env.MSG91_AUTH_KEY;
+    const integratedNumber = (await getSetting("msg91_whatsapp_number", "")) || process.env.MSG91_WHATSAPP_INTEGRATED_NUMBER;
+    if (!authKey || !integratedNumber) {
+      return Response.json({
+        success: true,
+        skipped: true,
+        reason: "WhatsApp not configured (MSG91 credentials missing). Configure in Settings or disable lead follow-up.",
+      });
+    }
+  }
+
   const coldLeads = await getColdLeads({ gapHours, maxResults: maxPerRun });
 
   if (coldLeads.length === 0) {
@@ -114,7 +128,7 @@ Return ONLY the message text, nothing else.`;
           type: "ai_lead_followup",
           title: `AI Follow-up Sent: ${lead.name}`,
           message: `Auto-sent follow-up to ${lead.name} (${lead.phone}) — inactive for ${lead.daysSinceLastActivity} days.`,
-          link: "/admin/enquiries",
+          link: `/admin/enquiries?showArchived=true&search=${encodeURIComponent(lead.phone)}`,
         },
       });
     }
