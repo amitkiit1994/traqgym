@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getMembers, createMember, importMembersFromCSV } from "@/lib/actions/members";
 import { getLocations } from "@/lib/actions/locations";
+import { getPlans } from "@/lib/actions/plans";
 import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,11 +45,19 @@ type MemberRow = {
   phone: string | null;
   locationName: string;
   status: "active" | "expired" | "no_plan";
+  planId: number | null;
+  planName: string | null;
   riskLevel: "low" | "medium" | "high";
   riskReason: string;
 };
 
 type LocationOption = {
+  id: number;
+  name: string;
+  isActive: boolean;
+};
+
+type PlanOption = {
   id: number;
   name: string;
   isActive: boolean;
@@ -95,6 +104,8 @@ export default function MembersPage() {
     return p ? parseInt(p, 10) : 1;
   });
   const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [planFilter, setPlanFilter] = useState<string>(() => searchParams.get("planId") ?? "all");
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const [isPending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -130,10 +141,12 @@ export default function MembersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const load = (q?: string, p?: number, status?: string, allExpired?: boolean) => {
+  const load = (q?: string, p?: number, status?: string, allExpired?: boolean, plan?: string) => {
     const currentPage = p ?? page;
     const currentStatus = status ?? statusFilter;
     const currentAllExpired = allExpired ?? showAllExpired;
+    const currentPlan = plan ?? planFilter;
+    const planIdNum = currentPlan && currentPlan !== "all" ? Number(currentPlan) : undefined;
     startTransition(async () => {
       const data = await getMembers({
         search: q || undefined,
@@ -144,6 +157,7 @@ export default function MembersPage() {
         sortBy,
         sortOrder,
         showAllExpired: currentStatus === "expired" ? currentAllExpired : undefined,
+        planId: Number.isFinite(planIdNum) ? planIdNum : undefined,
       });
       setMembers(data.members);
       setTotal(data.total);
@@ -153,6 +167,9 @@ export default function MembersPage() {
   useEffect(() => {
     load();
     getLocations().then((locs) => setLocations(locs));
+    getPlans().then((ps) =>
+      setPlans(ps.map((p) => ({ id: p.id, name: p.name, isActive: p.isActive })))
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -163,8 +180,8 @@ export default function MembersPage() {
 
   const goToPage = (p: number) => {
     setPage(p);
-    load(search, p, statusFilter);
-    updateUrl({ q: search, status: statusFilter, page: String(p), sort: sortBy, order: sortOrder });
+    load(search, p, statusFilter, undefined, planFilter);
+    updateUrl({ q: search, status: statusFilter, planId: planFilter, page: String(p), sort: sortBy, order: sortOrder });
   };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -207,12 +224,13 @@ export default function MembersPage() {
   };
 
   const handleExport = () => {
-    const headers = ["Name", "Email", "Phone", "Location", "Status"];
+    const headers = ["Name", "Email", "Phone", "Location", "Plan", "Status"];
     const rows = members.map((m) => [
       `${m.firstname} ${m.lastname}`,
       m.email,
       m.phone ?? "",
       m.locationName,
+      m.planName ?? "",
       statusLabel[m.status],
     ]);
     const csv = toCsv(headers, rows);
@@ -238,11 +256,11 @@ export default function MembersPage() {
             if (sortBy === field) {
               const newOrder = sortOrder === "asc" ? "desc" : "asc";
               setSortOrder(newOrder);
-              updateUrl({ q: search, status: statusFilter, page: String(page), sort: field, order: newOrder });
+              updateUrl({ q: search, status: statusFilter, planId: planFilter, page: String(page), sort: field, order: newOrder });
             } else {
               setSortBy(field);
               setSortOrder("asc");
-              updateUrl({ q: search, status: statusFilter, page: String(page), sort: field, order: "asc" });
+              updateUrl({ q: search, status: statusFilter, planId: planFilter, page: String(page), sort: field, order: "asc" });
             }
           }}
         >
@@ -386,12 +404,38 @@ export default function MembersPage() {
           onSearch={(q) => {
             setSearch(q);
             setPage(1);
-            load(q, 1, statusFilter);
-            updateUrl({ q, status: statusFilter, page: "1", sort: sortBy, order: sortOrder });
+            load(q, 1, statusFilter, undefined, planFilter);
+            updateUrl({ q, status: statusFilter, planId: planFilter, page: "1", sort: sortBy, order: sortOrder });
           }}
           isPending={isPending}
           className="w-full sm:w-auto sm:min-w-[250px]"
         />
+        <Select
+          value={planFilter}
+          onValueChange={(v) => {
+            const next = v ?? "all";
+            setPlanFilter(next);
+            setPage(1);
+            load(search, 1, statusFilter, undefined, next);
+            updateUrl({ q: search, status: statusFilter, planId: next, page: "1", sort: sortBy, order: sortOrder });
+          }}
+        >
+          <SelectTrigger className="min-w-[160px]" size="sm">
+            <SelectValue placeholder="All plans">
+              {planFilter === "all"
+                ? "All plans"
+                : plans.find((p) => String(p.id) === planFilter)?.name ?? "All plans"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All plans</SelectItem>
+            {plans.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex gap-1">
           {[
             { value: "all", label: "All" },
@@ -408,8 +452,8 @@ export default function MembersPage() {
               onClick={() => {
                 setStatusFilter(s.value);
                 setPage(1);
-                load(search, 1, s.value);
-                updateUrl({ q: search, status: s.value, page: "1", sort: sortBy, order: sortOrder });
+                load(search, 1, s.value, undefined, planFilter);
+                updateUrl({ q: search, status: s.value, planId: planFilter, page: "1", sort: sortBy, order: sortOrder });
               }}
             >
               {s.label}
@@ -443,6 +487,7 @@ export default function MembersPage() {
             <TableHead className="hidden md:table-cell">Email</TableHead>
             <TableHead className="hidden md:table-cell">Phone</TableHead>
             <SortableHead field="location">Location</SortableHead>
+            <TableHead>Plan</TableHead>
             <SortableHead field="status">Status</SortableHead>
             <TableHead className="hidden sm:table-cell">Risk</TableHead>
             <TableHead>Actions</TableHead>
@@ -457,6 +502,9 @@ export default function MembersPage() {
               <TableCell className="hidden md:table-cell">{m.email}</TableCell>
               <TableCell className="hidden md:table-cell">{m.phone ?? "-"}</TableCell>
               <TableCell>{m.locationName}</TableCell>
+              <TableCell>
+                <Badge variant="outline">{m.planName ?? "—"}</Badge>
+              </TableCell>
               <TableCell>
                 <Badge variant={statusVariant[m.status]}>
                   {statusLabel[m.status]}
@@ -478,7 +526,7 @@ export default function MembersPage() {
           ))}
           {members.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7}>
+              <TableCell colSpan={8}>
                 <div className="flex flex-col items-center gap-2 py-8">
                   <Users className="size-8 text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">No members found</p>

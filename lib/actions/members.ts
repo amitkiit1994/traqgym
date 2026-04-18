@@ -7,7 +7,7 @@ import { requireWorker } from "@/lib/auth-guard";
 import { createMemberSchema, zodErrors } from "@/lib/validations";
 import { calculateChurnRiskBatch } from "@/lib/services/churn-risk";
 
-export async function getMembers(params?: string | { search?: string; page?: number; pageSize?: number; status?: "active" | "expired" | "no_plan" | "expiring" | "inactive"; birthday?: string; sortBy?: "name" | "status" | "location"; sortOrder?: "asc" | "desc"; showAllExpired?: boolean }) {
+export async function getMembers(params?: string | { search?: string; page?: number; pageSize?: number; status?: "active" | "expired" | "no_plan" | "expiring" | "inactive"; birthday?: string; sortBy?: "name" | "status" | "location"; sortOrder?: "asc" | "desc"; showAllExpired?: boolean; planId?: number }) {
   try { await requireWorker(); } catch { return { members: [], total: 0 }; }
 
   // Support legacy call signature: getMembers("searchTerm")
@@ -19,6 +19,7 @@ export async function getMembers(params?: string | { search?: string; page?: num
   const sortBy = (typeof params === "object" ? params?.sortBy : undefined) ?? "name";
   const sortOrder = (typeof params === "object" ? params?.sortOrder : undefined) ?? "asc";
   const showAllExpired = typeof params === "object" ? params?.showAllExpired : undefined;
+  const planFilter = typeof params === "object" ? params?.planId : undefined;
   const skip = (page - 1) * pageSize;
 
   const today = new Date();
@@ -81,6 +82,21 @@ export async function getMembers(params?: string | { search?: string; page?: num
     };
   }
 
+  // Plan filter: restrict to members with an active ticket on the selected plan.
+  // Compose with any existing memberTickets `some` clause from status filters.
+  if (planFilter !== undefined && Number.isFinite(planFilter)) {
+    const existingSome = (where.memberTickets && typeof where.memberTickets === "object" && "some" in where.memberTickets)
+      ? where.memberTickets.some
+      : undefined;
+    where.memberTickets = {
+      some: {
+        ...(existingSome ?? {}),
+        planId: planFilter,
+        status: "active",
+      },
+    };
+  }
+
   // Birthday filter: fetch all matching users with birthdate, then filter in JS
   if (birthdayFilter === "today") {
     where.birthdate = { not: null };
@@ -94,6 +110,9 @@ export async function getMembers(params?: string | { search?: string; page?: num
         memberTickets: {
           orderBy: { expireDate: "desc" },
           take: 1,
+          include: {
+            plan: { select: { id: true, name: true } },
+          },
         },
       },
       orderBy: sortBy === "location"
@@ -122,9 +141,15 @@ export async function getMembers(params?: string | { search?: string; page?: num
 
     const members = filteredUsers.map((user) => {
       let status: "active" | "expired" | "no_plan" = "no_plan";
+      let planId: number | null = null;
+      let planName: string | null = null;
       if (user.memberTickets.length > 0) {
         const latest = user.memberTickets[0];
         status = new Date(latest.expireDate) >= today ? "active" : "expired";
+        if (status === "active") {
+          planId = latest.plan?.id ?? null;
+          planName = latest.plan?.name ?? null;
+        }
       }
       const risk = riskMap.get(user.id);
       return {
@@ -135,6 +160,8 @@ export async function getMembers(params?: string | { search?: string; page?: num
         phone: user.phone,
         locationName: user.location?.name ?? "N/A",
         status,
+        planId,
+        planName,
         riskLevel: risk?.level ?? ("low" as const),
         riskReason: risk?.reason ?? "",
       };
@@ -148,9 +175,15 @@ export async function getMembers(params?: string | { search?: string; page?: num
 
   const members = users.map((user) => {
     let status: "active" | "expired" | "no_plan" = "no_plan";
+    let planId: number | null = null;
+    let planName: string | null = null;
     if (user.memberTickets.length > 0) {
       const latest = user.memberTickets[0];
       status = new Date(latest.expireDate) >= today ? "active" : "expired";
+      if (status === "active") {
+        planId = latest.plan?.id ?? null;
+        planName = latest.plan?.name ?? null;
+      }
     }
     const risk = riskMap.get(user.id);
     return {
@@ -161,6 +194,8 @@ export async function getMembers(params?: string | { search?: string; page?: num
       phone: user.phone,
       locationName: user.location?.name ?? "N/A",
       status,
+      planId,
+      planName,
       riskLevel: risk?.level ?? ("low" as const),
       riskReason: risk?.reason ?? "",
     };
