@@ -127,6 +127,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/followups", label: "Followups", icon: AlertCircle },
       { href: "/admin/refunds", label: "Refunds", icon: Undo2, adminOnly: true },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/multi-location", label: "Multi-Location", icon: Building2, adminOnly: true },
     ],
   },
   {

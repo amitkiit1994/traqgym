@@ -126,6 +126,7 @@ model Worker {
   shiftsOpened        CashShift[]    @relation("ShiftOpener")
   shiftsClosed        CashShift[]    @relation("ShiftCloser")
   shiftsApproved      CashShift[]    @relation("ShiftApprover")
+  feedbacksAsTrainer  Feedback[]     @relation("FeedbackTrainer")
 }
 
 model TicketPlan {
@@ -137,6 +138,8 @@ model TicketPlan {
   isActive   Boolean  @default(true)
   isTrial    Boolean  @default(false)
   trialDays  Int?
+  joiningFee          Decimal @default(0) @db.Decimal(10, 2)
+  joiningFeeAppliesOn String  @default("first_only") // first_only, every_renewal, never
   createdAt  DateTime @default(now())
 
   memberTickets MemberTicket[]
@@ -160,6 +163,7 @@ model MemberTicket {
   totalAmount Decimal?  @db.Decimal(10, 2)
   amountPaid  Decimal   @default(0) @db.Decimal(10, 2)
   balanceDue  Decimal   @default(0) @db.Decimal(10, 2)
+  joiningFeeCharged Decimal @default(0) @db.Decimal(10, 2)
   dueDate     DateTime?
   createdAt  DateTime   @default(now())
 
@@ -559,6 +563,8 @@ model ClassSchedule {
   startTime  String   // "07:00"
   endTime    String   // "08:00"
   createdAt  DateTime @default(now())
+
+  feedbacks  Feedback[]
 }
 
 model ClassBooking {
@@ -946,10 +952,16 @@ model Feedback {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   rating    Int      // 1-5
   comment   String?
-  category  String?  // facility, trainer, cleanliness, general
+  category  String?  // facility, trainer, cleanliness, general, class
+  classId   Int?
+  class     ClassSchedule? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  trainerId Int?
+  trainer   Worker?  @relation("FeedbackTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([trainerId, createdAt])
+  @@index([classId, createdAt])
 }
 
 model Appointment {

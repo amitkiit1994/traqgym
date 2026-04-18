@@ -26,6 +26,7 @@ export async function GET(
           createdAt: true,
           memberTicket: {
             select: {
+              joiningFeeCharged: true,
               plan: { select: { name: true, expireDays: true } },
             },
           },
@@ -51,8 +52,11 @@ export async function GET(
   const planName = invoice.payment.memberTicket.plan.name;
   const durationDays = invoice.payment.memberTicket.plan.expireDays;
   const totalAmount = Number(invoice.payment.amount);
-  const baseAmount = isTaxInvoice ? Math.round((totalAmount / 1.18) * 100) / 100 : totalAmount;
-  const cgst = isTaxInvoice ? Math.round(((totalAmount - baseAmount) / 2) * 100) / 100 : 0;
+  const joiningFee = Number(invoice.payment.memberTicket.joiningFeeCharged ?? 0);
+  // Plan portion = total - joining fee (joining fee not GST-applicable in this simple model)
+  const planPortion = Math.max(totalAmount - joiningFee, 0);
+  const baseAmount = isTaxInvoice ? Math.round((planPortion / 1.18) * 100) / 100 : planPortion;
+  const cgst = isTaxInvoice ? Math.round(((planPortion - baseAmount) / 2) * 100) / 100 : 0;
   const sgst = cgst;
   const paymentMode = invoice.payment.paymentMode.toUpperCase();
   const upiRef = invoice.payment.upiReference ?? "N/A";
@@ -297,6 +301,11 @@ export async function GET(
               <td></td>
               <td class="right">${fmtCurrency(sgst)}</td>
             </tr>
+            ${joiningFee > 0 ? `<tr>
+              <td>Joining Fee</td>
+              <td></td>
+              <td class="right">${fmtCurrency(joiningFee)}</td>
+            </tr>` : ""}
             <tr class="total-row">
               <td colspan="2">Total</td>
               <td class="right">Rs. ${fmtCurrency(totalAmount)}</td>
@@ -305,6 +314,33 @@ export async function GET(
         </table>
       </div>
       ` : `
+      ${joiningFee > 0 ? `
+      <div class="section">
+        <div class="section-title">Charges</div>
+        <table class="tax-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="right">Amount (Rs.)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${planName}</td>
+              <td class="right">${fmtCurrency(planPortion)}</td>
+            </tr>
+            <tr>
+              <td>Joining Fee</td>
+              <td class="right">${fmtCurrency(joiningFee)}</td>
+            </tr>
+            <tr class="total-row">
+              <td>Total</td>
+              <td class="right">Rs. ${fmtCurrency(totalAmount)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ` : ""}
       <div class="amount-section">
         <div>
           <div class="amount-label">Amount Paid</div>

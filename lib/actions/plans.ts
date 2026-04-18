@@ -13,6 +13,7 @@ export async function getPlans() {
   return plans.map((p) => ({
     ...p,
     price: Number(p.price),
+    joiningFee: Number(p.joiningFee ?? 0),
   }));
 }
 
@@ -21,6 +22,8 @@ export async function createPlan(data: {
   expireDays: number;
   price: number;
   occasions?: number | null;
+  joiningFee?: number;
+  joiningFeeAppliesOn?: "first_only" | "every_renewal" | "never";
 }) {
   try { await requireWorker(); } catch { return { error: "Unauthorized" }; }
   const parsed = planSchema.safeParse(data);
@@ -32,6 +35,8 @@ export async function createPlan(data: {
       expireDays: data.expireDays,
       price: data.price,
       occasions: data.occasions || null,
+      joiningFee: data.joiningFee ?? 0,
+      joiningFeeAppliesOn: data.joiningFeeAppliesOn ?? "first_only",
     },
   });
   revalidatePath("/plans");
@@ -46,6 +51,8 @@ export async function updatePlan(
     expireDays: number;
     price: number;
     occasions?: number | null;
+    joiningFee?: number;
+    joiningFeeAppliesOn?: "first_only" | "every_renewal" | "never";
   }
 ) {
   try { await requireWorker(); } catch { return { error: "Unauthorized" }; }
@@ -59,6 +66,8 @@ export async function updatePlan(
       expireDays: data.expireDays,
       price: data.price,
       occasions: data.occasions || null,
+      joiningFee: data.joiningFee ?? 0,
+      joiningFeeAppliesOn: data.joiningFeeAppliesOn ?? "first_only",
     },
   });
   revalidatePath("/plans");
