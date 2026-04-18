@@ -57,6 +57,7 @@ import {
   Menu,
   Lock,
   ShieldCheck,
+  HeartPulse,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -105,6 +106,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/comps", label: "Comps", icon: Gem, adminOnly: true },
       { href: "/admin/waivers", label: "Waivers", icon: FileCheck },
       { href: "/admin/family", label: "Family Groups", icon: Users },
+      { href: "/admin/pt", label: "PT Packages", icon: HeartPulse, adminOnly: true },
     ],
   },
   {
