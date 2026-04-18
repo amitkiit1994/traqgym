@@ -217,6 +217,7 @@ model AttendanceLog {
   sourceEventId  Int?
   deviceId       Int?
   notes          String?
+  scanSource     String?   // qr_lobby, biometric, manual, etc.
   createdAt      DateTime  @default(now())
 
   @@unique([userId, locationId, attendanceDate], name: "uk_member_daily")
