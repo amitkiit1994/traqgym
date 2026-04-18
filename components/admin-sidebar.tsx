@@ -55,6 +55,7 @@ import {
   Bot,
   Menu,
   Lock,
+  HeartPulse,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -101,6 +102,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/renewals", label: "Renewals", icon: RefreshCw },
       { href: "/admin/waivers", label: "Waivers", icon: FileCheck },
       { href: "/admin/family", label: "Family Groups", icon: Users },
+      { href: "/admin/pt", label: "PT Packages", icon: HeartPulse, adminOnly: true },
     ],
   },
   {
