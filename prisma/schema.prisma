@@ -29,6 +29,7 @@ model Location {
   enquiries        Enquiry[]
   classes          GymClass[]
   lockers          Locker[]
+  cashShifts       CashShift[]
 }
 
 model User {
@@ -120,6 +121,11 @@ model Worker {
   ptPackagesAsTrainer PtPackage[]      @relation("PtPackageTrainer")
   trainerPayments     Payment[]        @relation("PaymentTrainer")
   trainerPayouts      TrainerPayout[]  @relation("TrainerPayout")
+  refundsRequested    Refund[]       @relation("RefundRequester")
+  refundsApproved     Refund[]       @relation("RefundApprover")
+  shiftsOpened        CashShift[]    @relation("ShiftOpener")
+  shiftsClosed        CashShift[]    @relation("ShiftCloser")
+  shiftsApproved      CashShift[]    @relation("ShiftApprover")
 }
 
 model TicketPlan {
@@ -173,6 +179,7 @@ model MemberTicket {
   extensions MembershipExtension[]
   compPassConverted CompPass[] @relation("CompPassConvertedTicket")
   paymentSchedule PaymentSchedule?
+  refunds  Refund[]
 
   @@index([userId, expireDate])
   @@index([locationId, expireDate])
@@ -213,15 +220,19 @@ model Payment {
 
   trainerId       Int?
   trainer         Worker?      @relation("PaymentTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
+  shiftId         Int?
+  shift           CashShift?   @relation("ShiftPayment", fields: [shiftId], references: [id], onDelete: SetNull)
 
   invoice Invoice?
   ptPackages PtPackage[]
   installmentPayments PaymentInstallment[]
+  refunds Refund[]
 
   @@index([createdAt])
   @@index([locationId, createdAt])
   @@index([collectedById])
   @@index([paymentMode, createdAt])
+  @@index([shiftId])
 }
 
 model Invoice {
@@ -234,6 +245,8 @@ model Invoice {
   route         String
   status        String   @default("paid")
   createdAt     DateTime @default(now())
+
+  refunds       Refund[]
 }
 
 model AttendanceLog {
@@ -1005,6 +1018,80 @@ model Insight {
 
   @@index([agent, createdAt])
   @@index([severity, dismissedAt])
+}
+
+// ─── Refund workflow ───
+model Refund {
+  id                  Int       @id @default(autoincrement())
+  paymentId           Int
+  payment             Payment   @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoiceId           Int?
+  invoice             Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  memberTicketId      Int?
+  memberTicket        MemberTicket? @relation(fields: [memberTicketId], references: [id], onDelete: SetNull)
+  amountRequested     Decimal   @db.Decimal(10, 2)
+  amountRefunded      Decimal   @default(0) @db.Decimal(10, 2)
+  refundMode          String    // cash | upi | bank_transfer | adjust_against_next_plan
+  reason              String    // quit | dissatisfied | duplicate_charge | medical | gym_closure | other
+  reasonDetail        String?
+  status              String    @default("pending") // pending, approved, processed, rejected, failed
+  requestedById       Int
+  requestedBy         Worker    @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedById        Int?
+  approvedBy          Worker?   @relation("RefundApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt          DateTime?
+  processedAt         DateTime?
+  pgRefundId          String?
+  gstReversalAmount   Decimal?  @db.Decimal(10, 2)
+  proRataDays         Int?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([paymentId])
+}
+
+// ─── Cash shift management (per-location end-of-day reconciliation) ───
+model CashShift {
+  id                Int       @id @default(autoincrement())
+  locationId        Int
+  location          Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  openedById        Int
+  openedBy          Worker    @relation("ShiftOpener", fields: [openedById], references: [id], onDelete: Restrict)
+  openedAt          DateTime  @default(now())
+  openingFloat      Decimal   @db.Decimal(10, 2)
+  closedById        Int?
+  closedBy          Worker?   @relation("ShiftCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt          DateTime?
+  closingExpected   Decimal?  @db.Decimal(10, 2)
+  closingCounted    Decimal?  @db.Decimal(10, 2)
+  variance          Decimal?  @db.Decimal(10, 2)
+  varianceReason    String?
+  status            String    @default("open") // open, pending_approval, closed, voided
+  approvedById      Int?
+  approvedBy        Worker?   @relation("ShiftApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt        DateTime?
+  notes             String?
+
+  payments          Payment[] @relation("ShiftPayment")
+  movements         CashShiftMovement[]
+
+  @@index([locationId, status])
+  @@index([openedAt])
+}
+
+model CashShiftMovement {
+  id           Int       @id @default(autoincrement())
+  shiftId      Int
+  shift        CashShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  type         String    // float_topup, cash_withdrawal, expense, deposit_to_bank
+  amount       Decimal   @db.Decimal(10, 2)
+  reason       String
+  createdById  Int
+  createdAt    DateTime  @default(now())
+
+  @@index([shiftId, createdAt])
 }
 
 // ─── Universal approval queue (comp, freeze, extension, refund, discount, ...) ───

@@ -26,6 +26,7 @@
     { "path": "/api/cron/agents/defaulted-ticket-escalator", "schedule": "30 3 * * *" },
     { "path": "/api/cron/agents/installment-reminder", "schedule": "40 2 * * *" },
     { "path": "/api/cron/agents/upgrade-recommender", "schedule": "30 3 * * 1" },
+    { "path": "/api/cron/agents/cash-shift-variance-investigator", "schedule": "0 17 * * *" },
     { "path": "/api/cron/trainer-payout-monthly", "schedule": "30 21 1 * *" }
   ]
 }
