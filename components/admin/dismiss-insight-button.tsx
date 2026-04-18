@@ -11,7 +11,7 @@ export function DismissInsightButton({ id }: { id: number }) {
 
   const handleDismiss = () => {
     startTransition(async () => {
-      const res = await dismissInsightAction(id);
+      const res = await dismissInsightAction({ insightId: id });
       if (res.success) {
         router.refresh();
       }
