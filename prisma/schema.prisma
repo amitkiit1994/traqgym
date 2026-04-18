@@ -109,6 +109,7 @@ model Worker {
   compPassesIssued    CompPass[]     @relation("CompPassIssuer")
   compPassesApproved  CompPass[]     @relation("CompPassApprover")
   compPassesRevoked   CompPass[]     @relation("CompPassRevoker")
+  insightsDismissed   Insight[]      @relation("InsightDismisser")
 }
 
 model TicketPlan {
@@ -965,4 +966,27 @@ model CompPass {
   @@index([status, expiresAt])
   @@index([userId, status])
   @@index([issuedById])
+}
+
+// ─── AI agent insights (proactive findings — comp auditor, silent churn, etc.) ───
+model Insight {
+  id               Int       @id @default(autoincrement())
+  agent            String    // "comp_auditor", "silent_churn", etc.
+  severity         String    // "critical", "high", "medium", "low"
+  title            String
+  body             String    @db.Text
+  dataJson         Json?
+  suggestedActions Json?     // [{label, action, args}]
+  entityType       String?   // "user", "worker", "ticket", "enquiry", "global"
+  entityId         Int?
+  dedupeKey        String    @unique
+  dismissedAt      DateTime?
+  dismissedById    Int?
+  dismissedBy      Worker?   @relation("InsightDismisser", fields: [dismissedById], references: [id], onDelete: SetNull)
+  snoozedUntil     DateTime?
+  ownerSeenAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([agent, createdAt])
+  @@index([severity, dismissedAt])
 }
