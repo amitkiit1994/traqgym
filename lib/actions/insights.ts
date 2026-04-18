@@ -1,43 +1,95 @@
 "use server";
 
-/**
- * Insight actions — preliminary implementation that piggybacks on
- * InAppNotification rows (type:"insight"). Marks an insight read so it
- * disappears from the dashboard insight strip.
- *
- * TODO(PR-3-insight-table): replace with real Insight table action once the
- * dedicated Insight schema lands.
- */
-
 import { revalidatePath } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
-import { markRead } from "@/lib/services/in-app-notification";
+import {
+  dismissInsight,
+  snoozeInsight,
+  executeInsightAction as executeInsightActionService,
+} from "@/lib/services/insight";
 
-export async function dismissInsightAction(
-  notificationId: number
-): Promise<{ success: true } | { success: false; error: string }> {
+type ActionResult<T = undefined> =
+  | { success: true; data?: T }
+  | { success: false; error: string };
+
+function unauthorized<T = undefined>(): ActionResult<T> {
+  return { success: false, error: "Unauthorized" };
+}
+
+// ─── dismissInsightAction ─────────────────────────────────────────────────
+export async function dismissInsightAction(params: {
+  insightId: number;
+  reason?: string;
+}): Promise<ActionResult> {
   let session;
   try {
     session = await requireWorker();
   } catch {
-    return { success: false, error: "Unauthorized" };
+    return unauthorized();
   }
 
-  const workerId = parseInt(session.user.id, 10);
-  if (!Number.isFinite(workerId)) {
-    return { success: false, error: "Invalid worker session" };
-  }
-
-  try {
-    await markRead(notificationId, { workerId });
-  } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to dismiss insight",
-    };
-  }
+  const dismissedById = parseInt(session.user.id, 10);
+  const result = await dismissInsight({
+    insightId: params.insightId,
+    dismissedById,
+    reason: params.reason,
+  });
+  if (!result.success) return { success: false, error: result.error };
 
   revalidatePath("/admin/dashboard");
-  revalidatePath("/admin/in-app-notifications");
   return { success: true };
+}
+
+// ─── snoozeInsightAction ──────────────────────────────────────────────────
+export async function snoozeInsightAction(params: {
+  insightId: number;
+  untilIso: string;
+}): Promise<ActionResult> {
+  let session;
+  try {
+    session = await requireWorker();
+  } catch {
+    return unauthorized();
+  }
+
+  const snoozedById = parseInt(session.user.id, 10);
+  const until = new Date(params.untilIso);
+  if (isNaN(until.getTime())) {
+    return { success: false, error: "Invalid untilIso" };
+  }
+
+  const result = await snoozeInsight({
+    insightId: params.insightId,
+    until,
+    snoozedById,
+  });
+  if (!result.success) return { success: false, error: result.error };
+
+  revalidatePath("/admin/dashboard");
+  return { success: true };
+}
+
+// ─── executeInsightAction ─────────────────────────────────────────────────
+export async function executeInsightAction(params: {
+  insightId: number;
+  actionIndex: number;
+}): Promise<ActionResult<{ result?: unknown }>> {
+  let session;
+  try {
+    session = await requireWorker();
+  } catch {
+    return unauthorized();
+  }
+
+  const executedById = parseInt(session.user.id, 10);
+  const result = await executeInsightActionService({
+    insightId: params.insightId,
+    actionIndex: params.actionIndex,
+    executedById,
+  });
+  if (!result.success) return { success: false, error: result.error };
+
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/comps");
+  return { success: true, data: { result: result.result } };
 }

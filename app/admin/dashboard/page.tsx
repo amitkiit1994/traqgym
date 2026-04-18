@@ -89,8 +89,8 @@ export default async function DashboardPage({
   });
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <InsightCards />
+    <>
+      <div className="px-4 pt-4 md:px-6"><InsightCards /></div>
       <DashboardClient
       stats={{
         activeMembers: stats.activeMembers,
@@ -143,6 +143,6 @@ export default async function DashboardPage({
       }}
       workerId={Number(session.user.id)}
     />
-    </div>
+    </>
   );
 }
