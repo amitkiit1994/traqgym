@@ -13,6 +13,8 @@ const getCachedSidebarCounts = unstable_cache(
       balanceDueCount,
       pendingLeaves,
       pendingApprovalsCount,
+      pendingRefundsCount,
+      openShiftsCount,
     ] = await Promise.all([
       prisma.paymentFollowup.count({ where: { status: { in: ["pending", "contacted", "promised"] }, amountDue: { gt: 0 }, dueDate: { gte: ninetyDaysAgo, lt: new Date() } } }),
       (() => {
@@ -25,6 +27,10 @@ const getCachedSidebarCounts = unstable_cache(
       }),
       prisma.leaveRequest.count({ where: { status: "pending" } }),
       prisma.approval.count({ where: { status: "pending" } }),
+      prisma.refund.count({ where: { status: "pending" } }),
+      prisma.cashShift.count({
+        where: { status: { in: ["open", "pending_approval"] } },
+      }),
     ]);
 
     return {
@@ -33,6 +39,8 @@ const getCachedSidebarCounts = unstable_cache(
       balanceDueCount,
       pendingLeaves,
       pendingApprovalsCount,
+      pendingRefundsCount,
+      openShiftsCount,
     };
   },
   ["sidebar-counts"],

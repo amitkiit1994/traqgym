@@ -8,7 +8,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AdminNotificationBell } from "@/components/admin-notification-bell";
 import { getSidebarCounts } from "@/lib/actions/sidebar-counts";
 
-const zeroCounts = { pendingFollowups: 0, newEnquiries: 0, balanceDueCount: 0, pendingLeaves: 0, pendingApprovalsCount: 0 };
+const zeroCounts = { pendingFollowups: 0, newEnquiries: 0, balanceDueCount: 0, pendingLeaves: 0, pendingApprovalsCount: 0, pendingRefundsCount: 0, openShiftsCount: 0 };
 
 async function SidebarWithCounts({ role }: { role: string }) {
   const counts = await getSidebarCounts();

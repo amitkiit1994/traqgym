@@ -56,6 +56,8 @@ import {
   Menu,
   Lock,
   ShieldCheck,
+  Undo2,
+  BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -65,6 +67,8 @@ type SidebarCounts = {
   balanceDueCount: number;
   pendingLeaves: number;
   pendingApprovalsCount: number;
+  pendingRefundsCount: number;
+  openShiftsCount: number;
 };
 
 type NavItem = {
@@ -115,6 +119,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/gift-cards", label: "Gift Cards", icon: Gift },
       { href: "/admin/balance-due", label: "Balance Due", icon: IndianRupee },
       { href: "/admin/followups", label: "Followups", icon: AlertCircle },
+      { href: "/admin/refunds", label: "Refunds", icon: Undo2, adminOnly: true },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
     ],
   },
@@ -140,6 +145,7 @@ const navGroups: NavGroup[] = [
     label: "System",
     items: [
       { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck, adminOnly: true },
+      { href: "/admin/shifts", label: "Cash Shifts", icon: BookOpen },
       { href: "/admin/in-app-notifications", label: "Alerts", icon: AlertCircle },
       { href: "/admin/locations", label: "Locations", icon: MapPin },
       { href: "/admin/equipment", label: "Equipment", icon: Dumbbell },
@@ -157,6 +163,8 @@ const BADGE_MAP: Record<string, keyof SidebarCounts> = {
   "/admin/balance-due": "balanceDueCount",
   "/admin/leaves": "pendingLeaves",
   "/admin/approvals": "pendingApprovalsCount",
+  "/admin/refunds": "pendingRefundsCount",
+  "/admin/shifts": "openShiftsCount",
 };
 
 export function AdminSidebar({

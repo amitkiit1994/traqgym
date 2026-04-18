@@ -25,6 +25,7 @@ export type ApprovalType =
   | "freeze"
   | "extension"
   | "refund"
+  | "cash_shift_variance"
   | "discount_over_threshold";
 
 export type ApprovalStatus =
@@ -364,7 +365,36 @@ async function dispatchApproval(params: {
     return res;
   }
 
-  // Other types (freeze, extension, refund, discount_over_threshold) are
+  if (type === "refund") {
+    const { approveRefund } = await import("@/lib/services/refund");
+    const refundId = (payload.refundId as number | undefined) ?? undefined;
+    if (!refundId) {
+      return { dispatched: false, error: "Refund approval payload missing refundId" };
+    }
+    const res = await approveRefund(refundId, decidedById);
+    if (res.success) {
+      return { entityId: refundId, refundId, alreadyDecided: res.alreadyDecided ?? false };
+    }
+    return res;
+  }
+
+  if (type === "cash_shift_variance") {
+    const { approveShiftVariance } = await import("@/lib/services/cash-shift");
+    const shiftId = (payload.shiftId as number | undefined) ?? undefined;
+    if (!shiftId) {
+      return {
+        dispatched: false,
+        error: "Cash shift variance approval payload missing shiftId",
+      };
+    }
+    const res = await approveShiftVariance(shiftId, decidedById);
+    if (res.success) {
+      return { entityId: shiftId, shiftId, alreadyDecided: res.alreadyDecided ?? false };
+    }
+    return res;
+  }
+
+  // Other types (freeze, extension, discount_over_threshold) are
   // accepted as approved but downstream PRs will wire actual dispatchers.
   return { dispatched: false, note: `No dispatcher wired for type "${type}" yet` };
 }
