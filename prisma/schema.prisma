@@ -73,6 +73,7 @@ model User {
   occupation           String?
   anniversaryDate      DateTime?
   govtId               String?
+  gstin                String?  // optional B2B customer GSTIN for GSTR-1 export
 
   @@index([phone])
   @@index([locationId])
