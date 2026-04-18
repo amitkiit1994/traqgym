@@ -31,7 +31,9 @@ export async function issueCompAction(params: {
   reasonDetail?: string;
   days?: number;
   approvedById?: number;
-}): Promise<ActionResult<{ ticketId: number }>> {
+}): Promise<
+  ActionResult<{ ticketId?: number; approvalRequested?: boolean; approvalId?: number }>
+> {
   let session;
   try {
     session = await requireWorker(["admin"]);
@@ -52,8 +54,16 @@ export async function issueCompAction(params: {
 
   if (!result.success) return { success: false, error: result.error };
   revalidatePath("/admin/comps");
+  revalidatePath("/admin/approvals");
   revalidatePath(`/admin/members/${params.userId}`);
-  return { success: true, data: { ticketId: result.ticket.id } };
+
+  if (result.approvalRequested) {
+    return {
+      success: true,
+      data: { approvalRequested: true, approvalId: result.approvalId },
+    };
+  }
+  return { success: true, data: { ticketId: result.ticket?.id } };
 }
 
 // ─── convertCompToPaid ────────────────────────────────────────────────────
@@ -116,7 +126,9 @@ export async function issueCompPassAction(params: {
   expiresAt: string; // ISO date
   approvedById?: number;
   notes?: string;
-}): Promise<ActionResult<{ passId: number }>> {
+}): Promise<
+  ActionResult<{ passId?: number; approvalRequested?: boolean; approvalId?: number }>
+> {
   let session;
   try {
     session = await requireWorker(["admin"]);
@@ -142,7 +154,15 @@ export async function issueCompPassAction(params: {
 
   if (!result.success) return { success: false, error: result.error };
   revalidatePath("/admin/comps");
+  revalidatePath("/admin/approvals");
   revalidatePath(`/admin/members/${params.userId}`);
+
+  if (result.approvalRequested) {
+    return {
+      success: true,
+      data: { approvalRequested: true, approvalId: result.approvalId },
+    };
+  }
   return { success: true, data: { passId: result.passId } };
 }
 
