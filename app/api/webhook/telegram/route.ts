@@ -20,6 +20,7 @@
  * duplicate processing).
  */
 
+import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { run } from "@openai/agents";
 import type { AgentInputItem } from "@openai/agents";
@@ -497,13 +498,25 @@ async function handleVoiceMessage(args: {
 
 // ── Main POST handler ──────────────────────────────────────────────────────
 export async function POST(request: Request) {
-  // Webhook secret check.
+  // Webhook secret check — MANDATORY to prevent spoofed Telegram updates.
   const presented = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
   const expected =
     (await getSetting("telegram_webhook_secret", "")) ||
     process.env.TELEGRAM_WEBHOOK_SECRET ||
     "";
-  if (expected && presented !== expected) {
+  if (!expected) {
+    // Webhook secret not configured — refuse to process to prevent spoofing.
+    return Response.json(
+      { ok: false, error: "webhook_not_configured" },
+      { status: 503 },
+    );
+  }
+  const presentedBuf = Buffer.from(presented);
+  const expectedBuf = Buffer.from(expected);
+  if (
+    presentedBuf.length !== expectedBuf.length ||
+    !crypto.timingSafeEqual(presentedBuf, expectedBuf)
+  ) {
     return Response.json({ ok: false, error: "bad_secret" }, { status: 401 });
   }
 
