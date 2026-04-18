@@ -13,6 +13,9 @@ import {
   convertCompPassToPaid,
   revokeCompPass,
 } from "@/lib/services/comp";
+import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
+import { send as sendSms } from "@/lib/channels/sms";
+import { notifyUser, notifyWorkersByRole } from "@/lib/services/in-app-notification";
 
 export type InsightSeverity = "critical" | "high" | "medium" | "low";
 
@@ -292,6 +295,184 @@ export async function executeInsightAction(params: {
       });
       if (!result.success) return { success: false, error: result.error };
       return { success: true, result };
+    }
+
+    // ── PR 4: insight-driven member nudges ───────────────────────────────────
+    case "member.send_reminder": {
+      // Silent-churn / engagement nudge. Best-effort WhatsApp + in-app.
+      const userId = num("userId");
+      if (userId === null) {
+        return { success: false, error: "member.send_reminder requires userId" };
+      }
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, firstname: true, phone: true },
+      });
+      if (!user) return { success: false, error: "User not found" };
+
+      const reason = str("reason") ?? "engagement_nudge";
+      const channels: string[] = ["in_app"];
+      await notifyUser({
+        userId: user.id,
+        type: "engagement_nudge",
+        title: "We miss you at the gym!",
+        message: "It's been a while — book your next session today.",
+        link: "/member",
+      });
+      if (user.phone) {
+        await sendWhatsApp({
+          recipient: user.phone,
+          templateName: "member_engagement_reminder",
+          variables: { name: user.firstname },
+        });
+        channels.push("whatsapp");
+      }
+      await prisma.auditLog.create({
+        data: {
+          action: "insight.action.member.send_reminder",
+          status: "success",
+          actorId: params.executedById,
+          actorType: "worker",
+          details: JSON.stringify({
+            insightId: params.insightId,
+            userId,
+            reason,
+            channels,
+          }),
+        },
+      });
+      return { success: true, result: { userId, channels } };
+    }
+
+    case "member.send_recovery_message": {
+      // Defaulted-ticket escalator. Best-effort WhatsApp + SMS + in-app.
+      const userId = num("userId");
+      const ticketId = num("ticketId");
+      const stage = num("stage") ?? 1;
+      if (userId === null) {
+        return {
+          success: false,
+          error: "member.send_recovery_message requires userId",
+        };
+      }
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, firstname: true, phone: true },
+      });
+      if (!user) return { success: false, error: "User not found" };
+
+      const channels: string[] = ["in_app"];
+      await notifyUser({
+        userId: user.id,
+        type: "payment_recovery",
+        title: "Pending balance on your membership",
+        message: "Please clear the outstanding amount to keep your access active.",
+        link: "/member/invoices",
+      });
+      if (user.phone) {
+        await sendWhatsApp({
+          recipient: user.phone,
+          templateName: "payment_recovery_reminder",
+          variables: { name: user.firstname, stage: String(stage) },
+        });
+        channels.push("whatsapp");
+        await sendSms({
+          recipient: user.phone,
+          templateName: "payment_recovery_reminder",
+          variables: { name: user.firstname },
+        });
+        channels.push("sms");
+      }
+      await prisma.auditLog.create({
+        data: {
+          action: "insight.action.member.send_recovery_message",
+          status: "success",
+          actorId: params.executedById,
+          actorType: "worker",
+          details: JSON.stringify({
+            insightId: params.insightId,
+            userId,
+            ticketId,
+            stage,
+            channels,
+          }),
+        },
+      });
+      return { success: true, result: { userId, ticketId, stage, channels } };
+    }
+
+    case "ticket.flag_writeoff": {
+      // No formal write-off pipeline yet (slated for a future PR). For now
+      // record intent in AuditLog + surface to admins via in-app notification
+      // so it is visible without losing the action.
+      const ticketId = num("ticketId");
+      const reason = str("reason") ?? "default_escalation";
+      if (ticketId === null) {
+        return {
+          success: false,
+          error: "ticket.flag_writeoff requires ticketId",
+        };
+      }
+      const ticket = await prisma.memberTicket.findUnique({
+        where: { id: ticketId },
+        select: { id: true, userId: true, balanceDue: true },
+      });
+      if (!ticket) return { success: false, error: "Ticket not found" };
+
+      // TODO: when PR 2's approval pipeline lands, wire this to enqueue a
+      // formal write-off approval request instead of just logging intent.
+      await prisma.auditLog.create({
+        data: {
+          action: "insight.action.ticket.flag_writeoff",
+          status: "intent_recorded",
+          actorId: params.executedById,
+          actorType: "worker",
+          details: JSON.stringify({
+            insightId: params.insightId,
+            ticketId,
+            reason,
+            balanceDue: ticket.balanceDue?.toString(),
+            note: "Approval pipeline not yet implemented; intent logged.",
+          }),
+        },
+      });
+      await notifyWorkersByRole({
+        role: "admin",
+        type: "ticket_writeoff_flagged",
+        title: `Ticket #${ticketId} flagged for write-off`,
+        message: `Reason: ${reason}. Approval pipeline pending — review manually.`,
+        link: `/admin/balance-due`,
+      });
+      return {
+        success: true,
+        result: { ticketId, intentRecorded: true, note: "writeoff_pending_pipeline" },
+      };
+    }
+
+    case "comp.investigate": {
+      // Marker action used by the comp-leakage-investigator's "Convert to paid"
+      // suggestion. The actual conversion uses comp.convert; this stub records
+      // that an admin chose to act on the investigation so the manager ranker
+      // can learn from the signal.
+      const ticketId = num("ticketId");
+      const kind = str("kind") ?? "review";
+      if (ticketId === null) {
+        return { success: false, error: "comp.investigate requires ticketId" };
+      }
+      await prisma.auditLog.create({
+        data: {
+          action: "insight.action.comp.investigate",
+          status: "success",
+          actorId: params.executedById,
+          actorType: "worker",
+          details: JSON.stringify({
+            insightId: params.insightId,
+            ticketId,
+            kind,
+          }),
+        },
+      });
+      return { success: true, result: { ticketId, kind, recorded: true } };
     }
 
     default:
