@@ -130,6 +130,8 @@ const navGroups: NavGroup[] = [
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
       { href: "/admin/reports/multi-location", label: "Multi-Location", icon: Building2, adminOnly: true },
       { href: "/admin/reports/trainer-ratings", label: "Trainer Ratings", icon: Star, adminOnly: true },
+      { href: "/admin/reports/tally-export", label: "Tally Export", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/gstr1", label: "GSTR-1", icon: FileBarChart, adminOnly: true },
     ],
   },
   {

@@ -54,6 +54,14 @@ const SETTINGS_KEYS = [
   // Integrations — Biometric SDK
   "biomax_sdk_base_url",
   "biomax_sdk_api_key",
+  // Tax & Accounting (Tally + GSTR-1)
+  "gym_service_hsn",
+  "gym_gst_rate",
+  "gym_gst_scheme",
+  "tally_sales_ledger",
+  "tally_cgst_ledger",
+  "tally_sgst_ledger",
+  "tally_igst_ledger",
 ];
 
 const DEFAULTS: Record<string, string> = {

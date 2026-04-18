@@ -110,6 +110,15 @@ export default function SettingsPage() {
   const [testingBiomax, setTestingBiomax] = useState(false);
   const [biomaxTestResult, setBiomaxTestResult] = useState<string | null>(null);
 
+  // Tax & Accounting (Tally + GSTR-1)
+  const [gymServiceHsn, setGymServiceHsn] = useState("999723");
+  const [gymGstRate, setGymGstRate] = useState("18");
+  const [gymGstScheme, setGymGstScheme] = useState("regular");
+  const [tallySalesLedger, setTallySalesLedger] = useState("Sales");
+  const [tallyCgstLedger, setTallyCgstLedger] = useState("CGST Output");
+  const [tallySgstLedger, setTallySgstLedger] = useState("SGST Output");
+  const [tallyIgstLedger, setTallyIgstLedger] = useState("IGST Output");
+
   // Data Lifecycle
   const [dataCleanupEnabled, setDataCleanupEnabled] = useState(true);
   const [followupArchiveDays, setFollowupArchiveDays] = useState("180");
@@ -174,6 +183,14 @@ export default function SettingsPage() {
         setLateEntryAfter(data.late_entry_after ?? "22:00");
         setLockerKeyOverdueDays(data.locker_key_overdue_threshold_days ?? "7");
         setTrainerRatingThreshold(data.trainer_rating_threshold ?? "3.5");
+        // Tax & Accounting
+        setGymServiceHsn(data.gym_service_hsn ?? "999723");
+        setGymGstRate(data.gym_gst_rate ?? data.gst_rate ?? "18");
+        setGymGstScheme(data.gym_gst_scheme ?? "regular");
+        setTallySalesLedger(data.tally_sales_ledger ?? "Sales");
+        setTallyCgstLedger(data.tally_cgst_ledger ?? "CGST Output");
+        setTallySgstLedger(data.tally_sgst_ledger ?? "SGST Output");
+        setTallyIgstLedger(data.tally_igst_ledger ?? "IGST Output");
       })
       .catch(() => setError("Failed to load settings"));
   }, []);
@@ -241,6 +258,14 @@ export default function SettingsPage() {
           late_entry_after: lateEntryAfter,
           locker_key_overdue_threshold_days: lockerKeyOverdueDays,
           trainer_rating_threshold: trainerRatingThreshold,
+          // Tax & Accounting
+          gym_service_hsn: gymServiceHsn,
+          gym_gst_rate: gymGstRate,
+          gym_gst_scheme: gymGstScheme,
+          tally_sales_ledger: tallySalesLedger,
+          tally_cgst_ledger: tallyCgstLedger,
+          tally_sgst_ledger: tallySgstLedger,
+          tally_igst_ledger: tallyIgstLedger,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -1186,6 +1211,105 @@ export default function SettingsPage() {
             {cleanupResult && (
               <p className="text-sm text-muted-foreground">{cleanupResult}</p>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card: Tax & Accounting (Tally + GSTR-1) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Tax &amp; Accounting</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Used by the Tally Prime XML export and the quarterly GSTR-1 CSV.
+            Gym GSTIN and state are configured under Gym Identity above.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="gym-service-hsn">HSN/SAC Code</Label>
+            <Input
+              id="gym-service-hsn"
+              value={gymServiceHsn}
+              onChange={(e) => setGymServiceHsn(e.target.value)}
+              placeholder="999723"
+            />
+            <p className="text-xs text-muted-foreground">
+              Default for Indian gym/fitness services is 999723.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-gst-rate">GST Rate (%)</Label>
+            <Input
+              id="gym-gst-rate"
+              type="number"
+              min="0"
+              max="28"
+              value={gymGstRate}
+              onChange={(e) => setGymGstRate(e.target.value)}
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used to back-calculate taxable value from GST-inclusive invoice
+              totals in the Tally and GSTR-1 exports.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-gst-scheme">GST Scheme</Label>
+            <select
+              id="gym-gst-scheme"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={gymGstScheme}
+              onChange={(e) => setGymGstScheme(e.target.value)}
+            >
+              <option value="regular">Regular</option>
+              <option value="composition">Composition</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Composition scheme files CMP-08 instead of GSTR-1 — the GSTR-1
+              report will be disabled if this is selected.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-sales-ledger">Tally Sales Ledger</Label>
+            <Input
+              id="tally-sales-ledger"
+              value={tallySalesLedger}
+              onChange={(e) => setTallySalesLedger(e.target.value)}
+              placeholder="Sales"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-cgst-ledger">Tally CGST Ledger</Label>
+            <Input
+              id="tally-cgst-ledger"
+              value={tallyCgstLedger}
+              onChange={(e) => setTallyCgstLedger(e.target.value)}
+              placeholder="CGST Output"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-sgst-ledger">Tally SGST Ledger</Label>
+            <Input
+              id="tally-sgst-ledger"
+              value={tallySgstLedger}
+              onChange={(e) => setTallySgstLedger(e.target.value)}
+              placeholder="SGST Output"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-igst-ledger">Tally IGST Ledger</Label>
+            <Input
+              id="tally-igst-ledger"
+              value={tallyIgstLedger}
+              onChange={(e) => setTallyIgstLedger(e.target.value)}
+              placeholder="IGST Output"
+            />
           </div>
         </CardContent>
       </Card>
