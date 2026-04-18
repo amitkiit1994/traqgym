@@ -35,6 +35,8 @@ type Plan = {
   price: number;
   occasions: number | null;
   isActive: boolean;
+  joiningFee: number;
+  joiningFeeAppliesOn: string;
   createdAt: Date;
 };
 
@@ -72,6 +74,8 @@ export default function PlansPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const joiningFeeRaw = fd.get("joiningFee") as string;
+    const joiningFeeAppliesOn = (fd.get("joiningFeeAppliesOn") as string) || "first_only";
     const data = {
       name: fd.get("name") as string,
       expireDays: parseInt(fd.get("expireDays") as string, 10) || 0,
@@ -79,6 +83,8 @@ export default function PlansPage() {
       occasions: (fd.get("occasions") as string)
         ? parseInt(fd.get("occasions") as string, 10) || null
         : null,
+      joiningFee: joiningFeeRaw ? parseFloat(joiningFeeRaw) || 0 : 0,
+      joiningFeeAppliesOn: joiningFeeAppliesOn as "first_only" | "every_renewal" | "never",
     };
 
     startTransition(async () => {
@@ -223,6 +229,35 @@ export default function PlansPage() {
                 defaultValue={editing?.occasions ?? ""}
                 key={`occ-${editing?.id ?? "new"}`}
               />
+            </div>
+            <div>
+              <Label htmlFor="joiningFee">Joining Fee (Rs.)</Label>
+              <Input
+                id="joiningFee"
+                name="joiningFee"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={editing ? Number(editing.joiningFee) : 0}
+                key={`jf-${editing?.id ?? "new"}`}
+              />
+              {errors.joiningFee && (
+                <p className="text-xs text-destructive mt-1">{errors.joiningFee}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="joiningFeeAppliesOn">Joining Fee Applies</Label>
+              <select
+                id="joiningFeeAppliesOn"
+                name="joiningFeeAppliesOn"
+                defaultValue={editing?.joiningFeeAppliesOn ?? "first_only"}
+                key={`jfa-${editing?.id ?? "new"}`}
+                className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm"
+              >
+                <option value="first_only">First purchase only</option>
+                <option value="every_renewal">Every renewal</option>
+                <option value="never">Never</option>
+              </select>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={isPending}>

@@ -89,6 +89,24 @@ export async function renewMembership(params: {
     if (!promo.isActive) throw new Error("Promo code is inactive");
   }
 
+  // 6c. Determine joining fee for this purchase (PR 11)
+  let joiningFeeCharged = 0;
+  const planJoiningFee = Number(plan.joiningFee ?? 0);
+  const appliesOn = plan.joiningFeeAppliesOn ?? "first_only";
+  if (planJoiningFee > 0 && appliesOn !== "never") {
+    if (appliesOn === "every_renewal") {
+      joiningFeeCharged = planJoiningFee;
+    } else if (appliesOn === "first_only") {
+      // Charge only if user has zero prior member tickets
+      const priorTicketCount = await prisma.memberTicket.count({
+        where: { userId: params.userId },
+      });
+      if (priorTicketCount === 0) {
+        joiningFeeCharged = planJoiningFee;
+      }
+    }
+  }
+
   // 7. Prisma $transaction
   const result = await prisma.$transaction(async (tx) => {
     // Promo code validation and discount calculation inside transaction
@@ -121,6 +139,9 @@ export async function renewMembership(params: {
       finalAmount = finalAmount - discountApplied;
     }
 
+    // Add joining fee on top of (post-discount) plan price
+    finalAmount = finalAmount + joiningFeeCharged;
+
     // CREATE MemberTicket
     const memberTicket = await tx.memberTicket.create({
       data: {
@@ -130,6 +151,8 @@ export async function renewMembership(params: {
         buyDate: new Date(),
         expireDate: newExpiryDate,
         occasions: plan.occasions,
+        totalAmount: finalAmount,
+        joiningFeeCharged,
       },
     });
 
@@ -163,6 +186,7 @@ export async function renewMembership(params: {
           planName: plan.name,
           amount: finalAmount,
           discount: discountApplied,
+          joiningFee: joiningFeeCharged,
           promoCode: params.promoCode || null,
           paymentMode: params.paymentMode,
           oldExpiryDate: oldExpiryDate?.toISOString() ?? null,
