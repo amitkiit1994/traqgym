@@ -5,19 +5,38 @@ import { exportInvoicesAsTallyXml } from "@/lib/services/tally-export";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+// IST = UTC+5:30, no DST. All Tally export bounds and filenames are computed
+// in IST so the period matches Indian fiscal accounting on a UTC server (Vercel).
+
+// Build a Date that represents 00:00 IST on the given calendar date.
+function istDateUTC(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day) - 5.5 * 3600 * 1000);
 }
 
-function endOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+// Return the IST calendar parts (year/month/day) for a given instant.
+function istParts(d: Date): { year: number; month: number; day: number } {
+  const ist = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  return {
+    year: ist.getUTCFullYear(),
+    month: ist.getUTCMonth(),
+    day: ist.getUTCDate(),
+  };
+}
+
+function startOfMonthIst(d: Date): Date {
+  const { year, month } = istParts(d);
+  return istDateUTC(year, month, 1);
+}
+
+function endOfMonthIst(d: Date): Date {
+  const { year, month } = istParts(d);
+  // 1ms before 00:00 IST of the first day of next month.
+  return new Date(istDateUTC(year, month + 1, 1).getTime() - 1);
 }
 
 function fmtYMD(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const { year, month, day } = istParts(d);
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function parseDateOrNull(value: string | null): Date | null {
@@ -36,12 +55,15 @@ export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const now = new Date();
 
-  let from = parseDateOrNull(sp.get("from")) ?? startOfMonth(now);
-  let to = parseDateOrNull(sp.get("to")) ?? endOfMonth(now);
+  let from = parseDateOrNull(sp.get("from")) ?? startOfMonthIst(now);
+  let to = parseDateOrNull(sp.get("to")) ?? endOfMonthIst(now);
 
-  // Normalize to start-of-day / end-of-day so the to-date is inclusive
-  from = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0, 0);
-  to = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
+  // Normalize to start-of-day / end-of-day in IST so the to-date is inclusive
+  // for the IST calendar day the user typed (not the UTC server day).
+  const fromParts = istParts(from);
+  const toParts = istParts(to);
+  from = istDateUTC(fromParts.year, fromParts.month, fromParts.day);
+  to = new Date(istDateUTC(toParts.year, toParts.month, toParts.day + 1).getTime() - 1);
 
   if (to < from) {
     return NextResponse.json(

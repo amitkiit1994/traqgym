@@ -8,10 +8,15 @@ export type TallyExportParams = {
   locationId?: number;
 };
 
+// Format an instant as the IST calendar date Tally expects (YYYYMMDD). Without
+// this shift, an invoice timestamped 2026-04-01 02:00 IST (= 2026-03-31 20:30
+// UTC) would be exported as 20260331 on a UTC server (Vercel) — wrong fiscal
+// month for Indian books.
 function formatTallyDate(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const ist = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  const yyyy = ist.getUTCFullYear();
+  const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(ist.getUTCDate()).padStart(2, "0");
   return `${yyyy}${mm}${dd}`;
 }
 

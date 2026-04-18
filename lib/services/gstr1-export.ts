@@ -48,23 +48,45 @@ function gstinStateCode(gstin: string | null | undefined): string | null {
   return trimmed.slice(0, 2);
 }
 
+// All GSTR-1 dates are rendered in IST so that an invoice timestamped at e.g.
+// 2026-04-01 02:00 IST (= 2026-03-31 20:30 UTC) is reported as 01-04-2026, not
+// 31-03-2026. Server timezone (UTC on Vercel) must not leak into filings.
+function toIstParts(d: Date): { yyyy: number; mm: string; dd: string } {
+  const ist = new Date(d.getTime() + 5.5 * 3600 * 1000);
+  return {
+    yyyy: ist.getUTCFullYear(),
+    mm: String(ist.getUTCMonth() + 1).padStart(2, "0"),
+    dd: String(ist.getUTCDate()).padStart(2, "0"),
+  };
+}
+
 function fmtDateDDMMYYYY(d: Date): string {
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
+  const { yyyy, mm, dd } = toIstParts(d);
   return `${dd}-${mm}-${yyyy}`;
 }
 
 function fmtDateYYYYMMDD(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const { yyyy, mm, dd } = toIstParts(d);
   return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
+ * Build a Date that represents 00:00 IST on the given calendar date.
+ * IST is UTC+5:30 with no DST, so 00:00 IST = -5:30 UTC of the same date.
+ * (month is 0-indexed per the JS Date convention.)
+ *
+ * This is critical for GSTR-1 filing: Indian fiscal periods are defined in
+ * IST, not in the server timezone. On Vercel (UTC), `new Date(year, month, day)`
+ * would build the boundary in UTC and misclassify invoices in the
+ * 18:30-00:00 UTC window (= 00:00-05:30 IST of the next calendar day).
+ */
+function istDateUTC(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day) - 5.5 * 3600 * 1000);
+}
+
+/**
  * Map an Indian fiscal quarter and the calendar year in which it ENDS to a
- * date range.
+ * date range, with bounds anchored to IST (not server-local time).
  *   Q1 (Apr-Jun) — quarter ends in same year
  *   Q2 (Jul-Sep) — quarter ends in same year
  *   Q3 (Oct-Dec) — quarter ends in same year
@@ -75,29 +97,26 @@ function quarterToDateRange(quarter: 1 | 2 | 3 | 4, year: number): {
   to: Date;
 } {
   let fromMonth: number; // 0-indexed
-  let toMonth: number;
-  let fromYear = year;
-  let toYear = year;
+  const fromYear = year;
   switch (quarter) {
     case 1:
       fromMonth = 3; // Apr
-      toMonth = 5; // Jun
       break;
     case 2:
       fromMonth = 6; // Jul
-      toMonth = 8; // Sep
       break;
     case 3:
       fromMonth = 9; // Oct
-      toMonth = 11; // Dec
       break;
     case 4:
       fromMonth = 0; // Jan
-      toMonth = 2; // Mar
       break;
   }
-  const from = new Date(fromYear, fromMonth, 1, 0, 0, 0, 0);
-  const to = new Date(toYear, toMonth + 1, 0, 23, 59, 59, 999);
+  // [from, to] in IST: 00:00 IST of first day of quarter to 23:59:59.999 IST of last day.
+  // Compute `to` as one millisecond before 00:00 IST of the first day of the next quarter.
+  // istDateUTC handles month overflow (e.g. month=12 → next year January) via Date.UTC.
+  const from = istDateUTC(fromYear, fromMonth, 1);
+  const to = new Date(istDateUTC(fromYear, fromMonth + 3, 1).getTime() - 1);
   return { from, to };
 }
 
