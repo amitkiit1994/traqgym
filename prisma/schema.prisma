@@ -70,6 +70,7 @@ model User {
   feedbacks            Feedback[]
   appointments         Appointment[]
   compPasses           CompPass[]
+  lockerKeyIssuances   LockerKeyIssuance[]
   alternatePhone       String?
   address              String?
   occupation           String?
@@ -127,6 +128,9 @@ model Worker {
   shiftsClosed        CashShift[]    @relation("ShiftCloser")
   shiftsApproved      CashShift[]    @relation("ShiftApprover")
   feedbacksAsTrainer  Feedback[]     @relation("FeedbackTrainer")
+  keysIssued          LockerKeyIssuance[] @relation("KeyIssuer")
+  keysReturned        LockerKeyIssuance[] @relation("KeyReturner")
+  keyWitnessed        LockerKeyIssuance[] @relation("KeyWitness")
 }
 
 model TicketPlan {
@@ -268,6 +272,8 @@ model AttendanceLog {
   sourceEventId  Int?
   deviceId       Int?
   notes          String?
+  isLateEntry    Boolean   @default(false)
+  isPeakHours    Boolean   @default(false)
   createdAt      DateTime  @default(now())
 
   @@unique([userId, locationId, attendanceDate], name: "uk_member_daily")
@@ -942,6 +948,8 @@ model Locker {
   notes      String?
   createdAt  DateTime  @default(now())
 
+  keyIssuances LockerKeyIssuance[]
+
   @@unique([number, locationId])
   @@index([locationId, status])
 }
@@ -1217,4 +1225,35 @@ model PaymentInstallment {
 
   @@unique([scheduleId, sequenceNumber])
   @@index([dueDate, status])
+}
+
+model LockerKeyIssuance {
+  id                Int       @id @default(autoincrement())
+  lockerId          Int
+  locker            Locker    @relation(fields: [lockerId], references: [id], onDelete: Cascade)
+  userId            Int
+  user              User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  issuedAt          DateTime  @default(now())
+  issuedById        Int
+  issuedBy          Worker    @relation("KeyIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  expectedReturnAt  DateTime?
+  returnedAt        DateTime?
+  returnedById      Int?
+  returnedBy        Worker?   @relation("KeyReturner", fields: [returnedById], references: [id], onDelete: SetNull)
+  depositAmount     Decimal   @db.Decimal(10, 2)
+  depositRefundedAt DateTime?
+  conditionNotes    String?
+  status            String    @default("issued") // issued, returned, lost, forfeited
+  penaltyAmount     Decimal   @default(0) @db.Decimal(10, 2)
+  photoUrl          String?
+  witnessId         Int?
+  witness           Worker?   @relation("KeyWitness", fields: [witnessId], references: [id], onDelete: SetNull)
+  parentIssuanceId  Int?
+  parentIssuance    LockerKeyIssuance? @relation("KeyReissue", fields: [parentIssuanceId], references: [id], onDelete: SetNull)
+  reissues          LockerKeyIssuance[] @relation("KeyReissue")
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, status])
+  @@index([status, expectedReturnAt])
+  @@index([lockerId, status])
 }

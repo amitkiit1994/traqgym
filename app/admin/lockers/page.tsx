@@ -41,7 +41,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Lock, Plus, Search, Wrench, Trash2, UserPlus, UserMinus } from "lucide-react";
+import { Loader2, Lock, Plus, Search, Wrench, Trash2, UserPlus, UserMinus, KeyRound, AlertTriangle } from "lucide-react";
+import { IssueKeyDialog } from "@/components/admin/issue-key-dialog";
+import { ReturnKeyDialog } from "@/components/admin/return-key-dialog";
+import { MarkKeyLostDialog } from "@/components/admin/mark-key-lost-dialog";
+import {
+  getOutstandingKeysAction,
+  getOverdueKeysAction,
+} from "@/lib/actions/locker-key";
 
 type LockerItem = {
   id: number;
@@ -60,6 +67,8 @@ type LockerItem = {
 type Location = { id: number; name: string; code: string; address: string | null; phone: string | null; isActive: boolean; createdAt: Date };
 type Stats = { available: number; assigned: number; maintenance: number; total: number };
 type MemberResult = { id: number; firstname: string; lastname: string; phone: string };
+type OutstandingKey = Awaited<ReturnType<typeof getOutstandingKeysAction>>[number];
+type OverdueKey = Awaited<ReturnType<typeof getOverdueKeysAction>>[number];
 
 function statusColor(s: string): string {
   switch (s) {
@@ -96,18 +105,32 @@ export default function LockersPage() {
   const [memberResults, setMemberResults] = useState<MemberResult[]>([]);
   const [searchPending, setSearchPending] = useState(false);
 
+  // Key issuance audit
+  const [outstandingKeys, setOutstandingKeys] = useState<OutstandingKey[]>([]);
+  const [overdueKeys, setOverdueKeys] = useState<OverdueKey[]>([]);
+  const [issueKeyOpen, setIssueKeyOpen] = useState(false);
+  const [issueKeyTarget, setIssueKeyTarget] = useState<{ lockerId: number; userId: number } | null>(null);
+  const [returnKeyOpen, setReturnKeyOpen] = useState(false);
+  const [returnKeyTarget, setReturnKeyTarget] = useState<{ id: number; deposit: number } | null>(null);
+  const [lostKeyOpen, setLostKeyOpen] = useState(false);
+  const [lostKeyTarget, setLostKeyTarget] = useState<{ id: number; deposit: number } | null>(null);
+
   const locId = filterLocation && filterLocation !== "all" ? Number(filterLocation) : undefined;
 
   const load = () => {
     startTransition(async () => {
-      const [data, locs, st] = await Promise.all([
+      const [data, locs, st, outstanding, overdue] = await Promise.all([
         getLockersAction(locId),
         getLocations(),
         getLockerStatsAction(locId),
+        getOutstandingKeysAction(),
+        getOverdueKeysAction(),
       ]);
       setLockers(data);
       setLocations(locs);
       setStats(st);
+      setOutstandingKeys(outstanding);
+      setOverdueKeys(overdue);
     });
   };
 
@@ -377,14 +400,32 @@ export default function LockersPage() {
                     </>
                   )}
                   {locker.status === "assigned" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRelease(locker.id)}
-                      title="Release"
-                    >
-                      <UserMinus className="size-3.5" />
-                    </Button>
+                    <>
+                      {locker.assignedTo && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setIssueKeyTarget({
+                              lockerId: locker.id,
+                              userId: locker.assignedTo!,
+                            });
+                            setIssueKeyOpen(true);
+                          }}
+                          title="Issue Key"
+                        >
+                          <KeyRound className="size-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRelease(locker.id)}
+                        title="Release"
+                      >
+                        <UserMinus className="size-3.5" />
+                      </Button>
+                    </>
                   )}
                   {locker.status === "maintenance" && (
                     <Button
@@ -509,6 +550,140 @@ export default function LockersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Key Issuance Audit Section */}
+      <div className="shrink-0 space-y-2 border-t pt-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <KeyRound className="size-4" />
+            Key Issuance Audit
+            <Badge variant="outline" className="ml-1">
+              {outstandingKeys.length} outstanding
+            </Badge>
+          </h2>
+        </div>
+
+        {overdueKeys.length > 0 && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm">
+            <AlertTriangle className="size-4 text-destructive mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-destructive">
+                {overdueKeys.length} key{overdueKeys.length === 1 ? "" : "s"} overdue
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {overdueKeys.slice(0, 3).map((k) => `${k.userName} (#${k.lockerNumber})`).join(", ")}
+                {overdueKeys.length > 3 && ` and ${overdueKeys.length - 3} more`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {outstandingKeys.length > 0 && (
+          <div className="max-h-64 overflow-y-auto border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Member</TableHead>
+                  <TableHead>Locker</TableHead>
+                  <TableHead className="hidden md:table-cell">Issued</TableHead>
+                  <TableHead className="hidden md:table-cell">Expected Return</TableHead>
+                  <TableHead>Deposit</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {outstandingKeys.map((k) => {
+                  const isOverdue = overdueKeys.some((o) => o.id === k.id);
+                  return (
+                    <TableRow key={k.id}>
+                      <TableCell className="font-medium">
+                        {k.userName}
+                        {k.userPhone && (
+                          <span className="text-xs text-muted-foreground ml-1">
+                            ({k.userPhone})
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>{k.lockerNumber}</TableCell>
+                      <TableCell className="hidden md:table-cell text-xs">
+                        {new Date(k.issuedAt).toLocaleDateString("en-IN")}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-xs">
+                        {k.expectedReturnAt ? (
+                          <span className={isOverdue ? "text-destructive font-medium" : ""}>
+                            {new Date(k.expectedReturnAt).toLocaleDateString("en-IN")}
+                          </span>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
+                      <TableCell>₹{k.depositAmount.toLocaleString("en-IN")}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 flex-wrap">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setReturnKeyTarget({ id: k.id, deposit: k.depositAmount });
+                              setReturnKeyOpen(true);
+                            }}
+                          >
+                            Return
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setLostKeyTarget({ id: k.id, deposit: k.depositAmount });
+                              setLostKeyOpen(true);
+                            }}
+                          >
+                            Lost
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
+      {/* Issue Key Dialog */}
+      {issueKeyTarget && (
+        <IssueKeyDialog
+          open={issueKeyOpen}
+          onOpenChange={setIssueKeyOpen}
+          lockerId={issueKeyTarget.lockerId}
+          userId={issueKeyTarget.userId}
+          onSuccess={load}
+        />
+      )}
+
+      {/* Return Key Dialog */}
+      {returnKeyTarget && (
+        <ReturnKeyDialog
+          open={returnKeyOpen}
+          onOpenChange={setReturnKeyOpen}
+          issuanceId={returnKeyTarget.id}
+          depositAmount={returnKeyTarget.deposit}
+          onSuccess={load}
+        />
+      )}
+
+      {/* Mark Lost Dialog */}
+      {lostKeyTarget && (
+        <MarkKeyLostDialog
+          open={lostKeyOpen}
+          onOpenChange={setLostKeyOpen}
+          issuanceId={lostKeyTarget.id}
+          depositAmount={lostKeyTarget.deposit}
+          onSuccess={load}
+        />
+      )}
 
       {/* Maintenance Dialog */}
       <Dialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>

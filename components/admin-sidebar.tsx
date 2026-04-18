@@ -61,6 +61,7 @@ import {
   HeartPulse,
   Undo2,
   BookOpen,
+  Star,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -128,6 +129,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/refunds", label: "Refunds", icon: Undo2, adminOnly: true },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
       { href: "/admin/reports/multi-location", label: "Multi-Location", icon: Building2, adminOnly: true },
+      { href: "/admin/reports/trainer-ratings", label: "Trainer Ratings", icon: Star, adminOnly: true },
     ],
   },
   {

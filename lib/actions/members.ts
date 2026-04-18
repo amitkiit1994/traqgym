@@ -462,6 +462,7 @@ export async function transferMember(data: {
   userId: number;
   toLocationId: number;
   ticketId: number;
+  carryOverDays?: boolean;
 }) {
   let session;
   try { session = await requireWorker(["admin"]); } catch { return { success: false, error: "Unauthorized" }; }
