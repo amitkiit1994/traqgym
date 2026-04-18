@@ -30,6 +30,7 @@
     { "path": "/api/cron/agents/multi-location-comparator", "schedule": "40 3 * * 1" },
     { "path": "/api/cron/agents/overdue-keys", "schedule": "0 9 * * *" },
     { "path": "/api/cron/agents/trainer-rating", "schedule": "0 8 * * 1" },
-    { "path": "/api/cron/trainer-payout-monthly", "schedule": "30 21 1 * *" }
+    { "path": "/api/cron/trainer-payout-monthly", "schedule": "30 21 1 * *" },
+    { "path": "/api/cron/manager-morning-briefing", "schedule": "30 1 * * *" }
   ]
 }

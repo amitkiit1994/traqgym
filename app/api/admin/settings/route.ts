@@ -67,6 +67,14 @@ const SETTINGS_KEYS = [
   "qr_checkin_rate_limit_hours",
   "qr_token_max_age_days",
   "qr_checkin_allow_phone_only",
+  // PR 8: Manager Briefing
+  "gym_owner_name",
+  "gym_owner_email",
+  "gym_owner_lang",
+  "manager_briefing_enabled",
+  "manager_min_severity",
+  "manager_briefing_top_n",
+  "manager_briefing_time",
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -114,6 +122,14 @@ const DEFAULTS: Record<string, string> = {
   qr_checkin_rate_limit_hours: "4",
   qr_token_max_age_days: "365",
   qr_checkin_allow_phone_only: "false",
+  // PR 8: Manager Briefing
+  gym_owner_name: "Owner",
+  gym_owner_email: "",
+  gym_owner_lang: "en",
+  manager_briefing_enabled: "false",
+  manager_min_severity: "high",
+  manager_briefing_top_n: "5",
+  manager_briefing_time: "07:00",
 };
 
 export async function GET() {
