@@ -103,6 +103,7 @@ model Worker {
   createdDietPlans    DietPlan[]
   inAppNotifications  InAppNotification[] @relation("WorkerInAppNotifications")
   appointments        Appointment[]
+  feedbacksAsTrainer  Feedback[]          @relation("FeedbackTrainer")
 }
 
 model TicketPlan {
@@ -515,6 +516,8 @@ model ClassSchedule {
   startTime  String   // "07:00"
   endTime    String   // "08:00"
   createdAt  DateTime @default(now())
+
+  feedbacks  Feedback[]
 }
 
 model ClassBooking {
@@ -902,10 +905,16 @@ model Feedback {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   rating    Int      // 1-5
   comment   String?
-  category  String?  // facility, trainer, cleanliness, general
+  category  String?  // facility, trainer, cleanliness, general, class
+  classId   Int?
+  class     ClassSchedule? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  trainerId Int?
+  trainer   Worker?  @relation("FeedbackTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([trainerId, createdAt])
+  @@index([classId, createdAt])
 }
 
 model Appointment {
