@@ -121,6 +121,16 @@ export default function SettingsPage() {
   const [sendingTestBriefing, setSendingTestBriefing] = useState(false);
   const [briefingResult, setBriefingResult] = useState<string | null>(null);
 
+  // PR 9: Telegram
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBotUsername, setTelegramBotUsername] = useState("");
+  const [telegramWebhookSecret, setTelegramWebhookSecret] = useState("");
+  const [telegramPairingCode, setTelegramPairingCode] = useState("");
+  const [telegramWebhookUrl, setTelegramWebhookUrl] = useState("");
+  const [telegramPairedChatId, setTelegramPairedChatId] = useState("");
+  const [telegramBusy, setTelegramBusy] = useState<string | null>(null);
+  const [telegramResult, setTelegramResult] = useState<string | null>(null);
+
   // UI state
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
@@ -181,8 +191,28 @@ export default function SettingsPage() {
         setManagerMinSeverity(data.manager_min_severity ?? "high");
         setManagerBriefingTopN(data.manager_briefing_top_n ?? "5");
         setManagerBriefingTime(data.manager_briefing_time ?? "07:00");
+        // PR 9: Telegram
+        setTelegramEnabled(data.telegram_enabled === "true");
+        setTelegramBotUsername(data.telegram_bot_username ?? "");
+        setTelegramWebhookSecret(data.telegram_webhook_secret ?? "");
+        setTelegramPairedChatId(data.gym_owner_telegram_chat_id ?? "");
       })
       .catch(() => setError("Failed to load settings"));
+
+    // Pull derived pairing info (today's code, webhook URL).
+    (async () => {
+      try {
+        const { getPairingInfoAction } = await import("@/lib/actions/telegram");
+        const info = await getPairingInfoAction();
+        setTelegramPairingCode(info.pairingCode);
+        setTelegramWebhookUrl(info.webhookUrl);
+        if (!telegramBotUsername) setTelegramBotUsername(info.botUsername);
+        if (!telegramPairedChatId) setTelegramPairedChatId(info.pairedChatId);
+      } catch {
+        /* ignore — admin-only, may fail for non-admins */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const togglePaymentMode = (mode: string) => {
@@ -251,6 +281,10 @@ export default function SettingsPage() {
           manager_min_severity: managerMinSeverity,
           manager_briefing_top_n: managerBriefingTopN,
           manager_briefing_time: managerBriefingTime,
+          // PR 9: Telegram
+          telegram_enabled: telegramEnabled ? "true" : "false",
+          telegram_bot_username: telegramBotUsername,
+          telegram_webhook_secret: telegramWebhookSecret,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -1277,6 +1311,199 @@ export default function SettingsPage() {
           <p className="text-xs text-muted-foreground">
             Save settings first, then test. Test ignores the enable toggle? No —
             it respects all settings (including the enable flag).
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Card: Telegram (PR 9) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Telegram</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Pair the gym owner&apos;s Telegram with this gym to receive the
+            morning briefing as a chat message with one-tap action buttons,
+            and to chat with the AI from your phone (text + voice notes).
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable Telegram delivery</Label>
+              <p className="text-xs text-muted-foreground">
+                Also deliver the morning briefing via Telegram (in addition to email)
+              </p>
+            </div>
+            <Switch
+              checked={telegramEnabled}
+              onCheckedChange={setTelegramEnabled}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tg-bot-username">Bot Username</Label>
+            <Input
+              id="tg-bot-username"
+              value={telegramBotUsername}
+              onChange={(e) => setTelegramBotUsername(e.target.value)}
+              placeholder="TraqGymBot"
+            />
+            <p className="text-xs text-muted-foreground">
+              Without the @. Defaults from <code>TELEGRAM_BOT_USERNAME</code> env.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tg-webhook-secret">Webhook Secret Token</Label>
+            <Input
+              id="tg-webhook-secret"
+              type="password"
+              value={telegramWebhookSecret}
+              onChange={(e) => setTelegramWebhookSecret(e.target.value)}
+              placeholder="any random string (e.g. openssl rand -hex 32)"
+            />
+            <p className="text-xs text-muted-foreground">
+              Sent by Telegram in the <code>X-Telegram-Bot-Api-Secret-Token</code> header.
+              Falls back to <code>TELEGRAM_WEBHOOK_SECRET</code> env if blank.
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-sm font-semibold">Pairing</p>
+            {telegramPairedChatId ? (
+              <p className="text-sm text-status-active">
+                Connected · chatId <code>{telegramPairedChatId}</code>
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Not connected</p>
+            )}
+            <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+              <li>
+                Open Telegram and search for{" "}
+                <strong>@{telegramBotUsername || "YourBot"}</strong>.
+              </li>
+              <li>
+                Send <code>/start</code> to the bot.
+              </li>
+              <li>
+                Then send <code>/pair {telegramPairingCode || "<code>"}</code>.
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground">
+              Today&apos;s pairing code:{" "}
+              <code className="text-foreground">
+                {telegramPairingCode || "(loading)"}
+              </code>{" "}
+              — rotates daily. Save settings first if you change the bot username.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={telegramBusy !== null || !telegramPairedChatId}
+                onClick={async () => {
+                  setTelegramBusy("test");
+                  setTelegramResult(null);
+                  try {
+                    const { sendTestTelegramAction } = await import(
+                      "@/lib/actions/telegram"
+                    );
+                    const r = await sendTestTelegramAction();
+                    setTelegramResult(
+                      r.success
+                        ? `Sent test message (${r.mode})`
+                        : `Failed: ${r.error}`
+                    );
+                  } catch (err) {
+                    setTelegramResult(
+                      `Failed: ${err instanceof Error ? err.message : "unknown"}`
+                    );
+                  } finally {
+                    setTelegramBusy(null);
+                  }
+                }}
+              >
+                {telegramBusy === "test" ? "Sending..." : "Send test message"}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={telegramBusy !== null || !telegramPairedChatId}
+                onClick={async () => {
+                  if (!confirm("Disconnect this Telegram chat?")) return;
+                  setTelegramBusy("disconnect");
+                  setTelegramResult(null);
+                  try {
+                    const { disconnectTelegramAction } = await import(
+                      "@/lib/actions/telegram"
+                    );
+                    const r = await disconnectTelegramAction();
+                    if (r.success) {
+                      setTelegramPairedChatId("");
+                      setTelegramResult("Disconnected");
+                    } else {
+                      setTelegramResult(`Failed: ${r.error}`);
+                    }
+                  } finally {
+                    setTelegramBusy(null);
+                  }
+                }}
+              >
+                {telegramBusy === "disconnect" ? "..." : "Disconnect"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Webhook URL</Label>
+            <Input value={telegramWebhookUrl} readOnly />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={telegramBusy !== null}
+                onClick={async () => {
+                  setTelegramBusy("register");
+                  setTelegramResult(null);
+                  try {
+                    const { registerWebhookAction } = await import(
+                      "@/lib/actions/telegram"
+                    );
+                    const r = await registerWebhookAction();
+                    setTelegramResult(
+                      r.success
+                        ? `Webhook registered: ${r.url}`
+                        : `Failed: ${r.error}`
+                    );
+                  } catch (err) {
+                    setTelegramResult(
+                      `Failed: ${err instanceof Error ? err.message : "unknown"}`
+                    );
+                  } finally {
+                    setTelegramBusy(null);
+                  }
+                }}
+              >
+                {telegramBusy === "register" ? "Registering..." : "Register webhook"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Tells Telegram to POST updates here. Run once per deployment.
+              </p>
+            </div>
+          </div>
+
+          {telegramResult && (
+            <p className="text-sm border rounded-md px-3 py-2 text-muted-foreground">
+              {telegramResult}
+            </p>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Required env: <code>TELEGRAM_BOT_TOKEN</code>,{" "}
+            <code>TELEGRAM_WEBHOOK_SECRET</code> (or override above),{" "}
+            <code>TELEGRAM_BOT_USERNAME</code>. Voice notes also need{" "}
+            <code>WHISPER_API_KEY</code> (or reuse <code>OPENAI_API_KEY</code>).
           </p>
         </CardContent>
       </Card>

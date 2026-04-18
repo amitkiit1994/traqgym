@@ -62,6 +62,12 @@ const SETTINGS_KEYS = [
   "manager_min_severity",
   "manager_briefing_top_n",
   "manager_briefing_time",
+  // PR 9: Telegram
+  "telegram_enabled",
+  "telegram_webhook_secret",
+  "gym_owner_telegram_chat_id",
+  "gym_owner_telegram_user_id",
+  "telegram_bot_username",
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -113,6 +119,12 @@ const DEFAULTS: Record<string, string> = {
   manager_min_severity: "high",
   manager_briefing_top_n: "5",
   manager_briefing_time: "07:00",
+  // PR 9: Telegram
+  telegram_enabled: "false",
+  telegram_webhook_secret: "",
+  gym_owner_telegram_chat_id: "",
+  gym_owner_telegram_user_id: "",
+  telegram_bot_username: "",
 };
 
 export async function GET() {
