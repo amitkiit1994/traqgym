@@ -54,6 +54,11 @@ const SETTINGS_KEYS = [
   // Integrations — Biometric SDK
   "biomax_sdk_base_url",
   "biomax_sdk_api_key",
+  // QR self-check-in
+  "qr_checkin_enabled",
+  "qr_checkin_rate_limit_hours",
+  "qr_token_max_age_days",
+  "qr_checkin_allow_phone_only",
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -97,6 +102,10 @@ const DEFAULTS: Record<string, string> = {
   smtp_from: "",
   biomax_sdk_base_url: "",
   biomax_sdk_api_key: "",
+  qr_checkin_enabled: "false",
+  qr_checkin_rate_limit_hours: "4",
+  qr_token_max_age_days: "365",
+  qr_checkin_allow_phone_only: "false",
 };
 
 export async function GET() {
