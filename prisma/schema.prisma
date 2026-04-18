@@ -68,6 +68,7 @@ model User {
   lockers              Locker[]
   feedbacks            Feedback[]
   appointments         Appointment[]
+  compPasses           CompPass[]
   alternatePhone       String?
   address              String?
   occupation           String?
@@ -103,6 +104,11 @@ model Worker {
   createdDietPlans    DietPlan[]
   inAppNotifications  InAppNotification[] @relation("WorkerInAppNotifications")
   appointments        Appointment[]
+  compApprovedTickets MemberTicket[] @relation("CompApprovedTickets")
+  compIssuedTickets   MemberTicket[] @relation("CompIssuedTickets")
+  compPassesIssued    CompPass[]     @relation("CompPassIssuer")
+  compPassesApproved  CompPass[]     @relation("CompPassApprover")
+  compPassesRevoked   CompPass[]     @relation("CompPassRevoker")
 }
 
 model TicketPlan {
@@ -142,14 +148,25 @@ model MemberTicket {
 
   externalRef String?
 
+  isComplimentary       Boolean   @default(false)
+  compReason            String?
+  compApprovedById      Int?
+  compApprover          Worker?   @relation("CompApprovedTickets", fields: [compApprovedById], references: [id], onDelete: SetNull)
+  compIssuedById        Int?
+  compIssuer            Worker?   @relation("CompIssuedTickets", fields: [compIssuedById], references: [id], onDelete: SetNull)
+  compExpiresAt         DateTime?
+  compConvertedToPaidAt DateTime?
+
   payments Payment[]
   freezes  MembershipFreeze[]
   extensions MembershipExtension[]
+  compPassConverted CompPass[] @relation("CompPassConvertedTicket")
 
   @@index([userId, expireDate])
   @@index([locationId, expireDate])
   @@index([status, balanceDue])
   @@index([planId])
+  @@index([isComplimentary, status])
 }
 
 model Payment {
@@ -920,4 +937,32 @@ model Appointment {
 
   @@unique([trainerId, date, startTime])
   @@index([userId, date])
+}
+
+// ─── Complimentary access (informal "I let him in" passes — distinct from MemberTicket.isComplimentary which models comp on a real plan) ───
+model CompPass {
+  id                Int           @id @default(autoincrement())
+  userId            Int
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason            String        // money_crunch, trial, influencer, family, compensation, owner_friend, legacy_zero_payment, other
+  reasonDetail      String?
+  startsAt          DateTime      @default(now())
+  expiresAt         DateTime
+  issuedById        Int
+  issuedBy          Worker        @relation("CompPassIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  approvedById      Int?
+  approvedBy        Worker?       @relation("CompPassApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  status            String        @default("active") // active, expired, revoked, converted
+  convertedTicketId Int?
+  convertedTicket   MemberTicket? @relation("CompPassConvertedTicket", fields: [convertedTicketId], references: [id], onDelete: SetNull)
+  revokedAt         DateTime?
+  revokedById       Int?
+  revokedBy         Worker?       @relation("CompPassRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+  revokeReason      String?
+  notes             String?
+  createdAt         DateTime      @default(now())
+
+  @@index([status, expiresAt])
+  @@index([userId, status])
+  @@index([issuedById])
 }
