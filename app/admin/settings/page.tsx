@@ -71,6 +71,12 @@ export default function SettingsPage() {
   const [lockerKeyOverdueDays, setLockerKeyOverdueDays] = useState("7");
   const [trainerRatingThreshold, setTrainerRatingThreshold] = useState("3.5");
 
+  // QR Self-Check-in
+  const [qrCheckinEnabled, setQrCheckinEnabled] = useState(false);
+  const [qrCheckinRateLimitHours, setQrCheckinRateLimitHours] = useState("4");
+  const [qrTokenMaxAgeDays, setQrTokenMaxAgeDays] = useState("365");
+  const [qrCheckinAllowPhoneOnly, setQrCheckinAllowPhoneOnly] = useState(false);
+
   // Communication
   const [welcomeMessage, setWelcomeMessage] = useState(true);
   const [birthdayWish, setBirthdayWish] = useState(true);
@@ -154,6 +160,10 @@ export default function SettingsPage() {
         setLeavePersonalQuota(data.leave_personal_quota ?? "3");
         setAutoCheckout(data.auto_checkout_enabled === "true");
         setCheckinCooldown(data.checkin_cooldown_seconds ?? "60");
+        setQrCheckinEnabled(data.qr_checkin_enabled === "true");
+        setQrCheckinRateLimitHours(data.qr_checkin_rate_limit_hours ?? "4");
+        setQrTokenMaxAgeDays(data.qr_token_max_age_days ?? "365");
+        setQrCheckinAllowPhoneOnly(data.qr_checkin_allow_phone_only === "true");
         setWelcomeMessage(data.welcome_message_enabled !== "false");
         setBirthdayWish(data.birthday_wish_enabled === "true");
         setRenewalReminder(data.renewal_reminder_enabled !== "false");
@@ -229,6 +239,10 @@ export default function SettingsPage() {
           leave_personal_quota: leavePersonalQuota,
           auto_checkout_enabled: autoCheckout ? "true" : "false",
           checkin_cooldown_seconds: checkinCooldown,
+          qr_checkin_enabled: qrCheckinEnabled ? "true" : "false",
+          qr_checkin_rate_limit_hours: qrCheckinRateLimitHours,
+          qr_token_max_age_days: qrTokenMaxAgeDays,
+          qr_checkin_allow_phone_only: qrCheckinAllowPhoneOnly ? "true" : "false",
           welcome_message_enabled: welcomeMessage ? "true" : "false",
           birthday_wish_enabled: birthdayWish ? "true" : "false",
           renewal_reminder_enabled: renewalReminder ? "true" : "false",
@@ -689,6 +703,73 @@ export default function SettingsPage() {
             <p className="text-xs text-muted-foreground">
               Average rating below this (over 5+ ratings in 30d) raises an admin insight.
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 5b: QR Self-Check-in */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>QR Self-Check-in</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Members scan a printed lobby poster with their phone to mark attendance.
+            Manage posters in <a href="/admin/settings/qr-checkin" className="underline">QR Check-in</a>.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable QR Check-in</Label>
+              <p className="text-xs text-muted-foreground">
+                Allows members to check in by scanning the lobby QR.
+              </p>
+            </div>
+            <Switch checked={qrCheckinEnabled} onCheckedChange={setQrCheckinEnabled} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-rate-hours">Rate limit (hours)</Label>
+            <Input
+              id="qr-rate-hours"
+              type="number"
+              min="1"
+              max="24"
+              value={qrCheckinRateLimitHours}
+              onChange={(e) => setQrCheckinRateLimitHours(e.target.value)}
+              className="max-w-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Maximum 1 successful QR check-in per member within this window.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-token-days">Token validity (days)</Label>
+            <Input
+              id="qr-token-days"
+              type="number"
+              min="1"
+              max="3650"
+              value={qrTokenMaxAgeDays}
+              onChange={(e) => setQrTokenMaxAgeDays(e.target.value)}
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Default lifetime baked into newly generated lobby posters.
+              Reprint posters after rotating QR_TOKEN_SECRET.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Allow phone-only check-in</Label>
+              <p className="text-xs text-muted-foreground">
+                Off (recommended): require member sign-in. On: accept just a phone
+                number — no OTP yet, so leave off until OTP infra ships.
+              </p>
+            </div>
+            <Switch checked={qrCheckinAllowPhoneOnly} onCheckedChange={setQrCheckinAllowPhoneOnly} />
           </div>
         </CardContent>
       </Card>

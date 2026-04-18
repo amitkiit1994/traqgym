@@ -62,6 +62,7 @@ import {
   Undo2,
   BookOpen,
   Star,
+  QrCode,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -162,6 +163,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/equipment", label: "Equipment", icon: Dumbbell },
       { href: "/admin/lockers", label: "Lockers", icon: Lock, adminOnly: true },
       { href: "/admin/settings", label: "Settings", icon: Settings, adminOnly: true },
+      { href: "/admin/settings/qr-checkin", label: "QR Check-in", icon: QrCode, adminOnly: true },
       { href: "/admin/audit", label: "Audit Log", icon: ScrollText, adminOnly: true },
       { href: "/admin/activity", label: "Activity", icon: Activity },
     ],
@@ -272,6 +274,8 @@ export function AdminSidebar({
                     const active =
                       item.href === "/admin/dashboard"
                         ? pathname === "/admin/dashboard"
+                        : item.href === "/admin/settings"
+                        ? pathname === "/admin/settings"
                         : pathname.startsWith(item.href);
                     const Icon = item.icon;
 
@@ -411,6 +415,8 @@ export function AdminMobileMenu({
                     const active =
                       item.href === "/admin/dashboard"
                         ? pathname === "/admin/dashboard"
+                        : item.href === "/admin/settings"
+                        ? pathname === "/admin/settings"
                         : pathname.startsWith(item.href);
                     const Icon = item.icon;
 
