@@ -94,6 +94,10 @@ export default async function MemberDetailPage({
     .filter((p) => p.isActive)
     .map((p) => ({ id: p.id, name: p.name, expireDays: p.expireDays, price: p.price }));
 
+  // TODO(PR 6): integrate <PaymentScheduleSummary memberTicketId={...} memberName={...} />
+  // (from "@/components/admin/payment-schedule-summary") into MemberDetailClient
+  // for each active ticket. Component is ready and self-contained.
+
   return (
     <div className="space-y-4">
       <MemberDetailClient member={serialized} locations={activeLocations} plans={activePlans} anomaly={anomaly} churnRisk={churnRisk} satisfactionScore={satisfactionScore} />

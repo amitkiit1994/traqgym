@@ -172,6 +172,7 @@ model MemberTicket {
   freezes  MembershipFreeze[]
   extensions MembershipExtension[]
   compPassConverted CompPass[] @relation("CompPassConvertedTicket")
+  paymentSchedule PaymentSchedule?
 
   @@index([userId, expireDate])
   @@index([locationId, expireDate])
@@ -215,6 +216,7 @@ model Payment {
 
   invoice Invoice?
   ptPackages PtPackage[]
+  installmentPayments PaymentInstallment[]
 
   @@index([createdAt])
   @@index([locationId, createdAt])
@@ -1082,4 +1084,38 @@ model TrainerPayout {
   createdAt     DateTime  @default(now())
 
   @@unique([trainerId, periodStart, periodEnd])
+}
+
+// ─── Payment Schedules / Installment Plans ───
+
+model PaymentSchedule {
+  id              Int       @id @default(autoincrement())
+  memberTicketId  Int       @unique
+  memberTicket    MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Cascade)
+  totalAmount     Decimal   @db.Decimal(10, 2)
+  status          String    @default("active") // active, completed, defaulted, cancelled
+  createdById     Int
+  createdAt       DateTime  @default(now())
+
+  installments    PaymentInstallment[]
+
+  @@index([status])
+}
+
+model PaymentInstallment {
+  id              Int       @id @default(autoincrement())
+  scheduleId      Int
+  schedule        PaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  sequenceNumber  Int
+  dueDate         DateTime
+  amount          Decimal   @db.Decimal(10, 2)
+  paidAmount      Decimal   @default(0) @db.Decimal(10, 2)
+  paidAt          DateTime?
+  paymentId       Int?
+  payment         Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  status          String    @default("pending") // pending, paid, overdue, waived
+  reminderSentAt  DateTime?
+
+  @@unique([scheduleId, sequenceNumber])
+  @@index([dueDate, status])
 }
