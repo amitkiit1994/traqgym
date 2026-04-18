@@ -110,6 +110,17 @@ export default function SettingsPage() {
   const [runningCleanup, setRunningCleanup] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
 
+  // PR 8: Manager Briefing
+  const [gymOwnerName, setGymOwnerName] = useState("Owner");
+  const [gymOwnerEmail, setGymOwnerEmail] = useState("");
+  const [gymOwnerLang, setGymOwnerLang] = useState("en");
+  const [managerBriefingEnabled, setManagerBriefingEnabled] = useState(false);
+  const [managerMinSeverity, setManagerMinSeverity] = useState("high");
+  const [managerBriefingTopN, setManagerBriefingTopN] = useState("5");
+  const [managerBriefingTime, setManagerBriefingTime] = useState("07:00");
+  const [sendingTestBriefing, setSendingTestBriefing] = useState(false);
+  const [briefingResult, setBriefingResult] = useState<string | null>(null);
+
   // UI state
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
@@ -162,6 +173,14 @@ export default function SettingsPage() {
         setDataCleanupEnabled(data.data_cleanup_enabled !== "false");
         setFollowupArchiveDays(data.followup_auto_archive_days ?? "180");
         setEnquiryCloseDays(data.enquiry_auto_close_days ?? "120");
+        // PR 8: Manager Briefing
+        setGymOwnerName(data.gym_owner_name ?? "Owner");
+        setGymOwnerEmail(data.gym_owner_email ?? "");
+        setGymOwnerLang(data.gym_owner_lang ?? "en");
+        setManagerBriefingEnabled(data.manager_briefing_enabled === "true");
+        setManagerMinSeverity(data.manager_min_severity ?? "high");
+        setManagerBriefingTopN(data.manager_briefing_top_n ?? "5");
+        setManagerBriefingTime(data.manager_briefing_time ?? "07:00");
       })
       .catch(() => setError("Failed to load settings"));
   }, []);
@@ -224,6 +243,14 @@ export default function SettingsPage() {
           data_cleanup_enabled: dataCleanupEnabled ? "true" : "false",
           followup_auto_archive_days: followupArchiveDays,
           enquiry_auto_close_days: enquiryCloseDays,
+          // PR 8: Manager Briefing
+          gym_owner_name: gymOwnerName,
+          gym_owner_email: gymOwnerEmail,
+          gym_owner_lang: gymOwnerLang,
+          manager_briefing_enabled: managerBriefingEnabled ? "true" : "false",
+          manager_min_severity: managerMinSeverity,
+          manager_briefing_top_n: managerBriefingTopN,
+          manager_briefing_time: managerBriefingTime,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -1095,6 +1122,162 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">{cleanupResult}</p>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Card: Manager Briefing (PR 8) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Manager Briefing</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Email the gym owner a daily morning briefing of top insights with
+            one-click action links. Schedule is configured in <code>vercel.json</code>.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable Manager Briefing</Label>
+              <p className="text-xs text-muted-foreground">
+                Send a daily summary email to the gym owner
+              </p>
+            </div>
+            <Switch
+              checked={managerBriefingEnabled}
+              onCheckedChange={setManagerBriefingEnabled}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-name">Owner Name</Label>
+            <Input
+              id="gym-owner-name"
+              value={gymOwnerName}
+              onChange={(e) => setGymOwnerName(e.target.value)}
+              placeholder="Owner"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-email">Owner Email</Label>
+            <Input
+              id="gym-owner-email"
+              type="email"
+              value={gymOwnerEmail}
+              onChange={(e) => setGymOwnerEmail(e.target.value)}
+              placeholder="owner@gym.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              Briefings will be sent here. Requires SMTP configured above.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-lang">Language</Label>
+            <select
+              id="gym-owner-lang"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={gymOwnerLang}
+              onChange={(e) => setGymOwnerLang(e.target.value)}
+            >
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="hinglish">Hinglish</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="manager-min-severity">Minimum Severity</Label>
+            <select
+              id="manager-min-severity"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={managerMinSeverity}
+              onChange={(e) => setManagerMinSeverity(e.target.value)}
+            >
+              <option value="critical">Critical only</option>
+              <option value="high">High and above</option>
+              <option value="medium">Medium and above</option>
+              <option value="low">All severities</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Only insights at or above this severity are included
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="manager-top-n">Top N Insights</Label>
+            <Input
+              id="manager-top-n"
+              type="number"
+              min="1"
+              max="20"
+              value={managerBriefingTopN}
+              onChange={(e) => setManagerBriefingTopN(e.target.value)}
+              className="max-w-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Maximum number of insights per briefing email
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="manager-time">Briefing Time</Label>
+            <Input
+              id="manager-time"
+              value={managerBriefingTime}
+              onChange={(e) => setManagerBriefingTime(e.target.value)}
+              placeholder="07:00"
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Display only — actual schedule is configured in <code>vercel.json</code> (default 07:00 IST)
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sendingTestBriefing}
+              onClick={async () => {
+                setSendingTestBriefing(true);
+                setBriefingResult(null);
+                try {
+                  const { sendTestBriefingAction } = await import(
+                    "@/lib/actions/manager"
+                  );
+                  const result = await sendTestBriefingAction();
+                  if (result.success) {
+                    if (result.skipped) {
+                      setBriefingResult(`Skipped: ${result.reason ?? "see settings"}`);
+                    } else {
+                      setBriefingResult(
+                        `Sent ${result.sent} email${result.sent === 1 ? "" : "s"} (${result.insightCount} insight${result.insightCount === 1 ? "" : "s"}${result.mode ? `, ${result.mode}` : ""})`
+                      );
+                    }
+                  } else {
+                    setBriefingResult(`Failed: ${result.error}`);
+                  }
+                } catch (err) {
+                  setBriefingResult(
+                    `Failed: ${err instanceof Error ? err.message : "unknown"}`
+                  );
+                } finally {
+                  setSendingTestBriefing(false);
+                }
+              }}
+            >
+              {sendingTestBriefing ? "Sending..." : "Send test briefing now"}
+            </Button>
+            {briefingResult && (
+              <p className="text-sm text-muted-foreground">{briefingResult}</p>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Save settings first, then test. Test ignores the enable toggle? No —
+            it respects all settings (including the enable flag).
+          </p>
         </CardContent>
       </Card>
 

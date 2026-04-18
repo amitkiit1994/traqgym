@@ -22,6 +22,7 @@
     { "path": "/api/cron/agents/staff-performance", "schedule": "30 2 * * 1" },
     { "path": "/api/cron/agents/plan-mix-drift", "schedule": "30 2 * * 1" },
     { "path": "/api/cron/agents/comp-leakage-investigator", "schedule": "0 2 * * *" },
-    { "path": "/api/cron/agents/defaulted-ticket-escalator", "schedule": "30 3 * * *" }
+    { "path": "/api/cron/agents/defaulted-ticket-escalator", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/manager-morning-briefing", "schedule": "30 1 * * *" }
   ]
 }

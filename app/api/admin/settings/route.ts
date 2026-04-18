@@ -54,6 +54,14 @@ const SETTINGS_KEYS = [
   // Integrations — Biometric SDK
   "biomax_sdk_base_url",
   "biomax_sdk_api_key",
+  // PR 8: Manager Briefing
+  "gym_owner_name",
+  "gym_owner_email",
+  "gym_owner_lang",
+  "manager_briefing_enabled",
+  "manager_min_severity",
+  "manager_briefing_top_n",
+  "manager_briefing_time",
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -97,6 +105,14 @@ const DEFAULTS: Record<string, string> = {
   smtp_from: "",
   biomax_sdk_base_url: "",
   biomax_sdk_api_key: "",
+  // PR 8: Manager Briefing
+  gym_owner_name: "Owner",
+  gym_owner_email: "",
+  gym_owner_lang: "en",
+  manager_briefing_enabled: "false",
+  manager_min_severity: "high",
+  manager_briefing_top_n: "5",
+  manager_briefing_time: "07:00",
 };
 
 export async function GET() {

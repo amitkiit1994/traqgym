@@ -563,6 +563,7 @@ model AiConversation {
   id        Int         @id @default(autoincrement())
   workerId  Int
   title     String?
+  channel   String      @default("web") // web | email | telegram | system
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
   messages  AiMessage[]

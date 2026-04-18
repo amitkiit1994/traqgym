@@ -29,10 +29,27 @@ const SEVERITY_RANK: Record<string, number> = {
 // ─── listActiveInsights ────────────────────────────────────────────────────
 export async function listActiveInsights(opts?: {
   severity?: InsightSeverity;
+  /** PR 8: minimum severity, inclusive (e.g. "high" → critical + high). */
+  minSeverity?: InsightSeverity;
   agent?: string;
+  /** PR 8: only insights created on/after this timestamp. */
+  since?: Date;
   limit?: number;
 }): Promise<Insight[]> {
   const now = new Date();
+
+  // Compute allowed severities for minSeverity filter.
+  let severityFilter: { in: string[] } | { equals: string } | undefined;
+  if (opts?.severity) {
+    severityFilter = { equals: opts.severity };
+  } else if (opts?.minSeverity) {
+    const minRank = SEVERITY_RANK[opts.minSeverity] ?? 99;
+    const allowed = Object.entries(SEVERITY_RANK)
+      .filter(([, rank]) => rank <= minRank)
+      .map(([sev]) => sev);
+    severityFilter = { in: allowed };
+  }
+
   const rows = await prisma.insight.findMany({
     where: {
       dismissedAt: null,
@@ -40,8 +57,9 @@ export async function listActiveInsights(opts?: {
         {
           OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: now } }],
         },
-        opts?.severity ? { severity: opts.severity } : {},
+        severityFilter ? { severity: severityFilter } : {},
         opts?.agent ? { agent: opts.agent } : {},
+        opts?.since ? { createdAt: { gte: opts.since } } : {},
       ],
     },
     orderBy: { createdAt: "desc" },
