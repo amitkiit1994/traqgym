@@ -9,11 +9,30 @@
  * Expiry: invalid/expired tokens show "expired" with a dashboard link.
  */
 
-import { verifyMagicLink } from "@/lib/ai/manager";
+import { verifyMagicLink, type MagicPayload } from "@/lib/ai/manager";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+/**
+ * PR 16 K.3 — best-effort decode the insight id from an expired token so the
+ * "Link expired" page can deep-link to the matching dashboard row. The
+ * signature MUST already have failed verification before we use this — no
+ * trust is placed in the payload other than as a hint.
+ */
+function bestEffortInsightIdFromToken(token: string): number | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  try {
+    const pad = parts[0].length % 4 === 0 ? "" : "=".repeat(4 - (parts[0].length % 4));
+    const norm = parts[0].replace(/-/g, "+").replace(/_/g, "/") + pad;
+    const payload = JSON.parse(Buffer.from(norm, "base64").toString("utf8")) as Partial<MagicPayload>;
+    return typeof payload.insightId === "number" ? payload.insightId : null;
+  } catch {
+    return null;
+  }
+}
 
 type ActionDef = { label?: string; action?: string; args?: Record<string, unknown> };
 
@@ -89,17 +108,28 @@ export default async function MagicLinkPage({
   const verified = verifyMagicLink({ token });
   if (!verified.ok) {
     if (verified.error === "expired") {
+      // PR 16 K.3 — surface the insight id (decoded best-effort from the
+      // expired token's payload — signature already failed verification, so
+      // we treat the id as a deep-link hint, never as auth) and route the
+      // CTA to the insight list / specific row.
+      const hintedId = bestEffortInsightIdFromToken(token);
+      const dashboardHref = "/admin/dashboard";
+      const insightHref = hintedId
+        ? `/admin/dashboard?insight=${hintedId}`
+        : dashboardHref;
+      const idLine = hintedId
+        ? `<p style="margin:8px 0 0 0;color:#94a3b8;font-size:13px;">Insight reference: <code style="background:#0b1224;padding:2px 6px;border-radius:4px;">#${hintedId}</code></p>`
+        : "";
       return shellPage({
         title: "Link expired",
-        body:
-          "This action link has expired. Please open the dashboard to act on the latest insights.",
-        cta: { label: "Open dashboard", href: "/admin", primary: true },
+        body: `<p>This action link has expired for security. Open the dashboard to act on the latest insights.</p>${idLine}`,
+        cta: { label: "Open dashboard to act", href: insightHref, primary: true },
       });
     }
     return shellPage({
       title: "Invalid link",
       body: "This link is malformed or has been tampered with.",
-      cta: { label: "Open dashboard", href: "/admin" },
+      cta: { label: "Open dashboard", href: "/admin/dashboard" },
     });
   }
 

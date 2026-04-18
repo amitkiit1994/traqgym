@@ -17,11 +17,37 @@
  */
 
 import crypto from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import type { Insight } from "@prisma/client";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export type Lang = "en" | "hi" | "hinglish";
+
+// PR 16 K.3: per-action TTL routing. Sensitive / destructive actions get a
+// shorter window; everything else uses the default. Key off the action string.
+const SHORT_TTL_ACTIONS = new Set<string>([
+  "comp.revoke",
+  "comp_pass.revoke",
+  "ticket.flag_writeoff",
+  "refund.reject",
+]);
+
+/**
+ * PR 16 K.3 — choose a TTL for a given action.
+ * Returns hours. Defaults: 4h for revoke/destructive, 24h for everything else.
+ * Callers may provide overrides (read from settings).
+ */
+export function pickActionTtlHours(
+  action: string,
+  defaults?: { revokeHours?: number; defaultHours?: number }
+): number {
+  if (SHORT_TTL_ACTIONS.has(action)) {
+    return Math.max(1, defaults?.revokeHours ?? 4);
+  }
+  return Math.max(1, defaults?.defaultHours ?? 24);
+}
 
 export type ComposedActionLink = {
   label: string;
@@ -250,6 +276,43 @@ export function verifyMagicLink(params: {
 
 type LLMOutput = { intro: string; bodies: string[] };
 
+// PR 16 K.7: cache prompt files in module scope. Keyed by lang.
+// `null` means "we tried and the file is missing — use inline fallback".
+const promptCache = new Map<Lang, string | null>();
+
+async function loadPromptFile(lang: Lang): Promise<string | null> {
+  if (promptCache.has(lang)) return promptCache.get(lang) ?? null;
+  try {
+    const filePath = path.join(
+      process.cwd(),
+      "lib",
+      "ai",
+      "prompts",
+      `manager-${lang}.txt`
+    );
+    const text = await fs.readFile(filePath, "utf8");
+    promptCache.set(lang, text);
+    return text;
+  } catch {
+    promptCache.set(lang, null);
+    return null;
+  }
+}
+
+function inlinePersonaPrompt(args: {
+  ownerName: string;
+  gymName: string;
+  lang: Lang;
+}): string {
+  const langName =
+    args.lang === "hi"
+      ? "Hindi"
+      : args.lang === "hinglish"
+        ? "Hinglish (mix of Hindi + English)"
+        : "English";
+  return `You are ${args.ownerName}'s gym manager at ${args.gymName}. Write a 6 to 10 line summary in ${langName}. Each insight gets a heading + short paragraph. Be concise, actionable, no fluff.`;
+}
+
 async function humanizeWithLLM(args: {
   ownerName: string;
   gymName: string;
@@ -258,9 +321,13 @@ async function humanizeWithLLM(args: {
 }): Promise<LLMOutput | null> {
   if (!process.env.OPENAI_API_KEY) return null;
 
-  const langName =
-    args.lang === "hi" ? "Hindi" : args.lang === "hinglish" ? "Hinglish (mix of Hindi + English)" : "English";
-  const personaPrompt = `You are ${args.ownerName}'s gym manager at ${args.gymName}. Write a 6 to 10 line summary in ${langName}. Each insight gets a heading + short paragraph. Be concise, actionable, no fluff.`;
+  // PR 16 K.7: prefer file-based prompt; fall back to inline string.
+  const fileTemplate = await loadPromptFile(args.lang);
+  const personaPrompt = fileTemplate
+    ? fileTemplate
+        .replace(/\{\{ownerName\}\}/g, args.ownerName)
+        .replace(/\{\{gymName\}\}/g, args.gymName)
+    : inlinePersonaPrompt(args);
 
   const insightLines = args.insights
     .map((ins, i) => {
@@ -358,6 +425,13 @@ export async function composeBriefing(args: {
   baseUrl: string;
   /** TTL for magic-link buttons. Default 24h. */
   linkTtlHours?: number;
+  /**
+   * PR 16 K.3 — per-action TTL routing. When set, individual actions are
+   * routed by `pickActionTtlHours()` so destructive ones (revoke etc.) get
+   * a short window and routine ones get the long window. Falls back to
+   * `linkTtlHours` when omitted.
+   */
+  perActionTtlHours?: { revokeHours?: number; defaultHours?: number };
   /** Override the signing secret (mainly for tests). */
   secret?: string;
 }): Promise<ComposedBriefing> {
@@ -393,23 +467,37 @@ export async function composeBriefing(args: {
       totalImpact,
     });
 
-  const ttlMs = (args.linkTtlHours ?? 24) * 60 * 60 * 1000;
-  const expiresAt = new Date(Date.now() + ttlMs);
+  const fallbackTtlMs = (args.linkTtlHours ?? 24) * 60 * 60 * 1000;
+  const fallbackExpiresAt = new Date(Date.now() + fallbackTtlMs);
 
   const sections: ComposedSection[] = ranked.map((ins, idx) => {
     const actionDefs = getActions(ins);
-    const actions: ComposedActionLink[] = actionDefs.map((a, i) => ({
-      label: a.label,
-      action: a.action,
-      args: a.args,
-      magicUrl: signMagicLink({
-        insightId: ins.id,
-        actionIndex: i,
-        expiresAt,
-        baseUrl: args.baseUrl,
-        secret: args.secret,
-      }),
-    }));
+    const actions: ComposedActionLink[] = actionDefs.map((a, i) => {
+      // PR 16 K.3 — per-action TTL routing. Destructive actions get a shorter
+      // window than the default. When `perActionTtlHours` isn't supplied we
+      // fall back to the single global `linkTtlHours`.
+      const expiresAt = args.perActionTtlHours
+        ? new Date(
+            Date.now() +
+              pickActionTtlHours(a.action, args.perActionTtlHours) *
+                60 *
+                60 *
+                1000
+          )
+        : fallbackExpiresAt;
+      return {
+        label: a.label,
+        action: a.action,
+        args: a.args,
+        magicUrl: signMagicLink({
+          insightId: ins.id,
+          actionIndex: i,
+          expiresAt,
+          baseUrl: args.baseUrl,
+          secret: args.secret,
+        }),
+      };
+    });
     return {
       insightId: ins.id,
       severity: ins.severity,
