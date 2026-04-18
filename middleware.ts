@@ -46,6 +46,15 @@ export default withAuth(
       }
     }
 
+    // Trainer routes: only workers (admin/staff). The page-level
+    // requireTrainer() guard further restricts to workers who actually have
+    // PT packages assigned.
+    if (pathname.startsWith("/trainer")) {
+      if (token?.actorType !== "worker") {
+        return NextResponse.redirect(new URL("/login", req.url));
+      }
+    }
+
     return NextResponse.next();
   },
   {
@@ -56,5 +65,5 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ["/admin/:path*", "/member/:path*"],
+  matcher: ["/admin/:path*", "/member/:path*", "/trainer/:path*"],
 };
