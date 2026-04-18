@@ -1,6 +1,46 @@
 import { prisma } from "@/lib/prisma";
 import { todayIST } from "@/lib/utils/date";
 
+/** Parses an "HH:MM" 24h time string into total minutes from midnight. Returns null on invalid. */
+function parseHHMM(value: string | undefined | null): number | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Computes IST minutes-since-midnight from a given Date. */
+function istMinutes(d: Date): number {
+  // IST = UTC+5:30
+  const utc = d.getTime() + d.getTimezoneOffset() * 60_000;
+  const ist = new Date(utc + 5.5 * 60 * 60_000);
+  return ist.getHours() * 60 + ist.getMinutes();
+}
+
+async function computeTimeFlags(now: Date): Promise<{
+  isPeakHours: boolean;
+  isLateEntry: boolean;
+}> {
+  const [peakStart, peakEnd, lateAfter] = await Promise.all([
+    prisma.gymSettings.findUnique({ where: { key: "peak_hours_start" } }),
+    prisma.gymSettings.findUnique({ where: { key: "peak_hours_end" } }),
+    prisma.gymSettings.findUnique({ where: { key: "late_entry_after" } }),
+  ]);
+
+  const minutes = istMinutes(now);
+  const peakStartMin = parseHHMM(peakStart?.value) ?? parseHHMM("06:00")!;
+  const peakEndMin = parseHHMM(peakEnd?.value) ?? parseHHMM("09:00")!;
+  const lateAfterMin = parseHHMM(lateAfter?.value) ?? parseHHMM("22:00")!;
+
+  const isPeakHours = minutes >= peakStartMin && minutes < peakEndMin;
+  const isLateEntry = minutes >= lateAfterMin;
+
+  return { isPeakHours, isLateEntry };
+}
+
 export async function checkIn(params: {
   userId?: number;
   workerId?: number;
@@ -58,18 +98,29 @@ export async function checkIn(params: {
     return { success: true as const, id: existing.id, existing: true };
   }
 
+  const now = new Date();
+  const flags = await computeTimeFlags(now);
+
   const log = await prisma.attendanceLog.create({
     data: {
       userId: params.userId ?? null,
       workerId: params.workerId ?? null,
       locationId: params.locationId,
       attendanceDate: today,
-      checkIn: new Date(),
+      checkIn: now,
       source: params.source ?? "manual",
+      isPeakHours: flags.isPeakHours,
+      isLateEntry: flags.isLateEntry,
     },
   });
 
-  return { success: true as const, id: log.id, existing: false };
+  return {
+    success: true as const,
+    id: log.id,
+    existing: false,
+    isPeakHours: flags.isPeakHours,
+    isLateEntry: flags.isLateEntry,
+  };
 }
 
 export async function checkOut(params: {

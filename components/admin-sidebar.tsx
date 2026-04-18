@@ -55,6 +55,7 @@ import {
   Bot,
   Menu,
   Lock,
+  Star,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -114,6 +115,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/balance-due", label: "Balance Due", icon: IndianRupee },
       { href: "/admin/followups", label: "Followups", icon: AlertCircle },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/trainer-ratings", label: "Trainer Ratings", icon: Star, adminOnly: true },
     ],
   },
   {

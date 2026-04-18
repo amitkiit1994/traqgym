@@ -39,6 +39,8 @@ export async function getDailyAttendance(dateStr: string, locationId?: number) {
     checkOut: log.checkOut?.toISOString() ?? null,
     source: log.source,
     locationName: log.location.name,
+    isLateEntry: log.isLateEntry,
+    isPeakHours: log.isPeakHours,
   }));
 }
 

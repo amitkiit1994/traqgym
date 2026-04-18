@@ -64,6 +64,13 @@ export default function SettingsPage() {
   const [autoCheckout, setAutoCheckout] = useState(true);
   const [checkinCooldown, setCheckinCooldown] = useState("60");
 
+  // Operations (PR 12)
+  const [peakHoursStart, setPeakHoursStart] = useState("06:00");
+  const [peakHoursEnd, setPeakHoursEnd] = useState("09:00");
+  const [lateEntryAfter, setLateEntryAfter] = useState("22:00");
+  const [lockerKeyOverdueDays, setLockerKeyOverdueDays] = useState("7");
+  const [trainerRatingThreshold, setTrainerRatingThreshold] = useState("3.5");
+
   // Communication
   const [welcomeMessage, setWelcomeMessage] = useState(true);
   const [birthdayWish, setBirthdayWish] = useState(true);
@@ -162,6 +169,11 @@ export default function SettingsPage() {
         setDataCleanupEnabled(data.data_cleanup_enabled !== "false");
         setFollowupArchiveDays(data.followup_auto_archive_days ?? "180");
         setEnquiryCloseDays(data.enquiry_auto_close_days ?? "120");
+        setPeakHoursStart(data.peak_hours_start ?? "06:00");
+        setPeakHoursEnd(data.peak_hours_end ?? "09:00");
+        setLateEntryAfter(data.late_entry_after ?? "22:00");
+        setLockerKeyOverdueDays(data.locker_key_overdue_threshold_days ?? "7");
+        setTrainerRatingThreshold(data.trainer_rating_threshold ?? "3.5");
       })
       .catch(() => setError("Failed to load settings"));
   }, []);
@@ -224,6 +236,11 @@ export default function SettingsPage() {
           data_cleanup_enabled: dataCleanupEnabled ? "true" : "false",
           followup_auto_archive_days: followupArchiveDays,
           enquiry_auto_close_days: enquiryCloseDays,
+          peak_hours_start: peakHoursStart,
+          peak_hours_end: peakHoursEnd,
+          late_entry_after: lateEntryAfter,
+          locker_key_overdue_threshold_days: lockerKeyOverdueDays,
+          trainer_rating_threshold: trainerRatingThreshold,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -571,6 +588,81 @@ export default function SettingsPage() {
             />
             <p className="text-xs text-muted-foreground">
               Minimum seconds between consecutive check-ins for the same member
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card: Operations (PR 12) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Operations</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Peak hours, late entry, locker key audit and trainer rating thresholds.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="peak-start">Peak hours start (24h)</Label>
+              <Input
+                id="peak-start"
+                placeholder="06:00"
+                value={peakHoursStart}
+                onChange={(e) => setPeakHoursStart(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="peak-end">Peak hours end (24h)</Label>
+              <Input
+                id="peak-end"
+                placeholder="09:00"
+                value={peakHoursEnd}
+                onChange={(e) => setPeakHoursEnd(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="late-entry">Late entry after (24h)</Label>
+            <Input
+              id="late-entry"
+              placeholder="22:00"
+              value={lateEntryAfter}
+              onChange={(e) => setLateEntryAfter(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Check-ins at or after this time are flagged as late entry.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="locker-overdue">Locker key overdue threshold (days)</Label>
+            <Input
+              id="locker-overdue"
+              type="number"
+              min="1"
+              value={lockerKeyOverdueDays}
+              onChange={(e) => setLockerKeyOverdueDays(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Days past expected return before a key is flagged as overdue.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="trainer-threshold">Trainer rating low threshold</Label>
+            <Input
+              id="trainer-threshold"
+              type="number"
+              min="1"
+              max="5"
+              step="0.1"
+              value={trainerRatingThreshold}
+              onChange={(e) => setTrainerRatingThreshold(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Average rating below this (over 5+ ratings in 30d) raises an admin insight.
             </p>
           </div>
         </CardContent>

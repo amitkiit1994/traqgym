@@ -1,15 +1,19 @@
 import { prisma } from "@/lib/prisma";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export async function transferMember({
   userId,
   toLocationId,
   ticketId,
   transferredBy,
+  carryOverDays = false,
 }: {
   userId: number;
   toLocationId: number;
   ticketId: number;
   transferredBy: number;
+  carryOverDays?: boolean;
 }) {
   try {
     // Validate user exists
@@ -41,12 +45,45 @@ export async function transferMember({
 
     const fromLocationId = user.locationId;
 
-    // Atomic: update user location + create audit log
+    // Compute carry-over days from existing ticket if requested
+    const now = new Date();
+    const daysRemaining = carryOverDays
+      ? Math.max(0, Math.ceil((new Date(ticket.expireDate).getTime() - now.getTime()) / DAY_MS))
+      : 0;
+
+    // Atomic: update user location + (optionally) carry over days as new destination ticket + audit log
     const result = await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: userId },
         data: { locationId: toLocationId },
       });
+
+      let destTicketId: number | null = null;
+      if (carryOverDays && daysRemaining > 0) {
+        // Cancel the source ticket so it doesn't grant access at the old location
+        await tx.memberTicket.update({
+          where: { id: ticketId },
+          data: { status: "cancelled", cancelledAt: now },
+        });
+
+        const destExpire = new Date(now.getTime() + daysRemaining * DAY_MS);
+        const destTicket = await tx.memberTicket.create({
+          data: {
+            userId,
+            planId: ticket.planId,
+            locationId: toLocationId,
+            buyDate: now,
+            expireDate: destExpire,
+            status: "active",
+            isTrial: ticket.isTrial,
+            totalAmount: ticket.totalAmount,
+            amountPaid: ticket.amountPaid,
+            balanceDue: ticket.balanceDue,
+            dueDate: ticket.dueDate,
+          },
+        });
+        destTicketId = destTicket.id;
+      }
 
       await tx.auditLog.create({
         data: {
@@ -57,6 +94,9 @@ export async function transferMember({
             fromLocationId,
             toLocationId,
             ticketId,
+            carryOverDays,
+            daysRemaining,
+            destTicketId,
           }),
           actorId: transferredBy,
           actorType: "worker",
@@ -69,6 +109,9 @@ export async function transferMember({
         toLocationId,
         toLocationName: toLocation.name,
         ticketId,
+        carryOverDays,
+        daysRemaining,
+        destTicketId,
       };
     });
 

@@ -58,6 +58,119 @@ export async function getFeedback(params?: {
   return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
+export async function recordClassFeedback(params: {
+  userId: number;
+  classId: number;
+  rating: number;
+  comment?: string;
+  trainerId?: number | null;
+}) {
+  if (!Number.isInteger(params.rating) || params.rating < 1 || params.rating > 5) {
+    return { success: false as const, error: "Rating must be between 1 and 5" };
+  }
+
+  const klass = await prisma.classSchedule.findUnique({
+    where: { id: params.classId },
+    select: {
+      id: true,
+      gymClass: { select: { instructorId: true } },
+    },
+  });
+  if (!klass) {
+    return { success: false as const, error: "Class not found" };
+  }
+
+  const trainerId =
+    params.trainerId !== undefined ? params.trainerId : klass.gymClass.instructorId;
+
+  const feedback = await prisma.feedback.create({
+    data: {
+      userId: params.userId,
+      rating: params.rating,
+      comment: params.comment || null,
+      category: "trainer",
+      classId: params.classId,
+      trainerId: trainerId ?? null,
+    },
+  });
+
+  return { success: true as const, feedback };
+}
+
+export async function getTrainerRatingStats(params?: {
+  trainerId?: number;
+  sinceDays?: number;
+}) {
+  const sinceDays = params?.sinceDays ?? 30;
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+
+  const where: Record<string, unknown> = {
+    trainerId: { not: null },
+    createdAt: { gte: since },
+  };
+  if (params?.trainerId) where.trainerId = params.trainerId;
+
+  const items = await prisma.feedback.findMany({
+    where,
+    select: {
+      trainerId: true,
+      rating: true,
+      classId: true,
+      class: {
+        select: {
+          id: true,
+          gymClass: { select: { id: true, name: true, classType: true } },
+        },
+      },
+      trainer: {
+        select: { id: true, firstname: true, lastname: true },
+      },
+    },
+  });
+
+  const byTrainer = new Map<
+    number,
+    { trainerId: number; trainerName: string; ratings: number[]; classBreakdown: Record<string, { count: number; sum: number }> }
+  >();
+
+  for (const f of items) {
+    if (!f.trainerId || !f.trainer) continue;
+    const key = f.trainerId;
+    const name = `${f.trainer.firstname} ${f.trainer.lastname}`.trim();
+    if (!byTrainer.has(key)) {
+      byTrainer.set(key, {
+        trainerId: key,
+        trainerName: name,
+        ratings: [],
+        classBreakdown: {},
+      });
+    }
+    const entry = byTrainer.get(key)!;
+    entry.ratings.push(f.rating);
+    const classType = f.class?.gymClass?.classType || "general";
+    if (!entry.classBreakdown[classType]) {
+      entry.classBreakdown[classType] = { count: 0, sum: 0 };
+    }
+    entry.classBreakdown[classType].count += 1;
+    entry.classBreakdown[classType].sum += f.rating;
+  }
+
+  return Array.from(byTrainer.values()).map((e) => ({
+    trainerId: e.trainerId,
+    trainerName: e.trainerName,
+    count: e.ratings.length,
+    averageRating:
+      e.ratings.length > 0
+        ? Math.round((e.ratings.reduce((s, r) => s + r, 0) / e.ratings.length) * 10) / 10
+        : 0,
+    classBreakdown: Object.entries(e.classBreakdown).map(([classType, v]) => ({
+      classType,
+      count: v.count,
+      averageRating: Math.round((v.sum / v.count) * 10) / 10,
+    })),
+  }));
+}
+
 export async function getFeedbackStats() {
   const now = new Date();
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
