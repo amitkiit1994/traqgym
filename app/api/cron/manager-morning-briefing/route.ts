@@ -8,6 +8,13 @@
  * The compose+render+send pipeline lives in `lib/ai/manager-runner.ts`
  * (kept out of the route file because Next.js route handlers may only
  * export HTTP method names + reserved config consts).
+ *
+ * PR 9 concession: this PR-8-owned route is extended (single-line argument
+ * passthrough) so the runner can fan-out to BOTH email and Telegram in one
+ * pass. The runner gates on settings (telegram_enabled +
+ * gym_owner_telegram_chat_id) so a gym that has only configured email keeps
+ * its old single-channel behaviour. We pass no overrides here — let the
+ * runner pick channels from settings.
  */
 
 import { runManagerBriefing } from "@/lib/ai/manager-runner";
@@ -31,5 +38,6 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  // Channels are picked automatically from settings.
   return runManagerBriefing();
 }

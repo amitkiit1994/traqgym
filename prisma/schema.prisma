@@ -603,13 +603,20 @@ model GymTarget {
 }
 
 model AiConversation {
-  id        Int         @id @default(autoincrement())
-  workerId  Int
-  title     String?
-  channel   String      @default("web") // web | email | telegram | system
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  messages  AiMessage[]
+  id             Int         @id @default(autoincrement())
+  workerId       Int
+  title          String?
+  channel        String      @default("web") // web | email | telegram | system
+  // PR 9: Telegram channel pairing.
+  telegramChatId String?     // when channel = "telegram"
+  telegramUserId String?     // for outbound DM (optional)
+  // PR 9 (also used by PR 16): detected language for the conversation.
+  detectedLang   String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  messages       AiMessage[]
+
+  @@index([channel, telegramChatId])
 }
 
 model AiMessage {
