@@ -15,28 +15,20 @@
 
 import { prisma } from "@/lib/prisma";
 import { upsertInsight, type InsightSeverity } from "./_shared";
-import { inr, median, todayISO } from "./_helpers";
+import { inr, isoDay, istDayWindow, median } from "./_helpers";
 
 const AGENT = "revenue_anomaly_v2";
 
 const DEVIATION_THRESHOLD = 0.25;
 const HIGH_DROP_THRESHOLD = 0.5;
 
-type DayWindow = { start: Date; end: Date };
-
-function dayWindow(d: Date): DayWindow {
-  const start = new Date(d);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  return { start, end };
-}
-
 export async function run(): Promise<{ created: number; total: number }> {
   const now = new Date();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yWin = dayWindow(yesterday);
+  // "Yesterday" is the IST calendar day before today's IST date. Picking any
+  // instant 24h before `now` lands inside that IST day; istDayWindow then
+  // produces the correct UTC bounds (00:00 IST → 24:00 IST).
+  const yesterday = new Date(now.getTime() - 86_400_000);
+  const yWin = istDayWindow(yesterday);
 
   // Yesterday's total + per-mode + per-collector breakdowns
   const yesterdayPayments = await prisma.payment.findMany({
@@ -70,12 +62,11 @@ export async function run(): Promise<{ created: number; total: number }> {
     byCollector[cid].total += amt;
   }
 
-  // Build daily totals for the previous 30 days (excluding yesterday itself)
+  // Build daily totals for the previous 30 IST days (excluding yesterday).
   const dailyTotals: number[] = [];
   for (let i = 2; i <= 31; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const w = dayWindow(d);
+    const d = new Date(now.getTime() - i * 86_400_000);
+    const w = istDayWindow(d);
     const agg = await prisma.payment.aggregate({
       where: { createdAt: { gte: w.start, lt: w.end } },
       _sum: { amount: true },
@@ -103,7 +94,7 @@ export async function run(): Promise<{ created: number; total: number }> {
 
   const pct = Math.round(absDeviation * 100);
   const direction = isDrop ? "below" : "above";
-  const dateKey = todayISO();
+  const dateKey = isoDay();
 
   const collectorList = Object.values(byCollector)
     .sort((a, b) => b.total - a.total)
@@ -114,7 +105,7 @@ export async function run(): Promise<{ created: number; total: number }> {
     severity,
     title: `Yesterday's collection ${pct}% ${direction} 30-day median`,
     body:
-      `Collected ${inr(yesterdayTotal)} on ${yesterday.toISOString().slice(0, 10)} ` +
+      `Collected ${inr(yesterdayTotal)} on ${isoDay(yesterday)} ` +
       `vs 30-day median of ${inr(med)}. ${isDrop ? "Investigate dip — " : "Spike — verify legitimacy. "}` +
       `Top mode: ${
         Object.entries(byMode)
@@ -124,7 +115,7 @@ export async function run(): Promise<{ created: number; total: number }> {
           .join("") || "n/a"
       }.`,
     dataJson: {
-      yesterdayDate: yesterday.toISOString().slice(0, 10),
+      yesterdayDate: isoDay(yesterday),
       yesterdayTotal,
       median30d: med,
       deviation,

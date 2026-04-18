@@ -10,7 +10,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { upsertInsight, type InsightSeverity } from "./_shared";
-import { inr, todayISO } from "./_helpers";
+import { inr, isoDay } from "./_helpers";
 
 const AGENT = "renewal_cliff";
 
@@ -52,7 +52,7 @@ export async function run(): Promise<{ created: number; total: number }> {
       userName: `${t.user.firstname} ${t.user.lastname}`.trim(),
       userPhone: t.user.phone,
       planName: t.plan?.name ?? "Unknown",
-      expireDate: t.expireDate.toISOString().slice(0, 10),
+      expireDate: isoDay(t.expireDate),
       value,
     };
   });
@@ -63,7 +63,7 @@ export async function run(): Promise<{ created: number; total: number }> {
 
   const severity: InsightSeverity =
     exposure > HIGH_EXPOSURE_RUPEES ? "high" : "medium";
-  const dateKey = todayISO();
+  const dateKey = isoDay();
 
   const result = await upsertInsight({
     agent: AGENT,
@@ -71,7 +71,7 @@ export async function run(): Promise<{ created: number; total: number }> {
     title: `${tickets.length} membership(s) expiring in 7 days — ${inr(exposure)} at risk`,
     body:
       `${tickets.length} active ticket(s) expire on or before ` +
-      `${horizon.toISOString().slice(0, 10)}. Total exposure: ${inr(exposure)}. ` +
+      `${isoDay(horizon)}. Total exposure: ${inr(exposure)}. ` +
       `Top renewal: ${top10[0]?.userName ?? "n/a"} (${inr(top10[0]?.value ?? 0)}).`,
     dataJson: {
       ticketsExpiring: tickets.length,

@@ -14,7 +14,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { upsertInsight, type InsightSeverity } from "./_shared";
-import { todayISO } from "./_helpers";
+import { isoDay } from "./_helpers";
 
 const AGENT = "silent_churn";
 
@@ -51,7 +51,7 @@ export async function run(): Promise<{ created: number; total: number }> {
     },
   });
 
-  const dateKey = todayISO();
+  const dateKey = isoDay();
   let created = 0;
   let total = 0;
 

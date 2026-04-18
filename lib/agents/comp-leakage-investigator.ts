@@ -12,7 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { upsertInsight } from "./_shared";
-import { inr, todayISO } from "./_helpers";
+import { inr, isoDay } from "./_helpers";
 
 const AGENT = "comp_leakage_investigator";
 const TRIGGER_AGENT = "comp_auditor";
@@ -65,7 +65,7 @@ export async function run(): Promise<{ created: number; total: number }> {
 
   if (comps.length === 0) return { created: 0, total: 0 };
 
-  const dateKey = todayISO();
+  const dateKey = isoDay();
   let created = 0;
   let total = 0;
 

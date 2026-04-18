@@ -16,7 +16,7 @@
 import { prisma } from "@/lib/prisma";
 import { upsertInsight, type InsightSeverity } from "./_shared";
 import { getSetting } from "@/lib/services/settings";
-import { inr, todayISO } from "./_helpers";
+import { inr, isoDay } from "./_helpers";
 
 const AGENT = "defaulted_ticket_escalator";
 
@@ -65,7 +65,7 @@ export async function run(): Promise<{ created: number; total: number }> {
     orderBy: { createdAt: "asc" },
   });
 
-  const dateKey = todayISO();
+  const dateKey = isoDay();
   let created = 0;
   let total = 0;
 
