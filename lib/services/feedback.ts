@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { istMonthBoundsUtc, istCalendarFor } from "@/lib/utils/date-ist";
 
 const VALID_CATEGORIES = ["facility", "trainer", "cleanliness", "general"];
 
@@ -16,12 +17,33 @@ export async function submitFeedback(params: {
     return { success: false, error: `Category must be one of: ${VALID_CATEGORIES.join(", ")}` };
   }
 
+  const category = params.category || "general";
+
+  // Soft idempotency: if the same member submitted feedback for the same
+  // category in the last 60s, return that row instead of creating a new one.
+  const sixtySecondsAgo = new Date(Date.now() - 60_000);
+  const existing = await prisma.feedback.findFirst({
+    where: {
+      userId: params.userId,
+      category,
+      // Only treat general (non-class, non-trainer-targeted) feedback as a
+      // dedup target — class feedback goes through recordClassFeedback which
+      // has its own idempotency window below.
+      classId: null,
+      createdAt: { gte: sixtySecondsAgo },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) {
+    return { success: true, feedback: existing };
+  }
+
   const feedback = await prisma.feedback.create({
     data: {
       userId: params.userId,
       rating: params.rating,
       comment: params.comment || null,
-      category: params.category || "general",
+      category,
     },
   });
 
@@ -82,6 +104,20 @@ export async function recordClassFeedback(params: {
 
   const trainerId =
     params.trainerId !== undefined ? params.trainerId : klass.gymClass.instructorId;
+
+  // Soft idempotency: dedupe within 60s on (member, classId).
+  const sixtySecondsAgo = new Date(Date.now() - 60_000);
+  const existing = await prisma.feedback.findFirst({
+    where: {
+      userId: params.userId,
+      classId: params.classId,
+      createdAt: { gte: sixtySecondsAgo },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) {
+    return { success: true as const, feedback: existing };
+  }
 
   const feedback = await prisma.feedback.create({
     data: {
@@ -172,16 +208,29 @@ export async function getTrainerRatingStats(params?: {
 }
 
 export async function getFeedbackStats() {
-  const now = new Date();
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+  // IST-aware month boundaries. Without this, "this month" / "last month"
+  // would shift by 5h30m and roll into the wrong calendar month around
+  // midnight IST.
+  const ist = istCalendarFor(new Date());
+  // ist.month is 0-indexed; istMonthBoundsUtc takes 1-indexed.
+  const thisMonth1Indexed = ist.month + 1;
+  const thisMonthBounds = istMonthBoundsUtc(ist.year, thisMonth1Indexed);
+  // Compute previous IST month with year rollover.
+  const prevYear = thisMonth1Indexed === 1 ? ist.year - 1 : ist.year;
+  const prevMonth = thisMonth1Indexed === 1 ? 12 : thisMonth1Indexed - 1;
+  const lastMonthBounds = istMonthBoundsUtc(prevYear, prevMonth);
 
   const [all, thisMonth, lastMonth] = await Promise.all([
     prisma.feedback.findMany({ select: { rating: true, category: true } }),
-    prisma.feedback.count({ where: { createdAt: { gte: thisMonthStart } } }),
     prisma.feedback.count({
-      where: { createdAt: { gte: lastMonthStart, lte: lastMonthEnd } },
+      where: {
+        createdAt: { gte: thisMonthBounds.startUtc, lt: thisMonthBounds.endUtc },
+      },
+    }),
+    prisma.feedback.count({
+      where: {
+        createdAt: { gte: lastMonthBounds.startUtc, lt: lastMonthBounds.endUtc },
+      },
     }),
   ]);
 

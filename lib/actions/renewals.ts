@@ -61,6 +61,7 @@ export async function getActivePlans() {
   return plans.map((p) => ({
     ...p,
     price: Number(p.price),
+    joiningFee: Number(p.joiningFee ?? 0),
   }));
 }
 

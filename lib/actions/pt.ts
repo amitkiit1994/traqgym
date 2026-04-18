@@ -91,12 +91,29 @@ export async function recordPtSessionAction(input: {
     return { success: false as const, error: "Invalid scheduledAt" };
   }
 
+  // Trainer-ownership enforcement: only the package's trainer (or an admin)
+  // may record a session against that package.
+  const callerWorkerId = parseInt(session.user.id, 10);
+  const isAdmin = session.user.role === "admin";
+  if (!isAdmin) {
+    const pkg = await prisma.ptPackage.findUnique({
+      where: { id: input.packageId },
+      select: { trainerId: true },
+    });
+    if (!pkg) {
+      return { success: false as const, error: "PT package not found" };
+    }
+    if (pkg.trainerId !== callerWorkerId) {
+      return { success: false as const, error: "Forbidden" };
+    }
+  }
+
   return recordPtSession({
     packageId: input.packageId,
     scheduledAt: dt,
     status: input.status,
     notes: input.notes,
-    recordedById: parseInt(session.user.id, 10),
+    recordedById: callerWorkerId,
   });
 }
 
@@ -107,10 +124,28 @@ export async function completePtSessionAction(sessionId: number, notes?: string)
   } catch {
     return { success: false as const, error: "Unauthorized" };
   }
+
+  // Trainer-ownership enforcement: derive package from the session, then
+  // assert caller is the trainer (or an admin).
+  const callerWorkerId = parseInt(session.user.id, 10);
+  const isAdmin = session.user.role === "admin";
+  if (!isAdmin) {
+    const ptSession = await prisma.ptSession.findUnique({
+      where: { id: sessionId },
+      select: { package: { select: { trainerId: true } } },
+    });
+    if (!ptSession) {
+      return { success: false as const, error: "Session not found" };
+    }
+    if (ptSession.package.trainerId !== callerWorkerId) {
+      return { success: false as const, error: "Forbidden" };
+    }
+  }
+
   return completePtSession({
     sessionId,
     notes,
-    recordedById: parseInt(session.user.id, 10),
+    recordedById: callerWorkerId,
   });
 }
 
@@ -130,13 +165,22 @@ export async function getTrainerStatsAction(
   return getTrainerStats(trainerId, { from, to });
 }
 
-export async function getMyPtClientsAction(trainerId: number) {
+export async function getMyPtClientsAction(_trainerId?: number) {
+  // Note: the `_trainerId` param is intentionally IGNORED — we always derive
+  // the trainer from the authenticated session to prevent IDOR / one trainer
+  // viewing another trainer's clients (S08/S18).
+  void _trainerId;
+  let session;
   try {
-    await requireWorker();
+    session = await requireWorker();
   } catch {
     return [];
   }
-  return getMyPtClients(trainerId);
+  const callerWorkerId = parseInt(session.user.id, 10);
+  if (!Number.isFinite(callerWorkerId)) {
+    return [];
+  }
+  return getMyPtClients(callerWorkerId);
 }
 
 export async function listPtPackagesAction(opts?: {
@@ -168,7 +212,13 @@ export async function getTrainersAction() {
     return [];
   }
   return prisma.worker.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      OR: [
+        { ptPackagesAsTrainer: { some: {} } },
+        { trainerPayments: { some: {} } },
+      ],
+    },
     select: {
       id: true,
       firstname: true,

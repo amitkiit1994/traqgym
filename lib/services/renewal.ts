@@ -89,26 +89,29 @@ export async function renewMembership(params: {
     if (!promo.isActive) throw new Error("Promo code is inactive");
   }
 
-  // 6c. Determine joining fee for this purchase (PR 11)
-  let joiningFeeCharged = 0;
+  // 6c. Joining-fee policy values (per-plan). The actual prior-ticket count
+  // read happens INSIDE the transaction below to avoid a double-charge race
+  // where two concurrent first-time renewals each see priorTicketCount === 0.
   const planJoiningFee = Number(plan.joiningFee ?? 0);
   const appliesOn = plan.joiningFeeAppliesOn ?? "first_only";
-  if (planJoiningFee > 0 && appliesOn !== "never") {
-    if (appliesOn === "every_renewal") {
-      joiningFeeCharged = planJoiningFee;
-    } else if (appliesOn === "first_only") {
-      // Charge only if user has zero prior member tickets
-      const priorTicketCount = await prisma.memberTicket.count({
-        where: { userId: params.userId },
-      });
-      if (priorTicketCount === 0) {
-        joiningFeeCharged = planJoiningFee;
-      }
-    }
-  }
 
   // 7. Prisma $transaction
   const result = await prisma.$transaction(async (tx) => {
+    // Determine joining fee for this purchase using a TXN-fresh prior count.
+    let joiningFeeCharged = 0;
+    if (planJoiningFee > 0 && appliesOn !== "never") {
+      if (appliesOn === "every_renewal") {
+        joiningFeeCharged = planJoiningFee;
+      } else if (appliesOn === "first_only") {
+        const priorTicketCount = await tx.memberTicket.count({
+          where: { userId: params.userId },
+        });
+        if (priorTicketCount === 0) {
+          joiningFeeCharged = planJoiningFee;
+        }
+      }
+    }
+
     // Promo code validation and discount calculation inside transaction
     let finalAmount = Number(plan.price);
     let discountApplied = 0;

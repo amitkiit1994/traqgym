@@ -11,6 +11,7 @@ import {
   Drawer,
   DrawerTrigger,
   DrawerContent,
+  DrawerTitle,
 } from "@/components/ui/drawer";
 import {
   LayoutDashboard,
@@ -139,6 +140,7 @@ const navGroups: NavGroup[] = [
     label: "Staff",
     items: [
       { href: "/admin/workers", label: "Workers", icon: UserCog, adminOnly: true },
+      { href: "/admin/trainers", label: "Trainers", icon: HeartPulse, adminOnly: true },
       { href: "/admin/leaves", label: "Leaves", icon: CalendarOff },
       { href: "/admin/staff-performance", label: "Performance", icon: TrendingUp, adminOnly: true },
       { href: "/admin/staff-calendar", label: "Staff Calendar", icon: CalendarDays },
@@ -223,6 +225,7 @@ export function AdminSidebar({
             onClick={() => setCollapsed(false)}
             className="mx-auto p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             title="Expand sidebar"
+            aria-label="Expand sidebar"
           >
             <PanelLeftOpen className="size-4" />
           </button>
@@ -236,6 +239,7 @@ export function AdminSidebar({
               onClick={() => setCollapsed(true)}
               className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
               title="Collapse sidebar"
+              aria-label="Collapse sidebar"
             >
               <PanelLeftClose className="size-4" />
             </button>
@@ -258,6 +262,7 @@ export function AdminSidebar({
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.label)}
+                  aria-expanded={isOpen}
                   className="flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50 hover:text-sidebar-foreground/80 transition-all duration-200 hover:tracking-widest"
                 >
                   {isOpen ? (
@@ -388,10 +393,13 @@ export function AdminMobileMenu({
       <DrawerTrigger
         className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors md:hidden"
         aria-label="Open menu"
+        aria-expanded={open}
+        aria-controls="admin-mobile-drawer"
       >
         <Menu className="size-5" />
       </DrawerTrigger>
-      <DrawerContent showCloseButton>
+      <DrawerContent showCloseButton id="admin-mobile-drawer">
+        <DrawerTitle className="sr-only">Navigation menu</DrawerTitle>
         {/* Header */}
         <div className="flex h-14 items-center border-b border-sidebar-border px-4">
           <GymBrand size="sm" className="text-primary" />

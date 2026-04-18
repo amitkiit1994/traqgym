@@ -133,133 +133,192 @@ export async function recordInstallmentPayment(params: {
     return { success: false, error: "Amount must be positive" };
   }
 
-  const installment = await prisma.paymentInstallment.findUnique({
-    where: { id: params.installmentId },
-    include: {
-      schedule: {
+  // R02 fix: BOTH the installment fetch and the ticket fetch must happen INSIDE
+  // the transaction. The previous code read installment + ticket OUTSIDE the
+  // txn, then computed `newBalanceDue = ticket.balanceDue - paidAmount` against
+  // the stale snapshot, so two concurrent installment payments would each
+  // double-debit balanceDue. We now use a conditional update on
+  // PaymentInstallment.paidAmount (compare-and-set) so a concurrent writer is
+  // detected; and we recompute balanceDue from a transactionally-fresh ticket
+  // row using a relative decrement to avoid stale-read overwrites.
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const installment = await tx.paymentInstallment.findUnique({
+        where: { id: params.installmentId },
         include: {
-          memberTicket: true,
-          installments: true,
+          schedule: {
+            include: {
+              memberTicket: true,
+            },
+          },
         },
-      },
-    },
-  });
-  if (!installment) return { success: false, error: "Installment not found" };
-  if (installment.status === "paid") {
-    return { success: false, error: "Installment already paid" };
-  }
-  if (installment.status === "waived") {
-    return { success: false, error: "Installment is waived" };
-  }
-
-  const remainingOnInstallment =
-    Number(installment.amount) - Number(installment.paidAmount);
-  if (params.paidAmount > remainingOnInstallment + 0.01) {
-    return {
-      success: false,
-      error: `Amount exceeds installment balance (${remainingOnInstallment})`,
-    };
-  }
-
-  const ticket = installment.schedule.memberTicket;
-  const ticketBalance = Number(ticket.balanceDue);
-  if (params.paidAmount > ticketBalance + 0.01) {
-    return {
-      success: false,
-      error: `Amount exceeds ticket balance due (${ticketBalance})`,
-    };
-  }
-
-  const result = await prisma.$transaction(async (tx) => {
-    const newPaidOnInstallment = Number(installment.paidAmount) + params.paidAmount;
-    const installmentFullyPaid =
-      newPaidOnInstallment >= Number(installment.amount) - 0.01;
-
-    // Create payment row
-    const payment = await tx.payment.create({
-      data: {
-        userId: ticket.userId,
-        memberTicketId: ticket.id,
-        locationId: ticket.locationId,
-        amount: params.paidAmount,
-        paymentMode: params.paymentMode,
-        upiReference: params.upiReference ?? null,
-        collectedById: params.collectedById,
-        paymentStatus: "partial",
-        newExpiryDate: ticket.expireDate,
-        paymentFor: "installment",
-      },
-    });
-
-    // Update installment
-    await tx.paymentInstallment.update({
-      where: { id: installment.id },
-      data: {
-        paidAmount: newPaidOnInstallment,
-        paidAt: installmentFullyPaid ? new Date() : installment.paidAt,
-        paymentId: payment.id,
-        status: installmentFullyPaid ? "paid" : installment.status,
-      },
-    });
-
-    // Update ticket balance
-    const newAmountPaid = Number(ticket.amountPaid) + params.paidAmount;
-    const newBalanceDue = Math.max(0, Number(ticket.balanceDue) - params.paidAmount);
-
-    // Find next pending installment for dueDate
-    const otherInstallments = installment.schedule.installments
-      .filter((i) => i.id !== installment.id && i.status !== "paid" && i.status !== "waived")
-      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
-    const nextDue = otherInstallments[0]?.dueDate ?? null;
-
-    await tx.memberTicket.update({
-      where: { id: ticket.id },
-      data: {
-        amountPaid: newAmountPaid,
-        balanceDue: newBalanceDue,
-        dueDate: nextDue,
-      },
-    });
-
-    // Check if schedule is complete
-    const allInstallments = await tx.paymentInstallment.findMany({
-      where: { scheduleId: installment.scheduleId },
-    });
-    const allDone = allInstallments.every(
-      (i) => i.status === "paid" || i.status === "waived"
-    );
-    if (allDone) {
-      await tx.paymentSchedule.update({
-        where: { id: installment.scheduleId },
-        data: { status: "completed" },
       });
-    }
+      if (!installment) {
+        throw new Error("Installment not found");
+      }
+      if (installment.status === "paid") {
+        throw new Error("Installment already paid");
+      }
+      if (installment.status === "waived") {
+        throw new Error("Installment is waived");
+      }
 
-    await tx.auditLog.create({
-      data: {
-        action: "installment_payment",
-        status: "success",
-        details: JSON.stringify({
-          installmentId: installment.id,
-          scheduleId: installment.scheduleId,
-          ticketId: ticket.id,
+      const priorPaidAmount = Number(installment.paidAmount);
+      const installmentAmount = Number(installment.amount);
+      const remainingOnInstallment = installmentAmount - priorPaidAmount;
+      if (params.paidAmount > remainingOnInstallment + 0.01) {
+        throw new Error(
+          `Amount exceeds installment balance (${remainingOnInstallment})`
+        );
+      }
+
+      // Fetch the ticket fresh inside the txn — do NOT trust the value embedded
+      // via the include above (Prisma resolves includes against the same
+      // snapshot, but for the balance update we want a single canonical fresh
+      // row before computing newBalanceDue and we use a relative decrement to
+      // be doubly safe).
+      const ticket = await tx.memberTicket.findUnique({
+        where: { id: installment.schedule.memberTicketId },
+      });
+      if (!ticket) {
+        throw new Error("Member ticket not found");
+      }
+      const ticketBalance = Number(ticket.balanceDue);
+      if (params.paidAmount > ticketBalance + 0.01) {
+        throw new Error(
+          `Amount exceeds ticket balance due (${ticketBalance})`
+        );
+      }
+
+      const newPaidOnInstallment = priorPaidAmount + params.paidAmount;
+      const installmentFullyPaid =
+        newPaidOnInstallment >= installmentAmount - 0.01;
+
+      // Create payment row first so we can attach paymentId to the installment.
+      const payment = await tx.payment.create({
+        data: {
+          userId: ticket.userId,
+          memberTicketId: ticket.id,
+          locationId: ticket.locationId,
           amount: params.paidAmount,
-          installmentFullyPaid,
-          scheduleCompleted: allDone,
-        }),
-        actorId: params.collectedById,
-        actorType: "worker",
-      },
+          paymentMode: params.paymentMode,
+          upiReference: params.upiReference ?? null,
+          collectedById: params.collectedById,
+          paymentStatus: "partial",
+          newExpiryDate: ticket.expireDate,
+          paymentFor: "installment",
+        },
+      });
+
+      // Conditional update: only succeed if paidAmount still matches the value
+      // we read above. If a concurrent writer has already incremented it,
+      // updateMany returns count===0 and we abort the txn with a clear error.
+      const installmentUpdate = await tx.paymentInstallment.updateMany({
+        where: {
+          id: installment.id,
+          paidAmount: priorPaidAmount,
+        },
+        data: {
+          paidAmount: newPaidOnInstallment,
+          paidAt: installmentFullyPaid ? new Date() : installment.paidAt,
+          paymentId: payment.id,
+          status: installmentFullyPaid ? "paid" : installment.status,
+        },
+      });
+      if (installmentUpdate.count !== 1) {
+        throw new Error(
+          "Installment was modified concurrently; please retry"
+        );
+      }
+
+      // Compute newBalanceDue using a relative decrement on the fresh row.
+      // Using `decrement` rather than absolute set avoids overwriting any
+      // concurrent legitimate balance change.
+      const updatedTicket = await tx.memberTicket.update({
+        where: { id: ticket.id },
+        data: {
+          amountPaid: { increment: params.paidAmount },
+          balanceDue: { decrement: params.paidAmount },
+        },
+      });
+
+      // Re-fetch the schedule's installments now that we've written, so nextDue
+      // and the schedule completion check both reflect the post-write state.
+      const allInstallments = await tx.paymentInstallment.findMany({
+        where: { scheduleId: installment.scheduleId },
+      });
+
+      const otherInstallments = allInstallments
+        .filter(
+          (i) =>
+            i.id !== installment.id &&
+            i.status !== "paid" &&
+            i.status !== "waived"
+        )
+        .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+      const nextDue = otherInstallments[0]?.dueDate ?? null;
+
+      // Apply nextDue separately (and clamp balanceDue at 0 if the relative
+      // decrement somehow took it negative — defensive only).
+      const balanceDueClamped = Number(updatedTicket.balanceDue) < 0 ? 0 : null;
+      if (nextDue !== updatedTicket.dueDate || balanceDueClamped !== null) {
+        await tx.memberTicket.update({
+          where: { id: ticket.id },
+          data: {
+            dueDate: nextDue,
+            ...(balanceDueClamped !== null
+              ? { balanceDue: balanceDueClamped }
+              : {}),
+          },
+        });
+      }
+
+      const allDone = allInstallments.every(
+        (i) => i.status === "paid" || i.status === "waived"
+      );
+      if (allDone) {
+        await tx.paymentSchedule.update({
+          where: { id: installment.scheduleId },
+          data: { status: "completed" },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          action: "installment_payment",
+          status: "success",
+          details: JSON.stringify({
+            installmentId: installment.id,
+            scheduleId: installment.scheduleId,
+            ticketId: ticket.id,
+            amount: params.paidAmount,
+            priorPaidAmount,
+            newPaidOnInstallment,
+            installmentFullyPaid,
+            scheduleCompleted: allDone,
+          }),
+          actorId: params.collectedById,
+          actorType: "worker",
+        },
+      });
+
+      return { payment, installmentFullyPaid };
     });
 
-    return { payment, installmentFullyPaid };
-  });
-
-  return {
-    success: true,
-    paymentId: result.payment.id,
-    isFullyPaid: result.installmentFullyPaid,
-  };
+    return {
+      success: true,
+      paymentId: result.payment.id,
+      isFullyPaid: result.installmentFullyPaid,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Failed to record installment payment",
+    };
+  }
 }
 
 export async function getOverdueInstallments(opts?: {

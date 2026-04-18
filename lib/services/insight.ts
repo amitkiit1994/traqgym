@@ -177,21 +177,36 @@ export async function snoozeInsight(params: {
 /**
  * Whitelist-only action dispatcher. Maps `action` strings to existing service
  * functions. NO eval, NO dynamic dispatch, NO arbitrary code.
+ *
+ * R03/R06 fix: Atomic claim-then-execute pattern. We perform the dismissal
+ * FIRST as a conditional updateMany (where dismissedAt: null). If 0 rows
+ * are affected, another caller (different magic-link click, dashboard, or
+ * Telegram callback) already claimed it — we return { alreadyDone: true }
+ * so the caller can render an "Already done" response instead of running
+ * the side-effect twice.
+ *
+ * If the side-effect later fails, we leave the insight dismissed (tradeoff:
+ * we prevent double-execution but a failed action is not retried via the
+ * same magic link — caller surfaces the error and the operator can re-act
+ * via the dashboard).
  */
 export async function executeInsightAction(params: {
   insightId: number;
   actionIndex: number;
   executedById: number;
 }): Promise<
-  { success: true; result?: unknown } | { success: false; error: string }
+  | { success: true; result?: unknown; alreadyDone?: boolean }
+  | { success: false; error: string }
 > {
   const insight = await prisma.insight.findUnique({
     where: { id: params.insightId },
     select: { id: true, suggestedActions: true, dismissedAt: true },
   });
   if (!insight) return { success: false, error: "Insight not found" };
-  if (insight.dismissedAt)
-    return { success: false, error: "Cannot act on a dismissed insight" };
+  if (insight.dismissedAt) {
+    // Already dismissed before we even attempted the claim.
+    return { success: true, alreadyDone: true };
+  }
 
   const actions = insight.suggestedActions as
     | Array<{ label?: string; action?: string; args?: Record<string, unknown> }>
@@ -203,6 +218,21 @@ export async function executeInsightAction(params: {
   const chosen = actions[params.actionIndex];
   if (!chosen || typeof chosen.action !== "string") {
     return { success: false, error: "Invalid action index" };
+  }
+
+  // R03/R06: Atomic claim. updateMany with dismissedAt: null guard means only
+  // one concurrent caller wins. If count === 0, someone else already claimed
+  // and ran (or is about to run) the side-effect — bail out cleanly.
+  const claim = await prisma.insight.updateMany({
+    where: { id: params.insightId, dismissedAt: null },
+    data: {
+      dismissedAt: new Date(),
+      dismissedById: params.executedById,
+    },
+  });
+  if (claim.count === 0) {
+    // Lost the race to another concurrent caller.
+    return { success: true, alreadyDone: true };
   }
 
   const args = (chosen.args ?? {}) as Record<string, unknown>;

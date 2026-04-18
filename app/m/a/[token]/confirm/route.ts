@@ -162,6 +162,14 @@ export async function POST(
     );
   }
 
+  // R03/R06: executeInsightAction now performs an atomic claim (dismiss-first
+  // updateMany guarded by dismissedAt: null) BEFORE running the side-effect.
+  // If two magic-link clicks race, only the first wins; the loser receives
+  // { success: true, alreadyDone: true } and we render the idempotent
+  // "Already done" page instead of double-sending the WhatsApp / revoking
+  // the comp twice. The dismissal that used to happen *after* the action
+  // here is no longer needed — the service already did it as part of the
+  // claim.
   const result = await executeInsightAction({
     insightId: verified.insightId,
     actionIndex: verified.actionIndex,
@@ -180,15 +188,16 @@ export async function POST(
     );
   }
 
-  // Mark insight dismissed so subsequent clicks are idempotent. Also note
-  // attribution in audit log via dismissedById = system worker.
-  try {
-    await prisma.insight.update({
-      where: { id: verified.insightId },
-      data: { dismissedAt: new Date(), dismissedById: systemWorkerId },
-    });
-  } catch (err) {
-    console.warn("[manager-confirm] dismiss after action failed:", err);
+  if (result.alreadyDone) {
+    return htmlResponse(
+      shellHtml({
+        title: "Already done",
+        body: `<p>The action on <strong>${escapeHtml(insight.title)}</strong> has already been completed.</p>`,
+        cta: { label: "Open dashboard", href: "/admin", primary: true },
+        variant: "info",
+      }),
+      200
+    );
   }
 
   // Audit trail (best-effort).

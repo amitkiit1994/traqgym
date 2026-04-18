@@ -98,6 +98,25 @@ export async function listSchedulesAction(opts?: {
   return listSchedules(opts);
 }
 
+export async function getScheduleCountsAction() {
+  try {
+    await requireWorker();
+  } catch {
+    return { active: 0, completed: 0, defaulted: 0, cancelled: 0 };
+  }
+  const grouped = await prisma.paymentSchedule.groupBy({
+    by: ["status"],
+    _count: { _all: true },
+  });
+  const counts = { active: 0, completed: 0, defaulted: 0, cancelled: 0 };
+  for (const g of grouped) {
+    if (g.status in counts) {
+      counts[g.status as keyof typeof counts] = g._count._all;
+    }
+  }
+  return counts;
+}
+
 export async function getScheduleForTicketAction(memberTicketId: number) {
   try {
     await requireWorker();

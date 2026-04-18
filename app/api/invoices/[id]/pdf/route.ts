@@ -1,5 +1,22 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
+import { escapeHtml } from "@/lib/utils/html";
+
+/**
+ * Validate a logo URL for safe inclusion in an <img src="..."> attribute.
+ * Allow only http(s) absolute URLs or relative paths starting with "/".
+ * Reject javascript:, data:, and any other scheme to prevent XSS.
+ */
+function safeLogoUrl(raw: unknown): string {
+  if (raw === null || raw === undefined) return "";
+  const s = typeof raw === "string" ? raw : String(raw);
+  if (s.length === 0) return "";
+  if (s.startsWith("/") && !s.startsWith("//")) return s;
+  if (/^https?:\/\//i.test(s)) return s;
+  return "";
+}
 
 export async function GET(
   _request: Request,
@@ -10,6 +27,12 @@ export async function GET(
 
   if (isNaN(invoiceId)) {
     return Response.json({ error: "Invalid invoice ID" }, { status: 400 });
+  }
+
+  // AuthN: require a session. Anonymous access leaks PII via id enumeration.
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const invoice = await prisma.invoice.findUnique({
@@ -39,8 +62,17 @@ export async function GET(
     return Response.json({ error: "Invoice not found" }, { status: 404 });
   }
 
+  // AuthZ: members may only access their own invoices. Workers may access any.
+  if (session.user.actorType === "member") {
+    const sessionUserId = Number(session.user.id);
+    if (!Number.isFinite(sessionUserId) || sessionUserId !== invoice.userId) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
   const gymName = await getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym");
-  const gymLogo = await getSetting("gym_logo", "");
+  const gymLogoRaw = await getSetting("gym_logo", "");
+  const gymLogo = safeLogoUrl(gymLogoRaw);
   const gymGstin = await getSetting("gym_gstin", process.env.GYM_GSTIN || "");
   const gymAddress = await getSetting("gym_address", process.env.GYM_ADDRESS || "");
   const gymState = await getSetting("gym_state", process.env.GYM_STATE || "Maharashtra");
@@ -83,7 +115,7 @@ export async function GET(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${isTaxInvoice ? "Tax Invoice" : "Invoice"} ${invoice.invoiceNumber}</title>
+  <title>${isTaxInvoice ? "Tax Invoice" : "Invoice"} ${escapeHtml(invoice.invoiceNumber)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -193,15 +225,15 @@ export async function GET(
   <div class="invoice-container">
     <div class="header">
       <div>
-        ${gymLogo ? `<img src="${gymLogo}" alt="${gymName}" style="height:36px;margin-bottom:4px" />` : ""}
-        <h1>${gymName}</h1>
-        ${gymAddress ? `<div style="font-size:12px;opacity:0.8;margin-top:4px">${gymAddress}</div>` : ""}
-        ${gymPhone || gymEmail ? `<div style="font-size:12px;opacity:0.7;margin-top:2px">${[gymPhone, gymEmail].filter(Boolean).join(" | ")}</div>` : ""}
-        ${gymGstin ? `<div style="font-size:12px;opacity:0.8;margin-top:2px">GSTIN: ${gymGstin}</div>` : ""}
+        ${gymLogo ? `<img src="${escapeHtml(gymLogo)}" alt="${escapeHtml(gymName)}" style="height:36px;margin-bottom:4px" />` : ""}
+        <h1>${escapeHtml(gymName)}</h1>
+        ${gymAddress ? `<div style="font-size:12px;opacity:0.8;margin-top:4px">${escapeHtml(gymAddress)}</div>` : ""}
+        ${gymPhone || gymEmail ? `<div style="font-size:12px;opacity:0.7;margin-top:2px">${[gymPhone, gymEmail].filter(Boolean).map(escapeHtml).join(" | ")}</div>` : ""}
+        ${gymGstin ? `<div style="font-size:12px;opacity:0.8;margin-top:2px">GSTIN: ${escapeHtml(gymGstin)}</div>` : ""}
       </div>
       <div class="invoice-meta">
         <div class="inv-type">${isTaxInvoice ? "Tax Invoice" : "Invoice"}</div>
-        <div class="inv-number">${invoice.invoiceNumber}</div>
+        <div class="inv-number">${escapeHtml(invoice.invoiceNumber)}</div>
         <div>${invoiceDate}</div>
       </div>
     </div>
@@ -213,7 +245,7 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Place of Supply</span>
-            <span class="info-value">${gymState}</span>
+            <span class="info-value">${escapeHtml(gymState)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">SAC Code</span>
@@ -228,15 +260,15 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Name</span>
-            <span class="info-value">${memberName}</span>
+            <span class="info-value">${escapeHtml(memberName)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Email</span>
-            <span class="info-value">${invoice.user.email}</span>
+            <span class="info-value">${escapeHtml(invoice.user.email)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Phone</span>
-            <span class="info-value">${invoice.user.phone ?? "N/A"}</span>
+            <span class="info-value">${escapeHtml(invoice.user.phone ?? "N/A")}</span>
           </div>
         </div>
       </div>
@@ -246,7 +278,7 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Plan</span>
-            <span class="info-value">${planName}</span>
+            <span class="info-value">${escapeHtml(planName)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Duration</span>
@@ -268,9 +300,9 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Mode</span>
-            <span class="info-value">${paymentMode}</span>
+            <span class="info-value">${escapeHtml(paymentMode)}</span>
           </div>
-          ${paymentMode === "UPI" ? `<div class="info-row"><span class="info-label">UPI Ref</span><span class="info-value">${upiRef}</span></div>` : ""}
+          ${paymentMode === "UPI" ? `<div class="info-row"><span class="info-label">UPI Ref</span><span class="info-value">${escapeHtml(upiRef)}</span></div>` : ""}
         </div>
       </div>
 
@@ -287,7 +319,7 @@ export async function GET(
           </thead>
           <tbody>
             <tr>
-              <td>Health and fitness services - ${planName}</td>
+              <td>Health and fitness services - ${escapeHtml(planName)}</td>
               <td>99722</td>
               <td class="right">${fmtCurrency(baseAmount)}</td>
             </tr>
@@ -326,7 +358,7 @@ export async function GET(
           </thead>
           <tbody>
             <tr>
-              <td>${planName}</td>
+              <td>${escapeHtml(planName)}</td>
               <td class="right">${fmtCurrency(planPortion)}</td>
             </tr>
             <tr>

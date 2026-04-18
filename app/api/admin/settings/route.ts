@@ -158,6 +158,23 @@ const DEFAULTS: Record<string, string> = {
   manager_link_ttl_revoke_hours: "4",   // K.3 — destructive action TTL
 };
 
+// S02: Keys that contain credentials/secrets/PII. Non-admin workers (e.g. staff,
+// front-desk) must NOT see the values for these keys — they are blanked out
+// before responding. Admins still receive the real values.
+//
+// Selection rule: any key matching /(secret|token|key|pass|auth|chat_id|webhook|api)/i
+// is treated as a secret, EXCEPT keys starting with "feature_" or equal to
+// "gym_owner_lang" or pure display keys.
+const SECRET_KEY_PATTERN = /(secret|token|key|pass|auth|chat_id|webhook|api)/i;
+const SECRET_KEY_EXCEPTIONS = new Set<string>([
+  "gym_owner_lang",
+]);
+const SECRET_KEYS: string[] = SETTINGS_KEYS.filter((key) => {
+  if (key.startsWith("feature_")) return false;
+  if (SECRET_KEY_EXCEPTIONS.has(key)) return false;
+  return SECRET_KEY_PATTERN.test(key);
+});
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).actorType !== "worker") {
@@ -167,6 +184,14 @@ export async function GET() {
   const result: Record<string, string> = {};
   for (const key of SETTINGS_KEYS) {
     result[key] = await getSetting(key, DEFAULTS[key] ?? "");
+  }
+
+  // S02: Mask secret values for non-admin workers. Keep keys present so the
+  // client UI shape stays stable (existing readers use `data.x ?? ""`).
+  if ((session.user as any).role !== "admin") {
+    for (const key of SECRET_KEYS) {
+      result[key] = "";
+    }
   }
 
   return NextResponse.json(result);

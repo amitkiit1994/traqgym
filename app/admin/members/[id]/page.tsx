@@ -61,6 +61,8 @@ export default async function MemberDetailPage({
       expireDate: t.expireDate.toISOString(),
       plan: { id: t.plan.id, name: t.plan.name, price: Number(t.plan.price), expireDays: t.plan.expireDays },
       status: t.status,
+      isComplimentary: t.isComplimentary,
+      compReason: t.compReason,
     })),
     attendanceLogs: member.attendanceLogs.map((l) => ({
       id: l.id,

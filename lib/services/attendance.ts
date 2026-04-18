@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { todayIST } from "@/lib/utils/date";
+import { istDayBoundsUtc } from "@/lib/utils/date-ist";
 
 /** Parses an "HH:MM" 24h time string into total minutes from midnight. Returns null on invalid. */
 function parseHHMM(value: string | undefined | null): number | null {
@@ -155,11 +156,14 @@ export async function getDaily(params: {
   date: Date;
   locationId?: number;
 }) {
-  const startOfDay = new Date(params.date.getFullYear(), params.date.getMonth(), params.date.getDate());
+  // attendanceDate is stored as the IST midnight Date (via todayIST), which
+  // serializes to a UTC instant of the prior calendar day at 18:30 UTC.
+  // Build IST-aware UTC bounds so we match exactly that instant range.
+  const { startUtc, endUtc } = istDayBoundsUtc(params.date);
 
   return prisma.attendanceLog.findMany({
     where: {
-      attendanceDate: startOfDay,
+      attendanceDate: { gte: startUtc, lt: endUtc },
       ...(params.locationId ? { locationId: params.locationId } : {}),
     },
     include: {

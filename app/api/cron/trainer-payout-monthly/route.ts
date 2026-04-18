@@ -1,16 +1,14 @@
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeMonthlyPayout } from "@/lib/services/trainer-payout";
+import { requireCronSecret } from "@/lib/auth-cron";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const secret =
-    request.headers.get("x-cron-secret") ||
-    new URL(request.url).searchParams.get("secret");
-  if (secret !== process.env.CRON_SECRET && process.env.CRON_SECRET) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   // Compute payout for the prior month (UTC). For a 1st-of-month cron run,
   // this targets the month that just ended.

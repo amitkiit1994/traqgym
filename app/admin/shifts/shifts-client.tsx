@@ -116,24 +116,36 @@ export function ShiftsClient({
       </div>
 
       <div className="flex gap-1 border-b">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => switchTab(t.value)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === t.value
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-            {t.value === "pending_approval" && pendingShifts.length > 0 && (
-              <span className="ml-2 inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-destructive text-white text-[10px] font-semibold">
-                {pendingShifts.length}
-              </span>
-            )}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          const count =
+            t.value === "open"
+              ? openShifts.length
+              : t.value === "pending_approval"
+                ? pendingShifts.length
+                : closedShifts.length;
+          const variant: React.ComponentProps<typeof Badge>["variant"] =
+            t.value === "pending_approval" && count > 0
+              ? "destructive"
+              : t.value === "closed"
+                ? "secondary"
+                : "default";
+          return (
+            <button
+              key={t.value}
+              onClick={() => switchTab(t.value)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px inline-flex items-center gap-2 ${
+                activeTab === t.value
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+              <Badge variant={variant} className="text-[10px]">
+                {count}
+              </Badge>
+            </button>
+          );
+        })}
       </div>
 
       <div className="overflow-x-auto">

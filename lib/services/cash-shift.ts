@@ -126,47 +126,52 @@ export async function openShift(params: {
   if (!opener.isActive)
     return { success: false, error: "Opening worker is not active" };
 
-  const existingOpen = await prisma.cashShift.findFirst({
-    where: {
-      locationId: params.locationId,
-      status: { in: ["open", "pending_approval"] },
-    },
-  });
-  if (existingOpen) {
-    return {
-      success: false,
-      error: `Shift #${existingOpen.id} is already open at this location`,
-    };
-  }
-
   try {
-    const shift = await prisma.$transaction(async (tx) => {
-      const created = await tx.cashShift.create({
-        data: {
-          locationId: params.locationId,
-          openedById: params.openedById,
-          openingFloat: params.openingFloat,
-          status: "open",
-        },
-      });
+    const shift = await prisma.$transaction(
+      async (tx) => {
+        // R01 fix: existence check + create must be inside the SAME serializable
+        // txn to prevent two concurrent openShift calls from both passing the
+        // pre-check and inserting two open shifts at the same location.
+        const existingOpen = await tx.cashShift.findFirst({
+          where: {
+            locationId: params.locationId,
+            status: { in: ["open", "pending_approval"] },
+          },
+        });
+        if (existingOpen) {
+          throw new Error(
+            `Shift #${existingOpen.id} is already open at this location`
+          );
+        }
 
-      await tx.auditLog.create({
-        data: {
-          action: "cash_shift.open",
-          status: "success",
-          details: JSON.stringify({
-            shiftId: created.id,
+        const created = await tx.cashShift.create({
+          data: {
             locationId: params.locationId,
             openedById: params.openedById,
             openingFloat: params.openingFloat,
-          }),
-          actorId: params.openedById,
-          actorType: "worker",
-        },
-      });
+            status: "open",
+          },
+        });
 
-      return created;
-    });
+        await tx.auditLog.create({
+          data: {
+            action: "cash_shift.open",
+            status: "success",
+            details: JSON.stringify({
+              shiftId: created.id,
+              locationId: params.locationId,
+              openedById: params.openedById,
+              openingFloat: params.openingFloat,
+            }),
+            actorId: params.openedById,
+            actorType: "worker",
+          },
+        });
+
+        return created;
+      },
+      { isolationLevel: "Serializable" }
+    );
     return { success: true, shift };
   } catch (err) {
     return {
@@ -434,6 +439,9 @@ export async function closeShift(params: {
         data: {
           action: "cash_shift.close",
           status: "success",
+          // R23 fix: persist threshold and absVariance into audit details so
+          // disputes can show which threshold applied at close time, even if
+          // the setting changes later.
           details: JSON.stringify({
             shiftId: shift.id,
             closedById: params.closedById,
@@ -447,7 +455,10 @@ export async function closeShift(params: {
             closingExpected,
             closingCounted: params.closingCounted,
             variance,
-            threshold,
+            absVariance,
+            varianceThreshold: threshold,
+            thresholdSettingKey: "shift_variance_auto_approve_max",
+            requiresApproval,
             newStatus,
           }),
           actorId: params.closedById,
@@ -471,6 +482,8 @@ export async function closeShift(params: {
           closingExpected,
           closingCounted: params.closingCounted,
           variance,
+          absVariance,
+          varianceThreshold: threshold,
           varianceReason: params.varianceReason ?? null,
         },
         expiresInDays: 14,

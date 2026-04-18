@@ -161,20 +161,13 @@ export async function approveRequest(params: {
   const payload = (approval.payloadJson ?? {}) as Record<string, unknown>;
 
   try {
-    // Step 1: mark the approval as approved + audit (atomic).
-    await prisma.$transaction(async (tx) => {
-      // Re-check status inside the transaction to avoid races.
-      const fresh = await tx.approval.findUnique({
-        where: { id: params.approvalId },
-      });
-      if (!fresh || fresh.status !== "pending") {
-        // Already decided — abort the transaction silently; outer flow
-        // will return alreadyDecided via the post-tx re-read.
-        return;
-      }
-
-      await tx.approval.update({
-        where: { id: params.approvalId },
+    // Step 1: atomically claim the approval. The conditional updateMany
+    // returns count===1 only for the single caller that actually flipped
+    // pending -> approved; any concurrent caller sees count===0 and must
+    // NOT dispatch (otherwise dispatch fires twice on race).
+    const claimed = await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.approval.updateMany({
+        where: { id: params.approvalId, status: "pending" },
         data: {
           status: "approved",
           decidedById: params.decidedById,
@@ -183,29 +176,31 @@ export async function approveRequest(params: {
         },
       });
 
-      await tx.auditLog.create({
-        data: {
-          action: "approval.approve",
-          status: "success",
-          details: JSON.stringify({
-            approvalId: approval.id,
-            type: approval.type,
-            entityType: approval.entityType,
-            entityId: approval.entityId,
-            decidedById: params.decidedById,
-            note: params.note ?? null,
-          }),
-          actorId: params.decidedById,
-          actorType: "worker",
-        },
-      });
+      if (updateResult.count === 1) {
+        await tx.auditLog.create({
+          data: {
+            action: "approval.approve",
+            status: "success",
+            details: JSON.stringify({
+              approvalId: approval.id,
+              type: approval.type,
+              entityType: approval.entityType,
+              entityId: approval.entityId,
+              decidedById: params.decidedById,
+              note: params.note ?? null,
+            }),
+            actorId: params.decidedById,
+            actorType: "worker",
+          },
+        });
+      }
+
+      return updateResult.count === 1;
     });
 
-    // Step 2: re-read for final state. If something else decided it, return idempotent success.
-    const post = await prisma.approval.findUnique({
-      where: { id: params.approvalId },
-    });
-    if (!post || post.status !== "approved" || post.decidedById !== params.decidedById) {
+    // Step 2: if we didn't win the race, treat as idempotent success — DO
+    // NOT dispatch (the winner is doing/has done that work).
+    if (!claimed) {
       return { success: true, alreadyDecided: true };
     }
 

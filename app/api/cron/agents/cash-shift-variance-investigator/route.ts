@@ -1,22 +1,13 @@
+import { NextRequest } from "next/server";
 import { runCashShiftVarianceInvestigator } from "@/lib/agents/cash-shift-variance-investigator";
+import { requireCronSecret } from "@/lib/auth-cron";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  // Auth: support `Authorization: Bearer <secret>`, `x-cron-secret`, and
-  // `?secret=` query param to match existing cron route conventions.
-  const authHeader = request.headers.get("authorization") ?? "";
-  const bearer = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
-  const xHeader = request.headers.get("x-cron-secret");
-  const queryParam = new URL(request.url).searchParams.get("secret");
-  const presented = bearer ?? xHeader ?? queryParam;
-
-  if (process.env.CRON_SECRET && presented !== process.env.CRON_SECRET) {
-    return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   try {
     const { insightsCreated, shiftsScanned } =

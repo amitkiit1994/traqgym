@@ -192,22 +192,22 @@ export async function completePtSession(params: {
   recordedById?: number;
 }): Promise<ServiceResult> {
   try {
-    const session = await prisma.ptSession.findUnique({
-      where: { id: params.sessionId },
-      include: { package: true },
-    });
-    if (!session) return { success: false, error: "Session not found" };
-    if (session.status === "completed") {
-      return { success: false, error: "Session already completed" };
-    }
-    if (session.package.status !== "active") {
-      return { success: false, error: `Package is ${session.package.status}` };
-    }
-    if (session.package.sessionsUsed >= session.package.sessionsTotal) {
-      return { success: false, error: "Package has no remaining sessions" };
-    }
-
     await prisma.$transaction(async (tx) => {
+      // Read fresh state inside the txn to avoid race overshoot.
+      const session = await tx.ptSession.findUnique({
+        where: { id: params.sessionId },
+        include: { package: true },
+      });
+      if (!session) {
+        throw new Error("Session not found");
+      }
+      if (session.status === "completed") {
+        throw new Error("Session already completed");
+      }
+      if (session.package.status !== "active") {
+        throw new Error(`Package is ${session.package.status}`);
+      }
+
       await tx.ptSession.update({
         where: { id: params.sessionId },
         data: {
@@ -217,12 +217,25 @@ export async function completePtSession(params: {
         },
       });
 
-      const updatedPkg = await tx.ptPackage.update({
-        where: { id: session.packageId },
+      // Conditional update — only increment if we still have remaining sessions.
+      // This prevents two concurrent completions from overshooting sessionsTotal.
+      const incCount = await tx.ptPackage.updateMany({
+        where: {
+          id: session.packageId,
+          sessionsUsed: { lt: session.package.sessionsTotal },
+        },
         data: { sessionsUsed: { increment: 1 } },
       });
+      if (incCount.count === 0) {
+        throw new Error("Package has no remaining sessions");
+      }
 
-      if (updatedPkg.sessionsUsed >= updatedPkg.sessionsTotal) {
+      // Read the post-increment value to decide whether to flip status to completed.
+      const updatedPkg = await tx.ptPackage.findUnique({
+        where: { id: session.packageId },
+        select: { sessionsUsed: true, sessionsTotal: true },
+      });
+      if (updatedPkg && updatedPkg.sessionsUsed >= updatedPkg.sessionsTotal) {
         await tx.ptPackage.update({
           where: { id: session.packageId },
           data: { status: "completed" },

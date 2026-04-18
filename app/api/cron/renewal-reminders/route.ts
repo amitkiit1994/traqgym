@@ -1,14 +1,14 @@
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { dispatch, markSent, markFailed } from "@/lib/services/notification";
 import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
 import { send as sendSMS } from "@/lib/channels/sms";
 import { getSetting } from "@/lib/services/settings";
+import { requireCronSecret } from "@/lib/auth-cron";
 
-export async function GET(request: Request) {
-  const secret = request.headers.get("x-cron-secret") || new URL(request.url).searchParams.get("secret");
-  if (secret !== process.env.CRON_SECRET && process.env.CRON_SECRET) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   const enabled = await getSetting("cron_renewal_reminders_enabled", "true");
   if (enabled !== "true") {

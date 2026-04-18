@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import {
   Select,
@@ -382,6 +383,38 @@ export function DashboardClient({
 
   const [actionExpanded, setActionExpanded] = useState(true);
 
+  // WhatsApp wish dialog state
+  const [wishDialogOpen, setWishDialogOpen] = useState(false);
+  const [wishTarget, setWishTarget] = useState<{
+    name: string;
+    phone: string;
+    kind: "birthday" | "anniversary";
+  } | null>(null);
+  const [wishMessage, setWishMessage] = useState("");
+
+  const openWishDialog = (target: {
+    name: string;
+    phone: string;
+    kind: "birthday" | "anniversary";
+  }) => {
+    const firstName = target.name.split(" ")[0];
+    const defaultMessage =
+      target.kind === "birthday"
+        ? `Happy Birthday ${firstName}! Wishing you a great year ahead from our gym.`
+        : `Happy Anniversary ${firstName}! Wishing you many more happy years ahead from our gym.`;
+    setWishTarget(target);
+    setWishMessage(defaultMessage);
+    setWishDialogOpen(true);
+  };
+
+  const handleSendWish = () => {
+    if (!wishTarget) return;
+    const phone = wishTarget.phone.replace(/\D/g, "");
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(wishMessage)}`;
+    window.open(url, "_blank");
+    setWishDialogOpen(false);
+  };
+
   // Action required counts
   const overdueCount = stats.overdueFollowupsCount;
   const expiringCount = stats.expiringIn3Days.length;
@@ -451,7 +484,20 @@ export function DashboardClient({
       {/* Action Required */}
       {totalActionItems > 0 && (
         <Card className="gradient-border-card bg-card/70 dark:bg-card/80">
-          <CardHeader className="cursor-pointer" onClick={() => setActionExpanded((v) => !v)}>
+          <CardHeader
+            className="cursor-pointer"
+            role="button"
+            tabIndex={0}
+            aria-expanded={actionExpanded}
+            aria-controls="action-required-content"
+            onClick={() => setActionExpanded((v) => !v)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setActionExpanded((v) => !v);
+              }
+            }}
+          >
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <AlertTriangle className="size-4 text-status-grace" />
@@ -466,7 +512,7 @@ export function DashboardClient({
             </div>
           </CardHeader>
           {actionExpanded && (
-            <CardContent>
+            <CardContent id="action-required-content">
               <div className="flex flex-wrap gap-4">
                 {overdueCount > 0 && (
                   <Link href="/admin/followups?status=pending">
@@ -1100,10 +1146,8 @@ export function DashboardClient({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          const msg = encodeURIComponent(`Happy Birthday, ${b.name.split(" ")[0]}! Wishing you a great year ahead!`);
-                          window.open(`https://wa.me/${b.phone.replace(/\D/g, "")}?text=${msg}`, "_blank");
-                        }}
+                        aria-label={`Send birthday wish to ${b.name}`}
+                        onClick={() => openWishDialog({ name: b.name, phone: b.phone, kind: "birthday" })}
                       >
                         Send Wish
                       </Button>
@@ -1147,10 +1191,8 @@ export function DashboardClient({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          const msg = encodeURIComponent(`Happy Anniversary, ${a.name.split(" ")[0]}! Wishing you many more happy years ahead!`);
-                          window.open(`https://wa.me/${a.phone.replace(/\D/g, "")}?text=${msg}`, "_blank");
-                        }}
+                        aria-label={`Send anniversary wish to ${a.name}`}
+                        onClick={() => openWishDialog({ name: a.name, phone: a.phone, kind: "anniversary" })}
                       >
                         Send Wish
                       </Button>
@@ -1193,6 +1235,40 @@ export function DashboardClient({
           </CardContent>
         </Card>
       )}
+
+      {/* WhatsApp Wish Dialog */}
+      <Dialog open={wishDialogOpen} onOpenChange={setWishDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {wishTarget?.kind === "anniversary" ? "Send Anniversary Wish" : "Send Birthday Wish"}
+            </DialogTitle>
+          </DialogHeader>
+          {wishTarget && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label>Recipient</Label>
+                <p className="text-sm font-medium">{wishTarget.name}</p>
+                <p className="text-xs text-muted-foreground">{wishTarget.phone}</p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="wish-message">Message</Label>
+                <Textarea
+                  id="wish-message"
+                  value={wishMessage}
+                  onChange={(e) => setWishMessage(e.target.value)}
+                  rows={4}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter showCloseButton>
+            <Button onClick={handleSendWish} disabled={!wishMessage.trim()}>
+              Send via WhatsApp
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Inline Renewal Dialog */}
       <Dialog open={renewDialogOpen} onOpenChange={setRenewDialogOpen}>

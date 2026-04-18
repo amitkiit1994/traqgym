@@ -46,6 +46,34 @@ export const runtime = "nodejs";
 
 const OK = () => Response.json({ ok: true });
 
+// ── R07: process-local update_id dedupe (LRU, bounded) ─────────────────────
+// Telegram retries non-2xx responses, and even 2xx responses occasionally
+// get re-delivered (network blips, our process restarting mid-handler, etc).
+// Without dedupe a single inline-keyboard tap can be processed twice.
+//
+// Schema is frozen for this sprint, so we use a process-local LRU. Map
+// preserves insertion order in JS, so we evict the oldest entry when the
+// cache exceeds the cap. Acceptable tradeoff: a webhook hitting two
+// different serverless instances within the dedupe window can still
+// double-process — but the atomic claim in executeInsightAction (R03/R06)
+// is the second line of defence for the action-execution path.
+//
+// TODO: replace with a DB table (e.g. ProcessedTelegramUpdate{ updateId,
+// processedAt }) in the next schema window for true cross-instance dedupe.
+const SEEN_UPDATE_IDS = new Map<number, number>();
+const SEEN_UPDATE_IDS_MAX = 1000;
+
+function rememberUpdateId(updateId: number): boolean {
+  if (SEEN_UPDATE_IDS.has(updateId)) return false;
+  SEEN_UPDATE_IDS.set(updateId, Date.now());
+  if (SEEN_UPDATE_IDS.size > SEEN_UPDATE_IDS_MAX) {
+    // Map iterates in insertion order; first key is the oldest.
+    const oldest = SEEN_UPDATE_IDS.keys().next().value;
+    if (oldest !== undefined) SEEN_UPDATE_IDS.delete(oldest);
+  }
+  return true;
+}
+
 // ── Telegram update payload typing (subset we care about) ──────────────────
 type TgUser = { id: number; first_name?: string; username?: string };
 type TgChat = { id: number; type: string };
@@ -499,10 +527,12 @@ async function handleCallbackQuery(cq: TgCallbackQuery): Promise<Response> {
     const insightId = payload.i;
     const actionIndex = typeof payload.a === "number" ? payload.a : 0;
 
-    // Replay protection: if already dismissed, just acknowledge.
+    // We still fetch the insight up-front so we have the title for the
+    // edited-message text. This is a read-only lookup — the actual
+    // claim/dismiss is performed atomically inside executeInsightAction.
     const insight = await prisma.insight.findUnique({
       where: { id: insightId },
-      select: { id: true, title: true, dismissedAt: true },
+      select: { id: true, title: true },
     });
     if (!insight) {
       await answerCallbackQuery({
@@ -511,23 +541,13 @@ async function handleCallbackQuery(cq: TgCallbackQuery): Promise<Response> {
       });
       return OK();
     }
-    if (insight.dismissedAt) {
-      await answerCallbackQuery({
-        callbackQueryId: cq.id,
-        text: "Already done.",
-      });
-      // Cross-channel sync: edit the original message text.
-      if (cq.message) {
-        await editMessageText({
-          chatId: fromChatId,
-          messageId: cq.message.message_id,
-          text: `\u2705 <b>${escapeHtml(insight.title)}</b>\n<i>Already done</i>`,
-          parseMode: "HTML",
-        });
-      }
-      return OK();
-    }
 
+    // R03/R06: executeInsightAction performs an atomic claim
+    // (dismiss-first updateMany guarded by dismissedAt: null) BEFORE
+    // running the side-effect. If another channel (email magic-link,
+    // dashboard, or a duplicate Telegram tap) won the race, we receive
+    // { success: true, alreadyDone: true } and reply "Already done"
+    // instead of executing the side-effect a second time.
     const result = await executeInsightAction({
       insightId,
       actionIndex,
@@ -543,15 +563,24 @@ async function handleCallbackQuery(cq: TgCallbackQuery): Promise<Response> {
       return OK();
     }
 
-    // Dismiss insight (idempotency for future clicks across channels).
-    await prisma.insight
-      .update({
-        where: { id: insightId },
-        data: { dismissedAt: new Date(), dismissedById: systemWorkerId },
-      })
-      .catch(() => {});
+    if (result.alreadyDone) {
+      await answerCallbackQuery({
+        callbackQueryId: cq.id,
+        text: "Already done \u2713",
+      });
+      if (cq.message) {
+        await editMessageText({
+          chatId: fromChatId,
+          messageId: cq.message.message_id,
+          text: `\u2705 <b>${escapeHtml(insight.title)}</b>\n<i>Already done</i>`,
+          parseMode: "HTML",
+        }).catch(() => {});
+      }
+      return OK();
+    }
 
-    // Audit + cross-channel sync.
+    // Audit + cross-channel sync. Dismissal already happened atomically
+    // inside the service — no separate update call needed here.
     await prisma.auditLog
       .create({
         data: {
@@ -714,6 +743,18 @@ export async function POST(request: Request) {
     update = (await request.json()) as TgUpdate;
   } catch {
     return Response.json({ ok: false, error: "bad_json" }, { status: 400 });
+  }
+
+  // R07: process-local update_id dedupe. Telegram occasionally re-delivers
+  // updates (especially after non-2xx responses or transient network errors).
+  // Skip silently with 200 OK so Telegram stops retrying.
+  if (typeof update.update_id === "number") {
+    if (!rememberUpdateId(update.update_id)) {
+      console.log(
+        `[telegram-webhook] dedupe: ignoring duplicate update_id=${update.update_id}`
+      );
+      return OK();
+    }
   }
 
   // ── Callback query (inline keyboard click) ───────────────────────────────

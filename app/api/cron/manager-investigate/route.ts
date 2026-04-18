@@ -13,21 +13,13 @@
  * Auth: Bearer / x-cron-secret / ?secret= matching CRON_SECRET (env).
  */
 
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { requireCronSecret } from "@/lib/auth-cron";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-function readSecret(request: Request): string | null {
-  const authHeader = request.headers.get("authorization") ?? "";
-  const bearer = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
-  const xHeader = request.headers.get("x-cron-secret");
-  const queryParam = new URL(request.url).searchParams.get("secret");
-  return bearer ?? xHeader ?? queryParam;
-}
 
 type InsightDataJson = Record<string, unknown> & {
   requiresInvestigation?: boolean;
@@ -118,11 +110,9 @@ function buildEnrichmentNarrative(
   return lines.join("\n");
 }
 
-export async function GET(request: Request) {
-  const presented = readSecret(request);
-  if (process.env.CRON_SECRET && presented !== process.env.CRON_SECRET) {
-    return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   // Find critical insights that asked for investigation and haven't been
   // enriched yet. Prisma JSON path filters work on Postgres jsonb.

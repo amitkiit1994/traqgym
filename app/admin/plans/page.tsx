@@ -47,6 +47,15 @@ export default function PlansPage() {
   const [editing, setEditing] = useState<Plan | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "all">("active");
+
+  const filteredPlans = plans.filter((p) => {
+    if (statusFilter === "active") return p.isActive;
+    if (statusFilter === "inactive") return !p.isActive;
+    return true;
+  });
+  const activeCount = plans.filter((p) => p.isActive).length;
+  const inactiveCount = plans.length - activeCount;
 
   const load = () => {
     startTransition(async () => {
@@ -115,6 +124,24 @@ export default function PlansPage() {
         <Button onClick={openCreate}>Add Plan</Button>
       </div>
 
+      <div className="flex flex-wrap gap-1">
+        {[
+          { value: "active" as const, label: "Active", count: activeCount },
+          { value: "inactive" as const, label: "Inactive", count: inactiveCount },
+          { value: "all" as const, label: "All", count: plans.length },
+        ].map((s) => (
+          <Button
+            key={s.value}
+            variant={statusFilter === s.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(s.value)}
+          >
+            {s.label}
+            <Badge variant="secondary" className="ml-1.5">{s.count}</Badge>
+          </Button>
+        ))}
+      </div>
+
       <div className="overflow-x-auto">
       <Table>
         <TableHeader>
@@ -129,7 +156,7 @@ export default function PlansPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {plans.map((plan) => (
+          {filteredPlans.map((plan) => (
             <TableRow key={plan.id}>
               <TableCell className="hidden md:table-cell">{plan.id}</TableCell>
               <TableCell>
@@ -163,15 +190,21 @@ export default function PlansPage() {
               </TableCell>
             </TableRow>
           ))}
-          {plans.length === 0 && (
+          {filteredPlans.length === 0 && (
             <TableRow>
               <TableCell colSpan={7}>
                 <div className="flex flex-col items-center gap-2 py-8">
                   <CreditCard className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No plans found</p>
-                  <Button variant="outline" size="sm" onClick={openCreate}>
-                    Add Plan
-                  </Button>
+                  <p className="text-sm text-muted-foreground">
+                    {plans.length === 0
+                      ? "No plans found"
+                      : `No ${statusFilter === "all" ? "" : statusFilter} plans`}
+                  </p>
+                  {plans.length === 0 && (
+                    <Button variant="outline" size="sm" onClick={openCreate}>
+                      Add Plan
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>

@@ -124,15 +124,22 @@ export async function markPayoutPaid(params: {
       return { success: false, error: `Payout is already ${payout.status}` };
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.trainerPayout.update({
-        where: { id: params.payoutId },
+    const claimed = await prisma.$transaction(async (tx) => {
+      // Conditional update: only flips a payout that hasn't already been paid.
+      // count===0 means another caller won the race — reject this attempt so
+      // we don't double-pay (or double-audit) the trainer.
+      const update = await tx.trainerPayout.updateMany({
+        where: { id: params.payoutId, paidAt: null, status: "pending" },
         data: {
           status: "paid",
           paidAt: params.paidAt ?? new Date(),
           paymentMode: params.paymentMode,
         },
       });
+
+      if (update.count === 0) {
+        return false;
+      }
 
       await tx.auditLog.create({
         data: {
@@ -148,7 +155,13 @@ export async function markPayoutPaid(params: {
           actorType: "worker",
         },
       });
+
+      return true;
     });
+
+    if (!claimed) {
+      return { success: false, error: "Payout has already been paid" };
+    }
 
     return { success: true };
   } catch (err) {

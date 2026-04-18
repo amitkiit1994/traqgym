@@ -128,16 +128,22 @@ export async function exportInvoicesAsTallyXml(
     salesEntry.ele("AMOUNT").txt(String(-taxableValue));
 
     if (isIntraState) {
-      const half = round2(gstTotal / 2);
+      // R13: split GST into CGST/SGST without losing the residual paise.
+      // round2(gstTotal/2) on both legs drops 0.005 when gstTotal has odd
+      // paise (e.g. 13.05 → 6.52 + 6.52 = 13.04). Compute CGST first via
+      // round2, then assign the remainder to SGST so the two legs always
+      // sum back to gstTotal exactly.
+      const cgst = round2(gstTotal / 2);
+      const sgst = round2(gstTotal - cgst);
       const cgstEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
       cgstEntry.ele("LEDGERNAME").txt(cgstLedger);
       cgstEntry.ele("ISDEEMEDPOSITIVE").txt("No");
-      cgstEntry.ele("AMOUNT").txt(`+${half}`);
+      cgstEntry.ele("AMOUNT").txt(`+${cgst}`);
 
       const sgstEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
       sgstEntry.ele("LEDGERNAME").txt(sgstLedger);
       sgstEntry.ele("ISDEEMEDPOSITIVE").txt("No");
-      sgstEntry.ele("AMOUNT").txt(`+${half}`);
+      sgstEntry.ele("AMOUNT").txt(`+${sgst}`);
     } else {
       const igstEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
       igstEntry.ele("LEDGERNAME").txt(igstLedger);

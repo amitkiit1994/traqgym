@@ -783,18 +783,39 @@ export async function getActiveComps(opts?: {
   if (tickets.length === 0) return [];
 
   // Count visits since each ticket's buyDate.
-  const visitCounts = new Map<number, number>();
-  await Promise.all(
-    tickets.map(async (t) => {
-      const count = await prisma.attendanceLog.count({
-        where: {
-          userId: t.userId,
-          checkIn: { gte: t.buyDate },
-        },
-      });
-      visitCounts.set(t.id, count);
-    })
+  // Single query: fetch all attendance for these userIds since the earliest
+  // ticket buyDate, then bucket per-user and apply each ticket's buyDate cutoff
+  // in JS. Replaces N count() queries with one findMany.
+  const userIds = Array.from(new Set(tickets.map((t) => t.userId)));
+  const minBuyDate = tickets.reduce(
+    (acc, t) => (t.buyDate < acc ? t.buyDate : acc),
+    tickets[0].buyDate
   );
+  const attendanceRows = await prisma.attendanceLog.findMany({
+    where: {
+      userId: { in: userIds },
+      checkIn: { gte: minBuyDate },
+    },
+    select: { userId: true, checkIn: true },
+  });
+  const attendanceByUser = new Map<number, Date[]>();
+  for (const row of attendanceRows) {
+    if (row.userId == null) continue;
+    const arr = attendanceByUser.get(row.userId);
+    if (arr) arr.push(row.checkIn);
+    else attendanceByUser.set(row.userId, [row.checkIn]);
+  }
+  const visitCounts = new Map<number, number>();
+  for (const t of tickets) {
+    const checkIns = attendanceByUser.get(t.userId);
+    if (!checkIns) {
+      visitCounts.set(t.id, 0);
+      continue;
+    }
+    let n = 0;
+    for (const c of checkIns) if (c >= t.buyDate) n++;
+    visitCounts.set(t.id, n);
+  }
 
   return tickets.map((t) => ({
     ticketId: t.id,
@@ -851,18 +872,38 @@ export async function getActiveCompPasses(opts?: {
 
   if (passes.length === 0) return [];
 
-  const visitCounts = new Map<number, number>();
-  await Promise.all(
-    passes.map(async (p) => {
-      const count = await prisma.attendanceLog.count({
-        where: {
-          userId: p.userId,
-          checkIn: { gte: p.startsAt },
-        },
-      });
-      visitCounts.set(p.id, count);
-    })
+  // Single query: fetch all attendance for these userIds since earliest startsAt,
+  // bucket per-user, and apply each pass's startsAt cutoff in JS.
+  const passUserIds = Array.from(new Set(passes.map((p) => p.userId)));
+  const minStartsAt = passes.reduce(
+    (acc, p) => (p.startsAt < acc ? p.startsAt : acc),
+    passes[0].startsAt
   );
+  const passAttendanceRows = await prisma.attendanceLog.findMany({
+    where: {
+      userId: { in: passUserIds },
+      checkIn: { gte: minStartsAt },
+    },
+    select: { userId: true, checkIn: true },
+  });
+  const passAttendanceByUser = new Map<number, Date[]>();
+  for (const row of passAttendanceRows) {
+    if (row.userId == null) continue;
+    const arr = passAttendanceByUser.get(row.userId);
+    if (arr) arr.push(row.checkIn);
+    else passAttendanceByUser.set(row.userId, [row.checkIn]);
+  }
+  const visitCounts = new Map<number, number>();
+  for (const p of passes) {
+    const checkIns = passAttendanceByUser.get(p.userId);
+    if (!checkIns) {
+      visitCounts.set(p.id, 0);
+      continue;
+    }
+    let n = 0;
+    for (const c of checkIns) if (c >= p.startsAt) n++;
+    visitCounts.set(p.id, n);
+  }
 
   return passes.map((p) => ({
     passId: p.id,

@@ -54,8 +54,8 @@ export default async function CompsPage() {
             Complimentary Memberships
           </h1>
           <p className="text-sm text-muted-foreground">
-            Comps are real plans issued for free. Comp Passes are informal,
-            plan-less day passes.
+            <strong>Free Plan</strong> = real plan (e.g. 1-Month Gold) issued at ₹0; counts as an active member.{" "}
+            <strong>Day Pass</strong> = informal access for N days, no plan attached.
           </p>
         </div>
         <CompsPageActions />
@@ -181,7 +181,23 @@ export default async function CompsPage() {
                     {c.visitsSinceIssue}
                   </TableCell>
                   <TableCell className="text-right">
-                    <RevokeCompButton ticketId={c.ticketId} />
+                    <RevokeCompButton
+                      ticketId={c.ticketId}
+                      memberName={c.userName}
+                      daysRemaining={
+                        c.expireDate
+                          ? Math.max(
+                              0,
+                              Math.ceil(
+                                (new Date(c.expireDate).getTime() -
+                                  Date.now()) /
+                                  86400000,
+                              ),
+                            )
+                          : null
+                      }
+                      reason={c.reason ?? null}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

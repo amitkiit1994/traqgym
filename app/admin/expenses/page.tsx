@@ -78,6 +78,15 @@ function currentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function monthLabel(value: string) {
+  if (!value || value === "all") return "All months";
+  const [y, m] = value.split("-").map(Number);
+  if (!y || !m) return value;
+  return new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(
+    new Date(y, m - 1, 1)
+  );
+}
+
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -219,7 +228,10 @@ export default function ExpensesPage() {
     <div className="h-full flex flex-col gap-3 overflow-hidden">
       <div className="shrink-0 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold">Expenses</h1>
+        <h1 className="text-xl font-semibold">
+          Expenses
+          <span className="text-muted-foreground font-normal"> — {monthLabel(month)}</span>
+        </h1>
         <Button onClick={openCreate}>New Expense</Button>
       </div>
 

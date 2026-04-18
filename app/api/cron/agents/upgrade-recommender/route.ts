@@ -1,15 +1,10 @@
+import { NextRequest } from "next/server";
 import { runUpgradeRecommender } from "@/lib/agents/upgrade-recommender";
+import { requireCronSecret } from "@/lib/auth-cron";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const secret =
-    request.headers.get("x-cron-secret") ||
-    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    url.searchParams.get("secret");
-
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-    return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   try {
     const { insightsCreated } = await runUpgradeRecommender();

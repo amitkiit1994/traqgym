@@ -210,9 +210,14 @@ export async function getMember(id: number) {
     where: { id },
     include: {
       location: true,
+      // Cap at the 20 most recent tickets — the detail page only renders a
+      // Membership History table and finds the active ticket (which is always
+      // among the most recent by buyDate). Older tickets are still reachable
+      // via payment history / dedicated views if needed.
       memberTickets: {
         include: { plan: true },
         orderBy: { buyDate: "desc" },
+        take: 20,
       },
       attendanceLogs: {
         orderBy: { checkIn: "desc" },

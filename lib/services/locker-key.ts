@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 type IssueKeyParams = {
@@ -25,53 +26,64 @@ export async function issueKey(params: IssueKeyParams) {
     return { success: false as const, error: "Deposit amount must be non-negative" };
   }
 
-  // Check there isn't already an outstanding issuance for this locker
-  const outstanding = await prisma.lockerKeyIssuance.findFirst({
-    where: { lockerId: params.lockerId, status: "issued" },
-  });
-  if (outstanding) {
+  // Wrap the duplicate-check + create in a Serializable transaction so two
+  // concurrent issuances cannot both pass the "no outstanding" check.
+  try {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const outstanding = await tx.lockerKeyIssuance.findFirst({
+          where: { lockerId: params.lockerId, status: "issued" },
+        });
+        if (outstanding) {
+          throw new Error("Locker key is already issued to another member");
+        }
+
+        const issuance = await tx.lockerKeyIssuance.create({
+          data: {
+            lockerId: params.lockerId,
+            userId: params.userId,
+            issuedById: params.issuedById,
+            depositAmount: params.depositAmount,
+            expectedReturnAt: params.expectedReturnAt ?? null,
+            conditionNotes: params.conditionNotes ?? null,
+            witnessId: params.witnessId ?? null,
+            photoUrl: params.photoUrl ?? null,
+            status: "issued",
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            action: "locker_key_issued",
+            status: "success",
+            details: JSON.stringify({
+              issuanceId: issuance.id,
+              lockerId: params.lockerId,
+              lockerNumber: locker.number,
+              userId: params.userId,
+              depositAmount: params.depositAmount,
+              expectedReturnAt: params.expectedReturnAt?.toISOString() ?? null,
+            }),
+            actorId: params.issuedById,
+            actorType: "worker",
+          },
+        });
+
+        return issuance;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+
+    return { success: true as const, issuance: result };
+  } catch (err) {
     return {
       success: false as const,
-      error: "Locker key is already issued to another member",
+      error:
+        err instanceof Error
+          ? err.message
+          : "Failed to issue locker key",
     };
   }
-
-  const result = await prisma.$transaction(async (tx) => {
-    const issuance = await tx.lockerKeyIssuance.create({
-      data: {
-        lockerId: params.lockerId,
-        userId: params.userId,
-        issuedById: params.issuedById,
-        depositAmount: params.depositAmount,
-        expectedReturnAt: params.expectedReturnAt ?? null,
-        conditionNotes: params.conditionNotes ?? null,
-        witnessId: params.witnessId ?? null,
-        photoUrl: params.photoUrl ?? null,
-        status: "issued",
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        action: "locker_key_issued",
-        status: "success",
-        details: JSON.stringify({
-          issuanceId: issuance.id,
-          lockerId: params.lockerId,
-          lockerNumber: locker.number,
-          userId: params.userId,
-          depositAmount: params.depositAmount,
-          expectedReturnAt: params.expectedReturnAt?.toISOString() ?? null,
-        }),
-        actorId: params.issuedById,
-        actorType: "worker",
-      },
-    });
-
-    return issuance;
-  });
-
-  return { success: true as const, issuance: result };
 }
 
 type ReturnKeyParams = {
@@ -215,50 +227,59 @@ export async function reissueKey(params: ReissueKeyParams) {
     return { success: false as const, error: "Deposit amount must be non-negative" };
   }
 
-  // Make sure the new locker isn't already issued
-  const outstanding = await prisma.lockerKeyIssuance.findFirst({
-    where: { lockerId, status: "issued" },
-  });
-  if (outstanding) {
+  // Wrap the duplicate-check + create in a Serializable transaction so two
+  // concurrent reissuances cannot both pass the "no outstanding" check.
+  try {
+    const created = await prisma.$transaction(
+      async (tx) => {
+        const outstanding = await tx.lockerKeyIssuance.findFirst({
+          where: { lockerId, status: "issued" },
+        });
+        if (outstanding) {
+          throw new Error("Locker key is already issued to another member");
+        }
+
+        const issuance = await tx.lockerKeyIssuance.create({
+          data: {
+            lockerId,
+            userId: parent.userId,
+            issuedById: params.issuedById,
+            depositAmount: params.depositAmount,
+            expectedReturnAt: params.expectedReturnAt ?? null,
+            parentIssuanceId: parent.id,
+            status: "issued",
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            action: "locker_key_reissued",
+            status: "success",
+            details: JSON.stringify({
+              issuanceId: issuance.id,
+              parentIssuanceId: parent.id,
+              lockerId,
+              userId: parent.userId,
+              depositAmount: params.depositAmount,
+            }),
+            actorId: params.issuedById,
+            actorType: "worker",
+          },
+        });
+
+        return issuance;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+
+    return { success: true as const, issuance: created };
+  } catch (err) {
     return {
       success: false as const,
-      error: "Locker key is already issued to another member",
+      error:
+        err instanceof Error ? err.message : "Failed to reissue locker key",
     };
   }
-
-  const created = await prisma.$transaction(async (tx) => {
-    const issuance = await tx.lockerKeyIssuance.create({
-      data: {
-        lockerId,
-        userId: parent.userId,
-        issuedById: params.issuedById,
-        depositAmount: params.depositAmount,
-        expectedReturnAt: params.expectedReturnAt ?? null,
-        parentIssuanceId: parent.id,
-        status: "issued",
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        action: "locker_key_reissued",
-        status: "success",
-        details: JSON.stringify({
-          issuanceId: issuance.id,
-          parentIssuanceId: parent.id,
-          lockerId,
-          userId: parent.userId,
-          depositAmount: params.depositAmount,
-        }),
-        actorId: params.issuedById,
-        actorType: "worker",
-      },
-    });
-
-    return issuance;
-  });
-
-  return { success: true as const, issuance: created };
 }
 
 export async function getOverdueKeys(thresholdDays = 7) {

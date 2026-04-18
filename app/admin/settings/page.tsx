@@ -1039,6 +1039,60 @@ export default function SettingsPage() {
           {cronResult && (
             <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">{cronResult}</p>
           )}
+
+          {/* Insight Agents — manual run buttons */}
+          <div className="pt-3 border-t">
+            <Label className="text-sm">Insight Agents</Label>
+            <p className="text-xs text-muted-foreground mb-3">
+              Run an agent now to refresh its insight cards on the dashboard. Each agent dedupes — safe to re-run.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "comp-audit", label: "Comp Audit" },
+                { key: "silent-churn", label: "Silent Churn" },
+                { key: "revenue-anomaly-v2", label: "Revenue Anomaly" },
+                { key: "renewal-cliff", label: "Renewal Cliff" },
+                { key: "staff-performance", label: "Staff Performance" },
+                { key: "plan-mix-drift", label: "Plan Mix Drift" },
+                { key: "comp-leakage-investigator", label: "Comp Leakage" },
+                { key: "defaulted-ticket-escalator", label: "Defaulted Tickets" },
+                { key: "installment-reminder", label: "Installment Reminder" },
+                { key: "upgrade-recommender", label: "Upgrade Recommender" },
+                { key: "multi-location-comparator", label: "Multi-Location" },
+                { key: "trainer-rating", label: "Trainer Ratings" },
+                { key: "cash-shift-variance-investigator", label: "Cash Variance" },
+                { key: "overdue-keys", label: "Overdue Keys" },
+              ].map((agent) => (
+                <Button
+                  key={agent.key}
+                  variant="outline"
+                  size="sm"
+                  disabled={triggeringCron !== null}
+                  className="justify-start"
+                  onClick={async () => {
+                    setTriggeringCron(agent.key);
+                    setCronResult(null);
+                    try {
+                      const res = await fetch(`/api/cron/agents/${agent.key}`);
+                      const data = await res.json();
+                      setCronResult(
+                        `${agent.label}: ${
+                          data.insightsCreated !== undefined
+                            ? `${data.insightsCreated} insight(s) created`
+                            : JSON.stringify(data)
+                        }`
+                      );
+                    } catch (e) {
+                      setCronResult(`${agent.label}: failed (${e instanceof Error ? e.message : "unknown"})`);
+                    }
+                    setTriggeringCron(null);
+                  }}
+                >
+                  {triggeringCron === agent.key ? "Running..." : agent.label}
+                </Button>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

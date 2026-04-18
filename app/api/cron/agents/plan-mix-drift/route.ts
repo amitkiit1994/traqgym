@@ -1,21 +1,14 @@
+import { NextRequest } from "next/server";
 import { run } from "@/lib/agents/plan-mix-drift";
 import { getSetting } from "@/lib/services/settings";
+import { requireCronSecret } from "@/lib/auth-cron";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
-  const authHeader = request.headers.get("authorization") ?? "";
-  const bearer = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
-  const xHeader = request.headers.get("x-cron-secret");
-  const queryParam = new URL(request.url).searchParams.get("secret");
-  const presented = bearer ?? xHeader ?? queryParam;
-
-  if (process.env.CRON_SECRET && presented !== process.env.CRON_SECRET) {
-    return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   const enabled = await getSetting("cron_plan_mix_drift_enabled", "true");
   if (enabled !== "true") {

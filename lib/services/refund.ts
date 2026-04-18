@@ -136,13 +136,56 @@ export async function requestRefund(params: {
     return { success: false, error: "Requesting worker not found" };
   }
 
-  // Check for an existing pending refund on this payment to avoid duplicates.
+  // Check for an existing pending refund on this payment to inform the audit
+  // log (purely informational — the cumulative-amount guard below is what
+  // actually blocks duplicates / over-refunds).
   const existingPending = await prisma.refund.findFirst({
     where: { paymentId: params.paymentId, status: { in: ["pending", "approved"] } },
   });
 
   try {
     const refund = await prisma.$transaction(async (tx) => {
+      // R04 guard: prevent stacked refunds that, in aggregate, exceed the
+      // original payment. We must include refunds that have already been
+      // PROCESSED (money already left the till) in addition to pending /
+      // approved ones — otherwise a partial-processed refund leaves the door
+      // open for a second request that, when also processed, exceeds the
+      // payment amount. Run inside the txn to avoid races between
+      // concurrent requestRefund calls (txn isolation serializes the read).
+      const cumulativeAgg = await tx.refund.groupBy({
+        by: ["status"],
+        where: {
+          paymentId: params.paymentId,
+          status: { in: ["pending", "approved", "processed"] },
+        },
+        _sum: { amountRequested: true },
+      });
+
+      let alreadyProcessedTotal = 0;
+      let alreadyPendingTotal = 0;
+      for (const row of cumulativeAgg) {
+        const sum = Number(row._sum.amountRequested ?? 0);
+        if (row.status === "processed") {
+          alreadyProcessedTotal += sum;
+        } else {
+          alreadyPendingTotal += sum;
+        }
+      }
+
+      const cumulative =
+        alreadyProcessedTotal + alreadyPendingTotal + params.amountRequested;
+      if (cumulative > paid) {
+        throw new Error(
+          `Cumulative refund ₹${cumulative.toFixed(2)} (processed ₹${alreadyProcessedTotal.toFixed(
+            2,
+          )} + pending/approved ₹${alreadyPendingTotal.toFixed(
+            2,
+          )} + requested ₹${params.amountRequested.toFixed(
+            2,
+          )}) exceeds payment amount ₹${paid.toFixed(2)}`,
+        );
+      }
+
       const created = await tx.refund.create({
         data: {
           paymentId: params.paymentId,

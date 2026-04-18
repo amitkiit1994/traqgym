@@ -168,7 +168,12 @@ export default function MembersPage() {
     load();
     getLocations().then((locs) => setLocations(locs));
     getPlans().then((ps) =>
-      setPlans(ps.map((p) => ({ id: p.id, name: p.name, isActive: p.isActive })))
+      setPlans(
+        ps
+          .filter((p) => p.isActive)
+          .map((p) => ({ id: p.id, name: p.name, isActive: p.isActive }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      )
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -427,7 +432,7 @@ export default function MembersPage() {
                 : plans.find((p) => String(p.id) === planFilter)?.name ?? "All plans"}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent align="start" alignItemWithTrigger={false}>
             <SelectItem value="all">All plans</SelectItem>
             {plans.map((p) => (
               <SelectItem key={p.id} value={String(p.id)}>

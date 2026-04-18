@@ -84,12 +84,13 @@ export default function EnquiriesPage() {
   const searchParams = useSearchParams();
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [total, setTotal] = useState(0);
+  const [hiddenClosedCount, setHiddenClosedCount] = useState(0);
   const [page, setPage] = useState(1);
   const [locations, setLocations] = useState<Location[]>([]);
   const [filter, setFilter] = useState(() => {
     const urlStatus = searchParams.get("status");
     if (urlStatus && statusOptions.includes(urlStatus)) return urlStatus;
-    return "all";
+    return "new";
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") || "");
   const [showArchived, setShowArchived] = useState(() => searchParams.get("showArchived") === "true");
@@ -140,6 +141,7 @@ export default function EnquiriesPage() {
       ]);
       setEnquiries(result.data);
       setTotal(result.total);
+      setHiddenClosedCount(result.hiddenClosedCount ?? 0);
       setLocations(locs);
     });
   };
@@ -257,6 +259,16 @@ export default function EnquiriesPage() {
           >
             {showArchived ? "Showing archived" : "Show archived"}
           </Button>
+          {filter === "all" && !showArchived && hiddenClosedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowArchived(true)}
+              className="text-xs text-muted-foreground self-center underline-offset-2 hover:underline"
+              title="Show converted and lost enquiries"
+            >
+              +{hiddenClosedCount} closed hidden
+            </button>
+          )}
         </div>
 
         <SearchInput

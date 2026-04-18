@@ -56,6 +56,14 @@ export function SellPtPackageDialog({
   const [error, setError] = useState<string>("");
   const [isPending, startTransition] = useTransition();
 
+  // Drop trainerId if the previously selected trainer is no longer in the list
+  // (e.g., merged via dedup, or deactivated since this dialog last opened).
+  useEffect(() => {
+    if (trainerId !== "" && !trainers.find((t) => t.id === trainerId)) {
+      setTrainerId(trainers[0]?.id ?? "");
+    }
+  }, [trainers, trainerId]);
+
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {

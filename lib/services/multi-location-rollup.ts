@@ -33,8 +33,19 @@ export async function getMultiLocationRollup(params: {
   const rollups: LocationRollupRow[] = [];
 
   for (const loc of locations) {
+    // R11: exclude non-cash-movement / reversing payment modes from
+    // collections + avg-ticket-size so refunds don't inflate revenue and
+    // transfer-in / comp passes don't pollute the average.
+    const NON_COLLECTION_MODES = [
+      "refund",
+      "transfer_in",
+      "transfer_out",
+      "complimentary",
+    ];
+
     const [
       activeMembers,
+      activeCompMembers,
       collectionsAgg,
       expensesAgg,
       paymentCount,
@@ -56,10 +67,25 @@ export async function getMultiLocationRollup(params: {
         })
         .then((rows) => rows.length),
 
+      // R11: comp ratio = active complimentary tickets / total active tickets
+      // for this location at `to`. We count tickets (not distinct users) on
+      // both sides so the ratio is well-defined even when a user has multiple
+      // active tickets.
+      prisma.memberTicket.count({
+        where: {
+          locationId: loc.id,
+          status: "active",
+          isComplimentary: true,
+          expireDate: { gte: to },
+          buyDate: { lt: to },
+        },
+      }),
+
       prisma.payment.aggregate({
         where: {
           locationId: loc.id,
           createdAt: { gte: from, lt: to },
+          paymentMode: { notIn: NON_COLLECTION_MODES },
         },
         _sum: { amount: true },
         _count: { _all: true },
@@ -77,6 +103,7 @@ export async function getMultiLocationRollup(params: {
         where: {
           locationId: loc.id,
           createdAt: { gte: from, lt: to },
+          paymentMode: { notIn: NON_COLLECTION_MODES },
         },
       }),
 
@@ -97,6 +124,20 @@ export async function getMultiLocationRollup(params: {
       // who have no newer ticket — counted below from `activeAtStart` snapshot.
       Promise.resolve(0),
     ]);
+
+    // Total active tickets for compRatio denominator (matches counter above).
+    const totalActiveTicketCount = await prisma.memberTicket.count({
+      where: {
+        locationId: loc.id,
+        status: "active",
+        expireDate: { gte: to },
+        buyDate: { lt: to },
+      },
+    });
+    const compRatio =
+      totalActiveTicketCount > 0
+        ? Math.round((activeCompMembers / totalActiveTicketCount) * 1000) / 1000
+        : 0;
 
     const collectionsThisPeriod = Number(collectionsAgg._sum.amount ?? 0);
     const expensesThisPeriod = Number(expensesAgg._sum.amount ?? 0);
@@ -135,7 +176,7 @@ export async function getMultiLocationRollup(params: {
       collectionsThisPeriod,
       expensesThisPeriod,
       netThisPeriod,
-      compRatio: 0, // Not modeled in this branch's schema (no isComplimentary flag).
+      compRatio,
       churnRatePct,
       avgTicketSize,
     });

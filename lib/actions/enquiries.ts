@@ -15,7 +15,7 @@ export async function getEnquiries(filters?: {
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }) {
-  try { await requireWorker(); } catch { return { data: [], total: 0 }; }
+  try { await requireWorker(); } catch { return { data: [], total: 0, hiddenClosedCount: 0 }; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {};
   const status = filters?.status;
@@ -25,6 +25,8 @@ export async function getEnquiries(filters?: {
     where.updatedAt = { lt: new Date(Date.now() - 2 * 86400000) };
   } else if (status && status !== "all") {
     where.status = status;
+  } else if ((!status || status === "all") && !filters?.showArchived) {
+    where.status = { notIn: ["converted", "lost"] };
   }
   if (filters?.locationId) where.locationId = filters.locationId;
 
@@ -61,7 +63,14 @@ export async function getEnquiries(filters?: {
   const page = filters?.page ?? 1;
   const pageSize = filters?.pageSize ?? 25;
 
-  const [rows, total] = await Promise.all([
+  const isAllFilter = !status || status === "all";
+  const showHiddenHint = isAllFilter && !filters?.showArchived;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hiddenClosedWhere: any = { ...where };
+  hiddenClosedWhere.status = { in: ["converted", "lost"] };
+
+  const [rows, total, hiddenClosedCount] = await Promise.all([
     prisma.enquiry.findMany({
       where,
       include: { location: { select: { name: true } } },
@@ -70,6 +79,7 @@ export async function getEnquiries(filters?: {
       take: pageSize,
     }),
     prisma.enquiry.count({ where }),
+    showHiddenHint ? prisma.enquiry.count({ where: hiddenClosedWhere }) : Promise.resolve(0),
   ]);
 
   const data = rows.map((r) => ({
@@ -89,7 +99,7 @@ export async function getEnquiries(filters?: {
     createdAt: r.createdAt.toISOString(),
   }));
 
-  return { data, total };
+  return { data, total, hiddenClosedCount };
 }
 
 export async function createEnquiry(data: {
