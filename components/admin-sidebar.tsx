@@ -114,6 +114,8 @@ const navGroups: NavGroup[] = [
       { href: "/admin/balance-due", label: "Balance Due", icon: IndianRupee },
       { href: "/admin/followups", label: "Followups", icon: AlertCircle },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/tally-export", label: "Tally Export", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/gstr1", label: "GSTR-1", icon: FileBarChart, adminOnly: true },
     ],
   },
   {
