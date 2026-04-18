@@ -114,6 +114,8 @@ model TicketPlan {
   isActive   Boolean  @default(true)
   isTrial    Boolean  @default(false)
   trialDays  Int?
+  joiningFee          Decimal @default(0) @db.Decimal(10, 2)
+  joiningFeeAppliesOn String  @default("first_only") // first_only, every_renewal, never
   createdAt  DateTime @default(now())
 
   memberTickets MemberTicket[]
@@ -137,6 +139,7 @@ model MemberTicket {
   totalAmount Decimal?  @db.Decimal(10, 2)
   amountPaid  Decimal   @default(0) @db.Decimal(10, 2)
   balanceDue  Decimal   @default(0) @db.Decimal(10, 2)
+  joiningFeeCharged Decimal @default(0) @db.Decimal(10, 2)
   dueDate     DateTime?
   createdAt  DateTime   @default(now())
 
