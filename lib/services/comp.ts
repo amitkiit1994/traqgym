@@ -29,11 +29,11 @@ export type CompReason =
   | "other";
 
 export type IssueCompResult =
-  | { success: true; ticket: MemberTicket }
+  | { success: true; ticket?: MemberTicket; approvalRequested?: boolean; approvalId?: number }
   | { success: false; error: string };
 
 export type IssueCompPassResult =
-  | { success: true; passId: number }
+  | { success: true; passId?: number; approvalRequested?: boolean; approvalId?: number }
   | { success: false; error: string };
 
 export type RevokeResult =
@@ -112,7 +112,7 @@ export type CompStats = {
 
 const DEFAULT_COMP_AUTO_APPROVE_DAYS = 7;
 
-async function getCompAutoApproveDaysMax(): Promise<number> {
+export async function getCompAutoApproveDaysMax(): Promise<number> {
   const v = await getSetting(
     "comp_auto_approve_days_max",
     String(DEFAULT_COMP_AUTO_APPROVE_DAYS)
@@ -165,13 +165,28 @@ export async function issueComp(params: {
   if (!days || days <= 0)
     return { success: false, error: "Comp duration must be > 0 days" };
 
-  // 6. Approval gate
+  // 6. Approval gate — route to universal approval queue
   const maxAutoDays = await getCompAutoApproveDaysMax();
   if (days > maxAutoDays && !params.approvedById) {
-    return {
-      success: false,
-      error: `Approval required for comps > ${maxAutoDays} days`,
-    };
+    const { requestApproval } = await import("@/lib/services/approvals");
+    const approvalRes = await requestApproval({
+      type: "comp",
+      entityType: "MemberTicket",
+      requestedById: params.issuedById,
+      payload: {
+        userId: params.userId,
+        planId: params.planId,
+        reason: params.reason,
+        reasonDetail: params.reasonDetail ?? null,
+        days,
+        issuedById: params.issuedById,
+      },
+      expiresInDays: 30,
+    });
+    if (!approvalRes.success) {
+      return { success: false, error: approvalRes.error };
+    }
+    return { success: true, approvalRequested: true, approvalId: approvalRes.approvalId };
   }
 
   // 7. Idempotency: same userId + planId + issuedById + isComplimentary in last 60s
@@ -492,10 +507,25 @@ export async function issueCompPass(params: {
   );
   const maxAutoDays = await getCompAutoApproveDaysMax();
   if (days > maxAutoDays && !params.approvedById) {
-    return {
-      success: false,
-      error: `Approval required for comp passes > ${maxAutoDays} days`,
-    };
+    const { requestApproval } = await import("@/lib/services/approvals");
+    const approvalRes = await requestApproval({
+      type: "comp_pass",
+      entityType: "CompPass",
+      requestedById: params.issuedById,
+      payload: {
+        userId: params.userId,
+        reason: params.reason,
+        reasonDetail: params.reasonDetail ?? null,
+        expiresAt: params.expiresAt.toISOString(),
+        issuedById: params.issuedById,
+        notes: params.notes ?? null,
+      },
+      expiresInDays: 30,
+    });
+    if (!approvalRes.success) {
+      return { success: false, error: approvalRes.error };
+    }
+    return { success: true, approvalRequested: true, approvalId: approvalRes.approvalId };
   }
 
   try {

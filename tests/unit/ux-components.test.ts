@@ -135,6 +135,7 @@ vi.mock("@/lib/prisma", () => ({
     paymentFollowup: { count: vi.fn() },
     enquiry: { count: vi.fn() },
     leaveRequest: { count: vi.fn() },
+    approval: { count: vi.fn() },
   },
 }));
 
@@ -226,13 +227,20 @@ describe("getSidebarCounts – shape validation", () => {
     (prisma.enquiry.count as MockFn).mockResolvedValue(5);
     (prisma.memberTicket.count as MockFn).mockResolvedValue(2);
     (prisma.leaveRequest.count as MockFn).mockResolvedValue(1);
+    (prisma.approval.count as MockFn).mockResolvedValue(4);
   });
 
-  it("returns object with exactly 4 keys", async () => {
+  it("returns object with exactly 5 keys", async () => {
     const result = await getSidebarCounts();
-    expect(Object.keys(result)).toHaveLength(4);
+    expect(Object.keys(result)).toHaveLength(5);
     expect(Object.keys(result).sort()).toEqual(
-      ["balanceDueCount", "newEnquiries", "pendingFollowups", "pendingLeaves"].sort()
+      [
+        "balanceDueCount",
+        "newEnquiries",
+        "pendingApprovalsCount",
+        "pendingFollowups",
+        "pendingLeaves",
+      ].sort()
     );
   });
 
@@ -249,5 +257,6 @@ describe("getSidebarCounts – shape validation", () => {
     expect(result.newEnquiries).toBe(5);
     expect(result.balanceDueCount).toBe(2);
     expect(result.pendingLeaves).toBe(1);
+    expect(result.pendingApprovalsCount).toBe(4);
   });
 });

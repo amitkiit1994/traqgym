@@ -56,6 +56,7 @@ import {
   Bot,
   Menu,
   Lock,
+  ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -64,6 +65,7 @@ type SidebarCounts = {
   newEnquiries: number;
   balanceDueCount: number;
   pendingLeaves: number;
+  pendingApprovalsCount: number;
 };
 
 type NavItem = {
@@ -139,6 +141,7 @@ const navGroups: NavGroup[] = [
   {
     label: "System",
     items: [
+      { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck, adminOnly: true },
       { href: "/admin/in-app-notifications", label: "Alerts", icon: AlertCircle },
       { href: "/admin/locations", label: "Locations", icon: MapPin },
       { href: "/admin/equipment", label: "Equipment", icon: Dumbbell },
@@ -155,6 +158,7 @@ const BADGE_MAP: Record<string, keyof SidebarCounts> = {
   "/admin/enquiries": "newEnquiries",
   "/admin/balance-due": "balanceDueCount",
   "/admin/leaves": "pendingLeaves",
+  "/admin/approvals": "pendingApprovalsCount",
 };
 
 export function AdminSidebar({

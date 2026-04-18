@@ -110,6 +110,8 @@ model Worker {
   compPassesApproved  CompPass[]     @relation("CompPassApprover")
   compPassesRevoked   CompPass[]     @relation("CompPassRevoker")
   insightsDismissed   Insight[]      @relation("InsightDismisser")
+  approvalsRequested  Approval[]     @relation("ApprovalRequester")
+  approvalsDecided    Approval[]     @relation("ApprovalDecider")
 }
 
 model TicketPlan {
@@ -989,4 +991,26 @@ model Insight {
 
   @@index([agent, createdAt])
   @@index([severity, dismissedAt])
+}
+
+// ─── Universal approval queue (comp, freeze, extension, refund, discount, ...) ───
+model Approval {
+  id            Int       @id @default(autoincrement())
+  type          String    // "comp", "comp_pass", "freeze", "extension", "refund", "discount_over_threshold"
+  entityType    String    // "MemberTicket", "CompPass", "MembershipFreeze", "MembershipExtension", "Payment"
+  entityId      Int?      // null until the entity is created (deferred-create approvals)
+  payloadJson   Json      // params to apply on approval
+  status        String    @default("pending") // pending, approved, rejected, expired, cancelled
+  requestedById Int
+  requestedBy   Worker    @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  decidedById   Int?
+  decidedBy     Worker?   @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt     DateTime?
+  decisionNote  String?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([status, type])
+  @@index([requestedById])
+  @@index([entityType, entityId])
 }
