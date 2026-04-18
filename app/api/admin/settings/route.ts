@@ -68,6 +68,13 @@ const SETTINGS_KEYS = [
   "gym_owner_telegram_chat_id",
   "gym_owner_telegram_user_id",
   "telegram_bot_username",
+  // PR 16: Manager hardening (K.1, K.3, K.5)
+  "gym_owner_emails",                  // K.5 — co-owner emails (CSV)
+  "gym_owner_telegram_chat_ids",       // K.5 — co-owner chat ids (CSV)
+  "gym_closed_days",                   // K.1 — CSV weekday names (e.g. "sunday")
+  "manager_min_repeat_hours",          // K.1 — fatigue dedup window
+  "manager_link_ttl_default_hours",    // K.3 — default TTL for non-destructive
+  "manager_link_ttl_revoke_hours",     // K.3 — short TTL for revoke/destructive
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -125,6 +132,13 @@ const DEFAULTS: Record<string, string> = {
   gym_owner_telegram_chat_id: "",
   gym_owner_telegram_user_id: "",
   telegram_bot_username: "",
+  // PR 16: Manager hardening
+  gym_owner_emails: "",                // K.5 — additional CSV recipients
+  gym_owner_telegram_chat_ids: "",     // K.5 — additional CSV chat ids
+  gym_closed_days: "",                 // K.1 — empty = always open
+  manager_min_repeat_hours: "48",      // K.1 — default fatigue window
+  manager_link_ttl_default_hours: "24", // K.3 — non-destructive default TTL
+  manager_link_ttl_revoke_hours: "4",   // K.3 — destructive action TTL
 };
 
 export async function GET() {

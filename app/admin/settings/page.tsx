@@ -121,6 +121,14 @@ export default function SettingsPage() {
   const [sendingTestBriefing, setSendingTestBriefing] = useState(false);
   const [briefingResult, setBriefingResult] = useState<string | null>(null);
 
+  // PR 16: Manager hardening (K.1, K.3, K.5)
+  const [gymOwnerEmails, setGymOwnerEmails] = useState("");
+  const [gymOwnerTelegramChatIds, setGymOwnerTelegramChatIds] = useState("");
+  const [gymClosedDays, setGymClosedDays] = useState("");
+  const [managerMinRepeatHours, setManagerMinRepeatHours] = useState("48");
+  const [managerLinkTtlDefault, setManagerLinkTtlDefault] = useState("24");
+  const [managerLinkTtlRevoke, setManagerLinkTtlRevoke] = useState("4");
+
   // PR 9: Telegram
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramBotUsername, setTelegramBotUsername] = useState("");
@@ -196,6 +204,13 @@ export default function SettingsPage() {
         setTelegramBotUsername(data.telegram_bot_username ?? "");
         setTelegramWebhookSecret(data.telegram_webhook_secret ?? "");
         setTelegramPairedChatId(data.gym_owner_telegram_chat_id ?? "");
+        // PR 16: Manager hardening
+        setGymOwnerEmails(data.gym_owner_emails ?? "");
+        setGymOwnerTelegramChatIds(data.gym_owner_telegram_chat_ids ?? "");
+        setGymClosedDays(data.gym_closed_days ?? "");
+        setManagerMinRepeatHours(data.manager_min_repeat_hours ?? "48");
+        setManagerLinkTtlDefault(data.manager_link_ttl_default_hours ?? "24");
+        setManagerLinkTtlRevoke(data.manager_link_ttl_revoke_hours ?? "4");
       })
       .catch(() => setError("Failed to load settings"));
 
@@ -285,6 +300,13 @@ export default function SettingsPage() {
           telegram_enabled: telegramEnabled ? "true" : "false",
           telegram_bot_username: telegramBotUsername,
           telegram_webhook_secret: telegramWebhookSecret,
+          // PR 16: Manager hardening
+          gym_owner_emails: gymOwnerEmails,
+          gym_owner_telegram_chat_ids: gymOwnerTelegramChatIds,
+          gym_closed_days: gymClosedDays,
+          manager_min_repeat_hours: managerMinRepeatHours,
+          manager_link_ttl_default_hours: managerLinkTtlDefault,
+          manager_link_ttl_revoke_hours: managerLinkTtlRevoke,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -1215,10 +1237,15 @@ export default function SettingsPage() {
               value={gymOwnerLang}
               onChange={(e) => setGymOwnerLang(e.target.value)}
             >
+              <option value="auto">Auto-detect (from your last Telegram message)</option>
               <option value="en">English</option>
               <option value="hi">Hindi</option>
               <option value="hinglish">Hinglish</option>
             </select>
+            <p className="text-xs text-muted-foreground">
+              &quot;Auto&quot; uses the language detected from your latest
+              Telegram chat. Defaults to English if no chat exists yet.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -1268,6 +1295,98 @@ export default function SettingsPage() {
               Display only — actual schedule is configured in <code>vercel.json</code> (default 07:00 IST)
             </p>
           </div>
+
+          {/* PR 16 K.5 — co-owner emails */}
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-emails">Additional Owner Emails (comma-separated)</Label>
+            <Input
+              id="gym-owner-emails"
+              value={gymOwnerEmails}
+              onChange={(e) => setGymOwnerEmails(e.target.value)}
+              placeholder="cofounder@gym.com, finance@gym.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              Briefings fan out to these in addition to Owner Email above. Empty = single recipient.
+            </p>
+          </div>
+
+          {/* PR 16 K.5 — co-owner Telegram chat ids */}
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-tg-chat-ids">Additional Telegram Chat IDs (comma-separated)</Label>
+            <Input
+              id="gym-owner-tg-chat-ids"
+              value={gymOwnerTelegramChatIds}
+              onChange={(e) => setGymOwnerTelegramChatIds(e.target.value)}
+              placeholder="123456789, 987654321"
+            />
+            <p className="text-xs text-muted-foreground">
+              Co-owners pair via /pair too — get their chat IDs and paste here.
+            </p>
+          </div>
+
+          {/* PR 16 K.1 — closed days */}
+          <div className="space-y-2">
+            <Label htmlFor="gym-closed-days">Closed Days (comma-separated weekday names)</Label>
+            <Input
+              id="gym-closed-days"
+              value={gymClosedDays}
+              onChange={(e) => setGymClosedDays(e.target.value)}
+              placeholder="sunday"
+            />
+            <p className="text-xs text-muted-foreground">
+              On these days the briefing collapses to a single short Telegram
+              line. Email is skipped. Empty = always send. Accepts:
+              sunday, monday, tuesday, wednesday, thursday, friday, saturday.
+            </p>
+          </div>
+
+          {/* PR 16 K.1 — fatigue dedup window */}
+          <div className="space-y-2">
+            <Label htmlFor="manager-min-repeat">Insight Re-Notify Window (hours)</Label>
+            <Input
+              id="manager-min-repeat"
+              type="number"
+              min="0"
+              max="720"
+              value={managerMinRepeatHours}
+              onChange={(e) => setManagerMinRepeatHours(e.target.value)}
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Don&apos;t re-include an insight in subsequent briefings until
+              this many hours have passed. Default 48.
+            </p>
+          </div>
+
+          {/* PR 16 K.3 — link TTL config */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="link-ttl-default">Magic-Link TTL — Default (h)</Label>
+              <Input
+                id="link-ttl-default"
+                type="number"
+                min="1"
+                max="168"
+                value={managerLinkTtlDefault}
+                onChange={(e) => setManagerLinkTtlDefault(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="link-ttl-revoke">Magic-Link TTL — Revoke/Destructive (h)</Label>
+              <Input
+                id="link-ttl-revoke"
+                type="number"
+                min="1"
+                max="168"
+                value={managerLinkTtlRevoke}
+                onChange={(e) => setManagerLinkTtlRevoke(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Destructive actions (revoke comp, refund reject, write-off) get a
+            shorter window. Defaults: 24h / 4h.
+          </p>
 
           <div className="flex items-center gap-2">
             <Button

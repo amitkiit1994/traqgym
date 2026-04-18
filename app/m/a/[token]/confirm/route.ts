@@ -18,6 +18,7 @@
 import { verifyMagicLink } from "@/lib/ai/manager";
 import { prisma } from "@/lib/prisma";
 import { executeInsightAction } from "@/lib/services/insight";
+import { editMessageText, escapeHtml as escapeTgHtml } from "@/lib/channels/telegram";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -207,6 +208,46 @@ export async function POST(
     });
   } catch (err) {
     console.warn("[manager-confirm] audit log failed:", err);
+  }
+
+  // ── PR 16 K.4 — cross-channel sync. Look up every Telegram delivery for
+  // this insight and edit the original message to "Done via email" so both
+  // channels stay coherent. Best-effort (one chat may have already been
+  // edited to "Already done" by a previous action).
+  try {
+    const tgDeliveries = await prisma.insightDelivery.findMany({
+      where: {
+        insightId: verified.insightId,
+        channel: "telegram",
+        telegramChatId: { not: null },
+        telegramMessageId: { not: null },
+      },
+      select: {
+        id: true,
+        telegramChatId: true,
+        telegramMessageId: true,
+      },
+    });
+    if (tgDeliveries.length > 0) {
+      const safeTitle = escapeTgHtml(insight.title);
+      await Promise.all(
+        tgDeliveries.map((d) =>
+          editMessageText({
+            chatId: d.telegramChatId as string,
+            messageId: d.telegramMessageId as number,
+            text: `\u2705 <b>${safeTitle}</b>\n<i>Done via email</i>`,
+            parseMode: "HTML",
+          }).catch((err) =>
+            console.warn(
+              "[manager-confirm] cross-channel edit failed:",
+              err
+            )
+          )
+        )
+      );
+    }
+  } catch (err) {
+    console.warn("[manager-confirm] cross-channel sync lookup failed:", err);
   }
 
   return htmlResponse(

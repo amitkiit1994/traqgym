@@ -993,8 +993,32 @@ model Insight {
   dismissedBy      Worker?   @relation("InsightDismisser", fields: [dismissedById], references: [id], onDelete: SetNull)
   snoozedUntil     DateTime?
   ownerSeenAt      DateTime?
+  // PR 16 K.1: fatigue dedup — when the manager last surfaced this insight in
+  // a briefing. Used to suppress repeats inside `manager_min_repeat_hours`.
+  lastNotifiedAt   DateTime?
   createdAt        DateTime  @default(now())
+
+  // PR 16 K.4: cross-channel delivery tracking (email + telegram message_ids).
+  deliveries       InsightDelivery[]
 
   @@index([agent, createdAt])
   @@index([severity, dismissedAt])
+}
+
+// ─── PR 16 K.4: per-channel delivery log for cross-channel sync ───
+// One row per (insight, channel) delivery. Lets us, after an action is taken
+// via channel A, locate the original message in channel B and edit it to
+// reflect the new state ("Done via email").
+model InsightDelivery {
+  id                Int       @id @default(autoincrement())
+  insightId         Int
+  insight           Insight   @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  channel           String    // "email" | "telegram"
+  recipient         String?   // email address OR telegram chat id
+  telegramChatId    String?
+  telegramMessageId Int?
+  sentAt            DateTime  @default(now())
+
+  @@index([insightId])
+  @@index([channel, sentAt])
 }
