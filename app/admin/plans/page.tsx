@@ -27,6 +27,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { CreditCard, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 type Plan = {
   id: number;
@@ -125,7 +126,14 @@ export default function PlansPage() {
           {plans.map((plan) => (
             <TableRow key={plan.id}>
               <TableCell className="hidden md:table-cell">{plan.id}</TableCell>
-              <TableCell>{plan.name}</TableCell>
+              <TableCell>
+                <Link
+                  href={`/admin/members?planId=${plan.id}&status=active`}
+                  className="hover:underline"
+                >
+                  {plan.name}
+                </Link>
+              </TableCell>
               <TableCell>{Number(plan.price).toFixed(2)}</TableCell>
               <TableCell className="hidden md:table-cell">{plan.expireDays}</TableCell>
               <TableCell className="hidden md:table-cell">{plan.occasions ?? "-"}</TableCell>
