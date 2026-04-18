@@ -41,10 +41,12 @@ export async function createSchedule(params: {
 
   // Validate against the ticket. If a totalAmount is set, sum must match it
   // OR match the current balanceDue (e.g., scheduling the remaining balance only).
+  // For legacy tickets without totalAmount (e.g. imported from FitnessBoard /
+  // E-Gym), fall back to balanceDue so the installment sum is still validated.
   const ticketTotal = ticket.totalAmount != null ? Number(ticket.totalAmount) : null;
   const ticketBalance = Number(ticket.balanceDue);
 
-  if (ticketTotal !== null) {
+  if (ticketTotal !== null && ticketTotal > 0) {
     const matchesTotal = Math.abs(totalScheduleAmount - ticketTotal) < 0.01;
     const matchesBalance = ticketBalance > 0 && Math.abs(totalScheduleAmount - ticketBalance) < 0.01;
     if (!matchesTotal && !matchesBalance) {
@@ -53,6 +55,19 @@ export async function createSchedule(params: {
         error: `Sum of installments (${totalScheduleAmount}) must equal ticket total (${ticketTotal}) or balance due (${ticketBalance})`,
       };
     }
+  } else if (ticketBalance > 0) {
+    // Legacy ticket without totalAmount — installments must equal current balance due.
+    if (Math.abs(totalScheduleAmount - ticketBalance) >= 0.01) {
+      return {
+        success: false,
+        error: `Sum of installments (${totalScheduleAmount}) must equal ticket balance due (${ticketBalance})`,
+      };
+    }
+  } else {
+    return {
+      success: false,
+      error: "Ticket has no totalAmount or balanceDue — cannot validate installment sum",
+    };
   }
 
   // Sort installments by due date and assign sequence numbers
