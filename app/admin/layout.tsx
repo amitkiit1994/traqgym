@@ -39,7 +39,7 @@ export default async function AdminLayout({
         <SidebarWithCounts role={role} />
       </Suspense>
       <div className="flex flex-1 flex-col min-h-0 min-w-0">
-        <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center border-b border-border/50 px-3 md:px-6 gap-2 md:gap-4 bg-background/70 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[0_1px_8px_oklch(0.565_0.20_25_/_5%),0_1px_2px_oklch(0_0_0_/_3%)] dark:shadow-[0_1px_15px_oklch(0_0_0_/_15%)]">
+        <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center border-b border-border/50 px-3 md:px-6 gap-2 md:gap-4 bg-background/70 backdrop-blur-2xl backdrop-saturate-[1.8] shadow-[0_1px_8px_oklch(0.565_0.20_275_/_5%),0_1px_2px_oklch(0_0_0_/_3%)] dark:shadow-[0_1px_15px_oklch(0_0_0_/_15%)]">
           <div className="md:hidden">
             <Suspense fallback={<AdminMobileMenu role={role} counts={zeroCounts} />}>
               <MobileMenuWithCounts role={role} />

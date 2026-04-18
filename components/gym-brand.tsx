@@ -36,7 +36,7 @@ export function GymBrand({ size = "md", className = "", showName = true }: GymBr
   const logo = brand?.logo || "";
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex items-center gap-2 ${className}`}>
       {logo && (
         <Image
           src={logo}

@@ -274,7 +274,7 @@ export default async function MemberHomePage() {
         </Card>
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <Clock className="size-5 text-red-500 shrink-0" />
+            <Clock className="size-5 text-purple-500 shrink-0" />
             <div>
               <p className="text-lg font-bold">{memberSinceMonths}</p>
               <p className="text-xs text-muted-foreground">Months as member</p>
@@ -301,7 +301,7 @@ export default async function MemberHomePage() {
                 <div
                   className={`size-6 rounded-full flex items-center justify-center text-[10px] font-medium ${
                     weekDots[i]
-                      ? "bg-primary text-primary-foreground dark:shadow-[0_0_8px_oklch(0.65_0.18_25_/_30%)]"
+                      ? "bg-primary text-primary-foreground dark:shadow-[0_0_8px_oklch(0.65_0.18_275_/_30%)]"
                       : "bg-muted text-muted-foreground"
                   }`}
                 >
