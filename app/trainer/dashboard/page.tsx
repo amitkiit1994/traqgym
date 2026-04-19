@@ -26,13 +26,13 @@ function formatTime(iso: string): string {
 function statusClass(status: string): string {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30";
+      return "bg-status-active-bg text-status-active-foreground border-status-active/30";
     case "scheduled":
-      return "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30";
+      return "bg-status-info-bg text-status-info-foreground border-status-info/30";
     case "no_show":
-      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+      return "bg-status-expiring-bg text-status-expiring-foreground border-status-expiring/30";
     case "cancelled":
-      return "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30";
+      return "bg-status-expired-bg text-status-expired-foreground border-status-expired/30";
     default:
       return "";
   }
@@ -72,7 +72,7 @@ export default async function TrainerDashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <CalendarDays className="size-5 text-blue-500 shrink-0" />
+            <CalendarDays className="size-5 text-status-info shrink-0" />
             <div>
               <p className="text-lg font-bold">{todaySessions.length}</p>
               <p className="text-xs text-muted-foreground">Today&apos;s sessions</p>
@@ -81,7 +81,7 @@ export default async function TrainerDashboardPage() {
         </Card>
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <CheckCircle2 className="size-5 text-emerald-500 shrink-0" />
+            <CheckCircle2 className="size-5 text-status-active shrink-0" />
             <div>
               <p className="text-lg font-bold">
                 {weekStats.sessionsCompleted}
@@ -92,7 +92,7 @@ export default async function TrainerDashboardPage() {
         </Card>
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <Users className="size-5 text-purple-500 shrink-0" />
+            <Users className="size-5 text-status-trial shrink-0" />
             <div>
               <p className="text-lg font-bold">{weekStats.activeClients}</p>
               <p className="text-xs text-muted-foreground">Active clients</p>
@@ -101,7 +101,7 @@ export default async function TrainerDashboardPage() {
         </Card>
         <Card className="card-hover-lift shine">
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <IndianRupee className="size-5 text-green-500 shrink-0" />
+            <IndianRupee className="size-5 text-status-active shrink-0" />
             <div>
               <p className="text-lg font-bold">
                 {inr.format(weekStats.estimatedEarnings)}
@@ -192,7 +192,7 @@ export default async function TrainerDashboardPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base md:text-lg flex items-center gap-2">
-            <Wallet className="size-5 text-amber-500" /> Pending Payouts
+            <Wallet className="size-5 text-status-grace" /> Pending Payouts
           </CardTitle>
           <Link
             href="/trainer/payouts"

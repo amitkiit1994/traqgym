@@ -7,11 +7,11 @@ import { Wallet, IndianRupee } from "lucide-react";
 function statusClass(status: string): string {
   switch (status) {
     case "paid":
-      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30";
+      return "bg-status-active-bg text-status-active-foreground border-status-active/30";
     case "pending":
-      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+      return "bg-status-expiring-bg text-status-expiring-foreground border-status-expiring/30";
     case "disputed":
-      return "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30";
+      return "bg-status-expired-bg text-status-expired-foreground border-status-expired/30";
     default:
       return "";
   }
@@ -74,7 +74,7 @@ export default async function TrainerPayoutsPage() {
       <div className="grid grid-cols-2 gap-3">
         <Card>
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <Wallet className="size-5 text-amber-500 shrink-0" />
+            <Wallet className="size-5 text-status-grace shrink-0" />
             <div>
               <p className="text-lg font-bold">{inr.format(pendingTotal)}</p>
               <p className="text-xs text-muted-foreground">Pending</p>
@@ -83,7 +83,7 @@ export default async function TrainerPayoutsPage() {
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 py-3 px-4">
-            <IndianRupee className="size-5 text-emerald-500 shrink-0" />
+            <IndianRupee className="size-5 text-status-active shrink-0" />
             <div>
               <p className="text-lg font-bold">{inr.format(paidTotal)}</p>
               <p className="text-xs text-muted-foreground">Paid (lifetime)</p>

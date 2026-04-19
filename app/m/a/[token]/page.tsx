@@ -306,6 +306,24 @@ export default async function MagicLinkPage({
               Confirm and execute
             </button>
           </form>
+          <a
+            href="/admin/dashboard"
+            style={{
+              display: "block",
+              textAlign: "center",
+              marginTop: 12,
+              padding: "10px 22px",
+              background: "transparent",
+              color: "#94a3b8",
+              border: "1px solid #1e293b",
+              borderRadius: 8,
+              fontWeight: 500,
+              fontSize: 14,
+              textDecoration: "none",
+            }}
+          >
+            Cancel
+          </a>
 
           <p
             style={{

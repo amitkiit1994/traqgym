@@ -39,10 +39,10 @@ export default async function MemberReferralsPage() {
     <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <h1 className="text-2xl font-bold">My Referrals</h1>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>
           <CardContent className="flex items-center gap-3 py-4 px-4">
-            <Gift className="size-5 text-green-500 shrink-0" />
+            <Gift className="size-5 text-status-active shrink-0" />
             <div>
               <p className="text-2xl font-bold">{totalCount}</p>
               <p className="text-xs text-muted-foreground">Total Referrals</p>

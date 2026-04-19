@@ -279,9 +279,9 @@ export default function BulkNotifyPage() {
 
             {/* Rate limit warning */}
             {preview !== null && preview > RATE_LIMIT_THRESHOLD && (
-              <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-500/10 border border-yellow-500/20">
-                <AlertTriangle className="size-4 text-yellow-600 mt-0.5 shrink-0" />
-                <p className="text-xs text-yellow-700 dark:text-yellow-400">
+              <div className="flex items-start gap-2 p-3 rounded-md bg-status-expiring/10 border border-status-expiring/20">
+                <AlertTriangle className="size-4 text-status-expiring mt-0.5 shrink-0" />
+                <p className="text-xs text-status-expiring-foreground">
                   Sending to {preview} members may take a while. Messages will be queued and sent sequentially.
                 </p>
               </div>

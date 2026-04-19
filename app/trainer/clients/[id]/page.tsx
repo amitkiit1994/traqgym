@@ -27,17 +27,17 @@ function formatDateTime(iso: string): string {
 function statusClass(status: string): string {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30";
+      return "bg-status-active-bg text-status-active-foreground border-status-active/30";
     case "scheduled":
-      return "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30";
+      return "bg-status-info-bg text-status-info-foreground border-status-info/30";
     case "no_show":
-      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+      return "bg-status-expiring-bg text-status-expiring-foreground border-status-expiring/30";
     case "cancelled":
-      return "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30";
+      return "bg-status-expired-bg text-status-expired-foreground border-status-expired/30";
     case "active":
-      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30";
+      return "bg-status-active-bg text-status-active-foreground border-status-active/30";
     case "expired":
-      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+      return "bg-status-expiring-bg text-status-expiring-foreground border-status-expiring/30";
     default:
       return "";
   }

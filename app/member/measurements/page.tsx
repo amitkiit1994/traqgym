@@ -8,10 +8,10 @@ import { LogMeasurementForm } from "./log-form";
 import { WeightChart } from "./weight-chart";
 
 function getBmiCategory(bmi: number): { label: string; color: string } {
-  if (bmi < 18.5) return { label: "Underweight", color: "text-yellow-600" };
-  if (bmi < 25) return { label: "Normal", color: "text-green-600" };
-  if (bmi < 30) return { label: "Overweight", color: "text-orange-600" };
-  return { label: "Obese", color: "text-red-600" };
+  if (bmi < 18.5) return { label: "Underweight", color: "text-status-expiring" };
+  if (bmi < 25) return { label: "Normal", color: "text-status-active" };
+  if (bmi < 30) return { label: "Overweight", color: "text-status-grace" };
+  return { label: "Obese", color: "text-status-expired" };
 }
 
 export default async function MemberMeasurementsPage() {
