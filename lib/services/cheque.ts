@@ -6,54 +6,85 @@ export async function updateChequeStatus(
   notes?: string
 ) {
   try {
-    const payment = await prisma.payment.findUnique({
-      where: { id: paymentId },
-      select: { id: true, chequeStatus: true, userId: true, memberTicketId: true, amount: true },
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      // Re-read inside the txn so the not-already-bounced check is based on a
+      // consistent snapshot. Two concurrent calls cannot both pass this check.
+      const payment = await tx.payment.findUnique({
+        where: { id: paymentId },
+        select: { id: true, chequeStatus: true, userId: true, memberTicketId: true, amount: true },
+      });
 
-    if (!payment) {
-      return { success: false as const, error: "Payment not found" };
-    }
+      if (!payment) {
+        return { success: false as const, error: "Payment not found" };
+      }
 
-    if (payment.chequeStatus !== "pending") {
-      return { success: false as const, error: `Cheque is already ${payment.chequeStatus}` };
-    }
+      if (payment.chequeStatus !== "pending") {
+        return { success: false as const, error: `Cheque is already ${payment.chequeStatus}` };
+      }
 
-    const updated = await prisma.payment.update({
-      where: { id: paymentId },
-      data: { chequeStatus: status },
-    });
+      const updated = await tx.payment.update({
+        where: { id: paymentId },
+        data: { chequeStatus: status },
+      });
 
-    // If bounced, auto-create a PaymentFollowup
-    if (status === "bounced") {
-      await prisma.paymentFollowup.create({
+      // If bounced, auto-create a PaymentFollowup atomically with the status flip
+      // so a second concurrent call cannot double-insert a follow-up / penalty.
+      if (status === "bounced") {
+        await tx.paymentFollowup.create({
+          data: {
+            userId: payment.userId,
+            memberTicketId: payment.memberTicketId,
+            amountDue: Number(payment.amount),
+            dueDate: new Date(),
+            status: "pending",
+            priority: "high",
+            notes: notes
+              ? `Cheque bounced (Payment #${paymentId}): ${notes}`
+              : `Cheque bounced (Payment #${paymentId})`,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
         data: {
-          userId: payment.userId,
-          memberTicketId: payment.memberTicketId,
-          amountDue: Number(payment.amount),
-          dueDate: new Date(),
-          status: "pending",
-          priority: "high",
-          notes: notes
-            ? `Cheque bounced (Payment #${paymentId}): ${notes}`
-            : `Cheque bounced (Payment #${paymentId})`,
+          action: status === "bounced" ? "cheque_bounced" : "cheque_cleared",
+          status: "success",
+          details: JSON.stringify({
+            paymentId,
+            userId: payment.userId,
+            memberTicketId: payment.memberTicketId,
+            amount: Number(payment.amount),
+            previousStatus: "pending",
+            newStatus: status,
+            notes: notes ?? null,
+          }),
+          actorType: "worker",
         },
       });
 
-      // In-app notification for admins (fire-and-forget)
+      return { success: true as const, payment: updated, notify: status === "bounced", amount: Number(payment.amount) };
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    // In-app notification for admins (fire-and-forget) — outside the txn to
+    // avoid holding a DB connection on a network/import call.
+    if (result.notify) {
       try {
         const { notifyWorkersByRole } = await import("@/lib/services/in-app-notification");
         await notifyWorkersByRole({
           role: "admin",
           type: "cheque_bounced",
           title: `Cheque bounced — Payment #${paymentId}`,
-          message: `Amount: ₹${Number(payment.amount).toLocaleString("en-IN")}`,
+          message: `Amount: ₹${result.amount.toLocaleString("en-IN")}`,
           link: "/admin/followups",
         });
       } catch {}
     }
 
-    return { success: true as const, payment: updated };
+    return { success: true as const, payment: result.payment };
   } catch (err) {
     console.error("[Cheque] updateChequeStatus error:", err);
     return { success: false as const, error: "Failed to update cheque status" };

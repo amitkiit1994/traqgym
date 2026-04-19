@@ -285,10 +285,18 @@ export function derivePairingCode(args: {
 }): string {
   const date = args.date ?? new Date();
   const day = date.toISOString().slice(0, 10); // YYYY-MM-DD
+  // SECURITY: Never fall back to a literal/hard-coded secret here. A constant
+  // fallback would let any attacker compute the daily pairing code from
+  // public source and pair an arbitrary Telegram chat with the gym owner
+  // role (auth bypass). Refuse to derive a code instead — the admin must
+  // configure MANAGER_ACTION_SECRET (or NEXTAUTH_SECRET) on the deployment.
   const secret =
-    process.env.MANAGER_ACTION_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    "telegram-pairing-fallback";
+    process.env.MANAGER_ACTION_SECRET || process.env.NEXTAUTH_SECRET || "";
+  if (!secret) {
+    throw new Error(
+      "Telegram pairing is not configured: set MANAGER_ACTION_SECRET (or NEXTAUTH_SECRET) on the server. Until then, /pair will be rejected. Generate/check the code in /admin/settings after configuring the secret."
+    );
+  }
   return crypto
     .createHmac("sha256", secret)
     .update(`pair:${args.gymId}:${day}`)

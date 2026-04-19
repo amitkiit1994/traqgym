@@ -158,6 +158,10 @@ export async function issueComp(params: {
       where: { id: params.approvedById },
     });
     if (!approver) return { success: false, error: "Approver not found" };
+    if (approver.role !== "admin")
+      return { success: false, error: "Approver must be an admin" };
+    if (!approver.isActive)
+      return { success: false, error: "Approver is not active" };
   }
 
   // 5. Resolve days
@@ -496,6 +500,10 @@ export async function issueCompPass(params: {
       where: { id: params.approvedById },
     });
     if (!approver) return { success: false, error: "Approver not found" };
+    if (approver.role !== "admin")
+      return { success: false, error: "Approver must be an admin" };
+    if (!approver.isActive)
+      return { success: false, error: "Approver is not active" };
   }
 
   const startsAt = new Date();

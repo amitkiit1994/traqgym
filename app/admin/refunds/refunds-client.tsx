@@ -169,12 +169,12 @@ export function RefundsClient({
         </p>
       </div>
 
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-1 border-b flex-nowrap overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {STATUS_FILTERS.map((s) => (
           <button
             key={s.value}
             onClick={() => updateFilter(s.value)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${
+            className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${
               activeStatus === s.value
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"

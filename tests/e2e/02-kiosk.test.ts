@@ -1,15 +1,24 @@
 /**
  * E2E: Kiosk Check-in Flow
  *
- * Tests the public kiosk check-in endpoint for all member states:
+ * Tests the worker-operated kiosk check-in endpoint for all member states:
  * active, expiring soon, grace period, expired, no ticket, non-existent.
+ *
+ * Sprint 8 audit (S03): kiosk endpoint now requires a worker session and
+ * Origin/Host CSRF parity with /api/checkin/qr/*. AnonClient calls are
+ * rejected 401. Operate the kiosk as a logged-in staff or admin worker.
  */
-import { describe, it, expect } from "vitest";
-import { AnonClient, SEED } from "./helpers";
+import { describe, it, expect, beforeAll } from "vitest";
+import { TestClient, SEED } from "./helpers";
 
 describe("Kiosk Check-in", () => {
-  const anon = new AnonClient();
+  const anon = new TestClient();
   const LOC = SEED.locations.main.id;
+
+  beforeAll(async () => {
+    const { ok } = await anon.login(SEED.staff.email, SEED.staff.password);
+    if (!ok) throw new Error("Kiosk e2e: failed to log in as seed staff");
+  });
 
   // ---- Valid check-ins ----
 

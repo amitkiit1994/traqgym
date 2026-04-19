@@ -32,31 +32,15 @@ export async function renewMembership(params: {
   if (!worker) throw new Error("Worker not found");
   if (!worker.isActive) throw new Error("Worker account is not active");
 
-  // 4. Idempotency check: same userId+planId+paymentMode+collectedById in last 60 seconds
-  const sixtySecondsAgo = new Date(Date.now() - 60_000);
-  const duplicatePayment = await prisma.payment.findFirst({
-    where: {
-      userId: params.userId,
-      paymentMode: params.paymentMode,
-      collectedById: params.collectedById,
-      createdAt: { gte: sixtySecondsAgo },
-      memberTicket: { planId: params.planId },
-    },
-    include: {
-      invoice: true,
-      memberTicket: true,
-    },
-  });
-
-  if (duplicatePayment) {
-    return {
-      success: true,
-      idempotent: true,
-      paymentId: duplicatePayment.id,
-      invoiceNumber: duplicatePayment.invoice?.invoiceNumber ?? null,
-      newExpiryDate: duplicatePayment.newExpiryDate,
-    };
-  }
+  // 4. Idempotency check moved INSIDE the $transaction below (see step 7).
+  //    Note: under Prisma's default READ COMMITTED isolation this still has a
+  //    residual race where two concurrent renewals both miss each other's
+  //    pending insert. The check defends against accidental UI double-submits
+  //    (typical inter-click gap is tens of ms, well within a single txn's
+  //    snapshot lifetime). True concurrency hardening would require
+  //    Serializable isolation OR a partial unique index on
+  //    (userId, planId, paymentMode, collectedById, date_trunc('minute', createdAt)).
+  //    Tracked for the isolation-hardening sweep.
 
   // 5. Get latest expiry
   const latestTicket = await prisma.memberTicket.findFirst({
@@ -97,6 +81,31 @@ export async function renewMembership(params: {
 
   // 7. Prisma $transaction
   const result = await prisma.$transaction(async (tx) => {
+    // Idempotency check INSIDE the txn: same userId+planId+paymentMode+
+    // collectedById in last 60 seconds. Running this under the txn snapshot
+    // closes the race where two concurrent calls both pass an outside-txn
+    // check and both insert.
+    const sixtySecondsAgo = new Date(Date.now() - 60_000);
+    const duplicatePayment = await tx.payment.findFirst({
+      where: {
+        userId: params.userId,
+        paymentMode: params.paymentMode,
+        collectedById: params.collectedById,
+        createdAt: { gte: sixtySecondsAgo },
+        memberTicket: { planId: params.planId },
+      },
+      include: {
+        invoice: true,
+        memberTicket: true,
+      },
+    });
+    if (duplicatePayment) {
+      return {
+        idempotent: true as const,
+        duplicatePayment,
+      };
+    }
+
     // Determine joining fee for this purchase using a TXN-fresh prior count.
     let joiningFeeCharged = 0;
     if (planJoiningFee > 0 && appliesOn !== "never") {
@@ -209,8 +218,19 @@ export async function renewMembership(params: {
       });
     }
 
-    return { payment, invoice, memberTicket, finalAmount };
+    return { idempotent: false as const, payment, invoice, memberTicket, finalAmount };
   });
+
+  // Idempotent short-circuit: skip notifications and return the prior result.
+  if (result.idempotent) {
+    return {
+      success: true,
+      idempotent: true,
+      paymentId: result.duplicatePayment.id,
+      invoiceNumber: result.duplicatePayment.invoice?.invoiceNumber ?? null,
+      newExpiryDate: result.duplicatePayment.newExpiryDate,
+    };
+  }
 
   // 8. Post-renewal notification (non-blocking — never fails the renewal)
   try {

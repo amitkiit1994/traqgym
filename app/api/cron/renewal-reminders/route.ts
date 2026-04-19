@@ -5,6 +5,7 @@ import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
 import { send as sendSMS } from "@/lib/channels/sms";
 import { getSetting } from "@/lib/services/settings";
 import { requireCronSecret } from "@/lib/auth-cron";
+import { istCalendarFor, istDayBoundsUtc } from "@/lib/utils/date-ist";
 
 export async function GET(req: NextRequest) {
   const guard = requireCronSecret(req);
@@ -15,8 +16,16 @@ export async function GET(req: NextRequest) {
     return Response.json({ success: true, skipped: true, reason: "Cron disabled in settings" });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Anchor "today" to the IST calendar day. MemberTicket.expireDate is stored as
+  // IST midnight (which is 18:30 UTC of the prior day), so all date-window math
+  // must be IST-aligned to avoid off-by-hours errors at the IST-midnight boundary.
+  const now = new Date();
+  const istToday = istCalendarFor(now);
+  // `today` represents IST midnight as a UTC instant — used for delivery timestamps
+  // and for tenure math (subtracting createdAt).
+  const { startUtc: today } = istDayBoundsUtc(istToday);
+  // Probe Date for IST weekday/month/day extraction.
+  const istTodayProbe = new Date(Date.UTC(istToday.year, istToday.month, istToday.day));
 
   const channel = await getSetting("notification_channel", "whatsapp");
   const renewalEnabled = await getSetting("renewal_reminder_enabled", "true") === "true";
@@ -30,14 +39,18 @@ export async function GET(req: NextRequest) {
     const reminderDays = reminderDaysSetting.split(",").map(d => parseInt(d.trim(), 10)).filter(n => !isNaN(n));
 
     for (const daysAhead of reminderDays) {
-      const targetDate = new Date(today);
-      targetDate.setDate(targetDate.getDate() + daysAhead);
+      // Compute the IST day "daysAhead" days from today, then derive its UTC bounds.
+      const { startUtc: targetDate, endUtc: targetEnd } = istDayBoundsUtc({
+        year: istToday.year,
+        month: istToday.month,
+        day: istToday.day + daysAhead,
+      });
 
       const expiringTickets = await prisma.memberTicket.findMany({
         where: {
           expireDate: {
             gte: targetDate,
-            lt: new Date(targetDate.getTime() + 86400000),
+            lt: targetEnd,
           },
         },
         include: {
@@ -71,10 +84,14 @@ export async function GET(req: NextRequest) {
 
         try {
           const phone = ticket.user.phone ?? "unknown";
+          // Render expiryDate in IST (targetDate is IST midnight as a UTC instant —
+          // calling .toISOString() directly would yield the prior UTC day).
+          const expiryIst = istCalendarFor(targetDate);
+          const expiryDateStr = `${expiryIst.year}-${String(expiryIst.month + 1).padStart(2, "0")}-${String(expiryIst.day).padStart(2, "0")}`;
           const vars = {
             name: `${ticket.user.firstname} ${ticket.user.lastname}`,
             plan: ticket.plan.name,
-            expiryDate: targetDate.toISOString().split("T")[0],
+            expiryDate: expiryDateStr,
           };
           if (channel === "whatsapp" || channel === "both") {
             await sendWhatsApp({ recipient: phone, templateName, variables: vars });
@@ -99,11 +116,13 @@ export async function GET(req: NextRequest) {
       where: { birthdate: { not: null } },
       select: { id: true, firstname: true, lastname: true, phone: true, birthdate: true },
     });
-    const todayMonth = today.getMonth();
-    const todayDay = today.getDate();
+    // Compare against IST month/day (not UTC, since `today` is IST-midnight in UTC).
+    const todayMonth = istTodayProbe.getUTCMonth();
+    const todayDay = istTodayProbe.getUTCDate();
     const birthdayUsers = birthdayMembers.filter((u) => {
       const bd = new Date(u.birthdate!);
-      return bd.getMonth() === todayMonth && bd.getDate() === todayDay;
+      // Birthdates are stored as date-only; read in UTC to avoid local-tz drift.
+      return bd.getUTCMonth() === todayMonth && bd.getUTCDate() === todayDay;
     });
 
     for (const user of birthdayUsers) {
@@ -141,14 +160,17 @@ export async function GET(req: NextRequest) {
     try {
       const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
 
-      const target7day = new Date(today);
-      target7day.setDate(target7day.getDate() + 7);
+      const { startUtc: target7day, endUtc: target7dayEnd } = istDayBoundsUtc({
+        year: istToday.year,
+        month: istToday.month,
+        day: istToday.day + 7,
+      });
 
       const expiring7day = await prisma.memberTicket.findMany({
         where: {
           expireDate: {
             gte: target7day,
-            lt: new Date(target7day.getTime() + 86400000),
+            lt: target7dayEnd,
           },
         },
         include: {
@@ -235,14 +257,17 @@ Write a warm, personal 2-sentence early reminder encouraging renewal. Reference 
     try {
       const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
 
-      const target3day = new Date(today);
-      target3day.setDate(target3day.getDate() + 3);
+      const { startUtc: target3day, endUtc: target3dayEnd } = istDayBoundsUtc({
+        year: istToday.year,
+        month: istToday.month,
+        day: istToday.day + 3,
+      });
 
       const expiring3day = await prisma.memberTicket.findMany({
         where: {
           expireDate: {
             gte: target3day,
-            lt: new Date(target3day.getTime() + 86400000),
+            lt: target3dayEnd,
           },
         },
         include: {
@@ -329,12 +354,13 @@ Write a warm but slightly urgent 2-sentence reminder encouraging renewal. Mentio
     try {
       const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
 
-      // Members expiring today who have a phone number
+      // Members expiring today (IST) who have a phone number
+      const { startUtc: todayStart, endUtc: todayEnd } = istDayBoundsUtc(istToday);
       const expiringToday = await prisma.memberTicket.findMany({
         where: {
           expireDate: {
-            gte: today,
-            lt: new Date(today.getTime() + 86400000),
+            gte: todayStart,
+            lt: todayEnd,
           },
         },
         include: {

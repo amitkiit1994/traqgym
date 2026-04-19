@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { unstable_cache } from "next/cache";
+import { requireWorker } from "@/lib/auth-guard";
 
 const getCachedSidebarCounts = unstable_cache(
   async () => {
@@ -53,5 +54,12 @@ const getCachedSidebarCounts = unstable_cache(
 );
 
 export async function getSidebarCounts() {
+  // Defense-in-depth: this action exposes org-wide operational counts
+  // (pending followups, balance due, approvals, refunds, open shifts, etc.)
+  // and must only be callable by an authenticated worker, regardless of
+  // whether an admin layout already wraps a worker auth check.
+  // Auth check runs BEFORE the cache lookup so unauthenticated callers
+  // never get a cache hit. If auth fails, we throw — never silently return zeros.
+  await requireWorker();
   return getCachedSidebarCounts();
 }

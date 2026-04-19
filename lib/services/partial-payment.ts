@@ -7,19 +7,22 @@ export async function recordPartialPayment(params: {
   upiReference?: string;
   collectedById: number;
 }) {
-  const ticket = await prisma.memberTicket.findUnique({
-    where: { id: params.ticketId },
-    include: { plan: true, user: true },
-  });
-
-  if (!ticket) return { success: false, error: "Ticket not found" };
-  if (Number(ticket.balanceDue) <= 0) return { success: false, error: "No balance due on this ticket" };
   if (params.amount <= 0) return { success: false, error: "Amount must be positive" };
-  if (params.amount > Number(ticket.balanceDue)) {
-    return { success: false, error: `Amount exceeds balance due (${ticket.balanceDue})` };
-  }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Read ticket inside the transaction so the validation snapshot matches the writes,
+    // closing the race window where two concurrent payments both pass the balance check.
+    const ticket = await tx.memberTicket.findUnique({
+      where: { id: params.ticketId },
+      include: { plan: true, user: true },
+    });
+
+    if (!ticket) return { error: "Ticket not found" as const };
+    if (Number(ticket.balanceDue) <= 0) return { error: "No balance due on this ticket" as const };
+    if (params.amount > Number(ticket.balanceDue)) {
+      return { error: `Amount exceeds balance due (${ticket.balanceDue})` as const };
+    }
+
     const newAmountPaid = Number(ticket.amountPaid) + params.amount;
     const newBalanceDue = Number(ticket.balanceDue) - params.amount;
     const isFullyPaid = newBalanceDue <= 0;
@@ -69,6 +72,10 @@ export async function recordPartialPayment(params: {
 
     return { payment, newBalanceDue: Math.max(0, newBalanceDue), isFullyPaid };
   });
+
+  if ("error" in result) {
+    return { success: false, error: result.error };
+  }
 
   return {
     success: true,

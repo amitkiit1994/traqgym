@@ -108,6 +108,10 @@ export async function runCashShiftVarianceInvestigator(): Promise<{
       ],
       entityType: "CashShift",
       entityId: s.id,
+      // Key on shift id only — re-runs within the 24h scan window must
+      // refresh (not duplicate) the same insight. Adding a date suffix here
+      // proliferates rows (one per IST day the agent runs) for the same
+      // shift; rely on upsertInsight's update-on-existing semantics instead.
       dedupeKey: `cash_shift_variance:shift_${s.id}`,
     });
     if (result.created) insightsCreated++;
