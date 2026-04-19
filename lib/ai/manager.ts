@@ -186,7 +186,53 @@ export type MagicPayload = {
   insightId: number;
   actionIndex: number;
   expiresAt: number; // epoch ms
+  /**
+   * PR 16 audit fix (CRITICAL): SHA-256 of the canonical JSON of the
+   * action `{label, action, args}` snapshot at sign-time, hex-encoded.
+   *
+   * Without this, an attacker (or a benign editor who later changes
+   * `Insight.suggestedActions`) could turn a "Send reminder to Karan"
+   * link into "Refund ₹50,000 to Karan" without invalidating the HMAC —
+   * because the HMAC only covered insightId+actionIndex+expiresAt, and
+   * the dispatcher resolves the action by index against whatever's
+   * currently in the row. We bind the link to the ARGS at sign-time and
+   * verify them against the live row at execution.
+   *
+   * Optional in the type so legacy tokens issued before this fix still
+   * verify (we soft-enforce — see executeInsightAction). New links
+   * always include it.
+   */
+  actionHash?: string;
 };
+
+/**
+ * Compute the canonical hash of an action snapshot. Object key order in
+ * `args` is normalised by sorting keys before stringifying so a JSON
+ * round-trip (or a server that re-serialises differently) doesn't
+ * invalidate the hash.
+ */
+export function hashActionSnapshot(action: {
+  label: string;
+  action: string;
+  args: unknown;
+}): string {
+  const canonical = JSON.stringify({
+    label: action.label,
+    action: action.action,
+    args: sortKeysDeep(action.args),
+  });
+  return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function sortKeysDeep(v: unknown): unknown {
+  if (v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(sortKeysDeep);
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+    out[k] = sortKeysDeep((v as Record<string, unknown>)[k]);
+  }
+  return out;
+}
 
 export function signMagicLink(params: {
   insightId: number;
@@ -194,12 +240,15 @@ export function signMagicLink(params: {
   expiresAt: Date;
   baseUrl: string;
   secret?: string;
+  /** PR 16 audit fix: pass the action snapshot so the HMAC binds args. */
+  action?: { label: string; action: string; args: unknown };
 }): string {
   const secret = resolveSecret(params.secret);
   const payload: MagicPayload = {
     insightId: params.insightId,
     actionIndex: params.actionIndex,
     expiresAt: params.expiresAt.getTime(),
+    ...(params.action ? { actionHash: hashActionSnapshot(params.action) } : {}),
   };
   const payloadB64 = base64UrlEncode(Buffer.from(JSON.stringify(payload), "utf8"));
   const mac = crypto.createHmac("sha256", secret).update(payloadB64).digest();
@@ -210,7 +259,13 @@ export function signMagicLink(params: {
 }
 
 export type VerifyResult =
-  | { ok: true; insightId: number; actionIndex: number; expiresAt: number }
+  | {
+      ok: true;
+      insightId: number;
+      actionIndex: number;
+      expiresAt: number;
+      actionHash?: string;
+    }
   | { ok: false; error: "malformed" | "bad_signature" | "expired" | "invalid" };
 
 export function verifyMagicLink(params: {
@@ -261,7 +316,10 @@ export function verifyMagicLink(params: {
     return { ok: false, error: "malformed" };
   }
   const now = (params.now ?? new Date()).getTime();
-  if (payload.expiresAt < now) {
+  // 60-second grace window to tolerate minor server clock skew between
+  // signing host and verifying host (e.g. Vercel function in different region).
+  const CLOCK_SKEW_GRACE_MS = 60_000;
+  if (payload.expiresAt < now - CLOCK_SKEW_GRACE_MS) {
     return { ok: false, error: "expired" };
   }
   return {
@@ -269,6 +327,9 @@ export function verifyMagicLink(params: {
     insightId: payload.insightId,
     actionIndex: payload.actionIndex,
     expiresAt: payload.expiresAt,
+    ...(typeof payload.actionHash === "string"
+      ? { actionHash: payload.actionHash }
+      : {}),
   };
 }
 
@@ -495,6 +556,9 @@ export async function composeBriefing(args: {
           expiresAt,
           baseUrl: args.baseUrl,
           secret: args.secret,
+          // PR 16 audit fix: bind the HMAC to the action contents so a later
+          // edit of Insight.suggestedActions can't bait-and-switch the link.
+          action: { label: a.label, action: a.action, args: a.args },
         }),
       };
     });

@@ -162,6 +162,17 @@ export default async function MagicLinkPage({
   }
 
   const actions = (insight.suggestedActions as ActionDef[] | null) ?? [];
+  if (
+    !Number.isInteger(verified.actionIndex) ||
+    verified.actionIndex < 0 ||
+    verified.actionIndex >= actions.length
+  ) {
+    return shellPage({
+      title: "Action removed",
+      body: `<p>The action list for <strong>${escapeHtml(insight.title)}</strong> has changed since this email was sent. Open the dashboard to see the current options.</p>`,
+      cta: { label: "Open dashboard", href: "/admin", primary: true },
+    });
+  }
   const chosen = actions[verified.actionIndex];
   if (!chosen || typeof chosen.action !== "string") {
     return shellPage({

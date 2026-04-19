@@ -4,7 +4,9 @@ export type LocationRollupRow = {
   locationId: number;
   locationName: string;
   activeMembers: number;
-  collectionsThisPeriod: number;
+  collectionsThisPeriod: number; // gross cash-movement collections (incl. joining fees, addons)
+  recurringRevenueThisPeriod: number; // collections minus one-time joining fees (MRR proxy)
+  joiningFeesThisPeriod: number; // one-time non-recurring fees collected
   expensesThisPeriod: number;
   netThisPeriod: number;
   compRatio: number; // 0-1, fraction of active members on complimentary plans (0 if not modeled)
@@ -55,10 +57,13 @@ export async function getMultiLocationRollup(params: {
       // Active members at "to" instant: users whose latest ticket at any location
       // for this location is still valid as of `to`. Approximation: count distinct
       // userIds with at least one MemberTicket at this location whose expireDate >= to.
+      // status:"active" filter excludes upgraded/cancelled tickets that may still
+      // have a future expireDate but no longer represent an active membership.
       prisma.memberTicket
         .findMany({
           where: {
             locationId: loc.id,
+            status: "active",
             expireDate: { gte: to },
             buyDate: { lt: to },
           },
@@ -107,11 +112,13 @@ export async function getMultiLocationRollup(params: {
         },
       }),
 
-      // Members active at start of period
+      // Members active at start of period — must be status:"active" so churn
+      // denominator excludes already-cancelled/upgraded tickets.
       prisma.memberTicket
         .findMany({
           where: {
             locationId: loc.id,
+            status: "active",
             expireDate: { gte: from },
             buyDate: { lt: from },
           },
@@ -143,6 +150,25 @@ export async function getMultiLocationRollup(params: {
     const expensesThisPeriod = Number(expensesAgg._sum.amount ?? 0);
     const netThisPeriod = collectionsThisPeriod - expensesThisPeriod;
 
+    // R11 audit fix: joining fees are one-time non-recurring revenue. They
+    // belong in gross collections (cash actually received) but must be
+    // excluded from any MRR-style metric. Sum joiningFeeCharged across
+    // tickets bought in this period at this location.
+    const joiningFeesAgg = await prisma.memberTicket.aggregate({
+      where: {
+        locationId: loc.id,
+        buyDate: { gte: from, lt: to },
+      },
+      _sum: { joiningFeeCharged: true },
+    });
+    const joiningFeesThisPeriod = Number(
+      joiningFeesAgg._sum.joiningFeeCharged ?? 0
+    );
+    const recurringRevenueThisPeriod = Math.max(
+      0,
+      collectionsThisPeriod - joiningFeesThisPeriod
+    );
+
     // Churn: of the users active at start, how many have NO ticket at this location
     // still valid at `to`?
     let churned = 0;
@@ -150,6 +176,7 @@ export async function getMultiLocationRollup(params: {
       const stillActive = await prisma.memberTicket.findMany({
         where: {
           locationId: loc.id,
+          status: "active",
           userId: { in: activeAtStart },
           expireDate: { gte: to },
         },
@@ -174,6 +201,8 @@ export async function getMultiLocationRollup(params: {
       locationName: loc.name,
       activeMembers,
       collectionsThisPeriod,
+      recurringRevenueThisPeriod,
+      joiningFeesThisPeriod,
       expensesThisPeriod,
       netThisPeriod,
       compRatio,

@@ -170,10 +170,14 @@ export async function POST(
   // the comp twice. The dismissal that used to happen *after* the action
   // here is no longer needed — the service already did it as part of the
   // claim.
+  // PR 16 audit fix: pass the action-hash from the verified token so the
+  // executor can refuse if Insight.suggestedActions has been edited since
+  // signing. Legacy tokens without `actionHash` skip the check (back-compat).
   const result = await executeInsightAction({
     insightId: verified.insightId,
     actionIndex: verified.actionIndex,
     executedById: systemWorkerId,
+    expectedActionHash: verified.actionHash,
   });
 
   if (!result.success) {

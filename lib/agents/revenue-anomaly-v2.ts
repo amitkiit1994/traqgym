@@ -63,16 +63,35 @@ export async function run(): Promise<{ created: number; total: number }> {
   }
 
   // Build daily totals for the previous 30 IST days (excluding yesterday).
-  const dailyTotals: number[] = [];
+  // Single-shot: fetch all payments in the 30-day window, bucket client-side
+  // into IST-day boxes — avoids 30 sequential Prisma round-trips.
+  const oldestWin = istDayWindow(new Date(now.getTime() - 31 * 86_400_000));
+  const newestWin = istDayWindow(new Date(now.getTime() - 2 * 86_400_000));
+  const baselinePayments = await prisma.payment.findMany({
+    where: { createdAt: { gte: oldestWin.start, lt: newestWin.end } },
+    select: { amount: true, createdAt: true },
+  });
+  const bucketByDayStartMs = new Map<number, number>();
   for (let i = 2; i <= 31; i++) {
-    const d = new Date(now.getTime() - i * 86_400_000);
-    const w = istDayWindow(d);
-    const agg = await prisma.payment.aggregate({
-      where: { createdAt: { gte: w.start, lt: w.end } },
-      _sum: { amount: true },
-    });
-    dailyTotals.push(Number(agg._sum.amount ?? 0));
+    const w = istDayWindow(new Date(now.getTime() - i * 86_400_000));
+    bucketByDayStartMs.set(w.start.getTime(), 0);
   }
+  // Pre-compute the sorted day-start anchors descending so binary-search isn't
+  // needed; for each payment, find the matching IST day window.
+  const dayStarts = Array.from(bucketByDayStartMs.keys()).sort((a, b) => a - b);
+  const ONE_DAY_MS = 86_400_000;
+  for (const p of baselinePayments) {
+    const t = p.createdAt.getTime();
+    // Find the day-bucket whose [start, start+ONE_DAY_MS) contains t.
+    // Linear scan over 30 entries is cheap; binary search not required.
+    for (const ds of dayStarts) {
+      if (t >= ds && t < ds + ONE_DAY_MS) {
+        bucketByDayStartMs.set(ds, (bucketByDayStartMs.get(ds) ?? 0) + Number(p.amount ?? 0));
+        break;
+      }
+    }
+  }
+  const dailyTotals = Array.from(bucketByDayStartMs.values());
 
   const med = median(dailyTotals);
   if (med <= 0) {

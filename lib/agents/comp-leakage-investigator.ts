@@ -11,7 +11,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { upsertInsight } from "./_shared";
+import { upsertInsight, type InsightSeverity } from "./_shared";
 import { inr, isoDay } from "./_helpers";
 
 const AGENT = "comp_leakage_investigator";
@@ -65,44 +65,55 @@ export async function run(): Promise<{ created: number; total: number }> {
 
   if (comps.length === 0) return { created: 0, total: 0 };
 
+  // Batch fetch the 3 per-user data points in 3 grouped queries instead of
+  // 3×N round-trips. Up to ~10 comps but agents must scale to 100s.
+  const userIds = Array.from(new Set(comps.map((c) => c.userId)));
+  const [attRows, paidTicketRows, paymentRows] = await Promise.all([
+    prisma.attendanceLog.groupBy({
+      by: ["userId"],
+      where: { userId: { in: userIds } },
+      _max: { checkIn: true },
+    }),
+    prisma.memberTicket.groupBy({
+      by: ["userId"],
+      where: { userId: { in: userIds }, isComplimentary: false },
+      _count: { _all: true },
+    }),
+    prisma.payment.groupBy({
+      by: ["userId"],
+      where: { userId: { in: userIds } },
+      _sum: { amount: true },
+    }),
+  ]);
+  const lastAttendanceByUser = new Map<number, Date | null>();
+  for (const r of attRows) {
+    if (r.userId != null) lastAttendanceByUser.set(r.userId, r._max.checkIn);
+  }
+  const priorPaidByUser = new Map<number, number>();
+  for (const r of paidTicketRows) {
+    if (r.userId != null) priorPaidByUser.set(r.userId, r._count._all);
+  }
+  const lifetimePaidByUser = new Map<number, number>();
+  for (const r of paymentRows) {
+    if (r.userId != null) lifetimePaidByUser.set(r.userId, Number(r._sum.amount ?? 0));
+  }
+
   const dateKey = isoDay();
   let created = 0;
   let total = 0;
 
   for (const c of comps) {
-    // 5 data points per comp:
-    //  1. last attendance check-in
-    //  2. days since comp issued
-    //  3. prior paid tickets for this user
-    //  4. lifetime payment total for this user
-    //  5. issuer + approver context
-    const [lastAttendance, priorPaidTickets, lifetimePayments] =
-      await Promise.all([
-        prisma.attendanceLog.findFirst({
-          where: { userId: c.userId },
-          orderBy: { checkIn: "desc" },
-          select: { checkIn: true },
-        }),
-        prisma.memberTicket.count({
-          where: {
-            userId: c.userId,
-            isComplimentary: false,
-          },
-        }),
-        prisma.payment.aggregate({
-          where: { userId: c.userId },
-          _sum: { amount: true },
-        }),
-      ]);
+    const lastAttendanceCheckIn = lastAttendanceByUser.get(c.userId) ?? null;
+    const priorPaidTickets = priorPaidByUser.get(c.userId) ?? 0;
+    const lifetimePaid = lifetimePaidByUser.get(c.userId) ?? 0;
 
     const daysSinceIssue = Math.floor(
       (now.getTime() - c.buyDate.getTime()) / 86400000
     );
-    const daysSinceLastVisit = lastAttendance
-      ? Math.floor((now.getTime() - lastAttendance.checkIn.getTime()) / 86400000)
+    const daysSinceLastVisit = lastAttendanceCheckIn
+      ? Math.floor((now.getTime() - lastAttendanceCheckIn.getTime()) / 86400000)
       : null;
     const planValue = Number(c.totalAmount ?? c.plan?.price ?? 0);
-    const lifetimePaid = Number(lifetimePayments._sum.amount ?? 0);
     const userName = `${c.user.firstname} ${c.user.lastname}`.trim();
     const issuerName = c.compIssuer
       ? `${c.compIssuer.firstname} ${c.compIssuer.lastname}`.trim()
@@ -111,10 +122,14 @@ export async function run(): Promise<{ created: number; total: number }> {
       ? `${c.compApprover.firstname} ${c.compApprover.lastname}`.trim()
       : "unapproved";
 
+    // Threshold severity by leak magnitude — avoid alert fatigue from sub-rupee comps.
+    const severity: InsightSeverity =
+      planValue >= 25_000 ? "critical" : planValue >= 5_000 ? "high" : "medium";
+
     total++;
     const result = await upsertInsight({
       agent: AGENT,
-      severity: "high",
+      severity,
       title: `Investigate comp: ${userName} — ${inr(planValue)} leak, ${daysSinceIssue}d active`,
       body:
         `${userName} is on a comp ${c.plan?.name ?? "plan"} (${inr(planValue)}). ` +
@@ -131,7 +146,7 @@ export async function run(): Promise<{ created: number; total: number }> {
         compReason: c.compReason,
         daysSinceIssue,
         daysSinceLastVisit,
-        lastAttendanceAt: lastAttendance?.checkIn ?? null,
+        lastAttendanceAt: lastAttendanceCheckIn,
         priorPaidTickets,
         lifetimePaidRupees: lifetimePaid,
         issuerName,

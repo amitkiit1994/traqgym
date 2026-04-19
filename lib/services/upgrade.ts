@@ -116,14 +116,22 @@ export async function upgradePlan(params: {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Mark old ticket as upgraded
-      await tx.memberTicket.update({
-        where: { id: oldTicketId },
+      // 1. Mark old ticket as upgraded — optimistic-lock against the
+      // status we read at line 51. If a concurrent renewal flipped it
+      // (e.g. status="renewed"), the conditional update returns count===0
+      // and we abort the whole txn to avoid double-billing.
+      const claim = await tx.memberTicket.updateMany({
+        where: { id: oldTicketId, status: currentTicket.status },
         data: {
           status: "upgraded",
           cancelledAt: new Date(),
         },
       });
+      if (claim.count === 0) {
+        throw new Error(
+          "Ticket state changed concurrently (renewal or another upgrade) — refresh and retry"
+        );
+      }
 
       // 2. Create new MemberTicket
       const newTicket = await tx.memberTicket.create({

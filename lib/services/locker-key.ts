@@ -94,55 +94,78 @@ type ReturnKeyParams = {
 };
 
 export async function returnKey(params: ReturnKeyParams) {
-  const issuance = await prisma.lockerKeyIssuance.findUnique({
-    where: { id: params.issuanceId },
-  });
-  if (!issuance) return { success: false as const, error: "Key issuance not found" };
-  if (issuance.status !== "issued") {
-    return { success: false as const, error: `Cannot return a key with status: ${issuance.status}` };
-  }
-
   const worker = await prisma.worker.findUnique({ where: { id: params.returnedById } });
   if (!worker) return { success: false as const, error: "Returning worker not found" };
 
   const refundDeposit = params.refundDeposit !== false; // default true
   const now = new Date();
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.lockerKeyIssuance.update({
-      where: { id: params.issuanceId },
-      data: {
-        status: "returned",
-        returnedAt: now,
-        returnedById: params.returnedById,
-        depositRefundedAt: refundDeposit ? now : null,
-        conditionNotes:
-          params.conditionNotes && params.conditionNotes.trim()
-            ? params.conditionNotes.trim()
-            : issuance.conditionNotes,
-      },
+  // PR 12 audit fix (CRITICAL): idempotency + concurrency.
+  //
+  // The previous implementation read the issuance OUTSIDE the transaction
+  // and then ran an unconditional `update({ where: { id } })`. Two near-
+  // simultaneous returns would both see status="issued", both pass the
+  // guard, both run the update — second write silently overwrote the first
+  // (with a different worker, different timestamp). Move the status check
+  // into a conditional `updateMany` inside the transaction so only one
+  // writer wins; the loser sees count=0 and returns a clear error.
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const upd = await tx.lockerKeyIssuance.updateMany({
+        where: { id: params.issuanceId, status: "issued" },
+        data: {
+          status: "returned",
+          returnedAt: now,
+          returnedById: params.returnedById,
+          depositRefundedAt: refundDeposit ? now : null,
+          ...(params.conditionNotes && params.conditionNotes.trim()
+            ? { conditionNotes: params.conditionNotes.trim() }
+            : {}),
+        },
+      });
+      if (upd.count === 0) {
+        // Either the row doesn't exist or it isn't in `issued` state any more.
+        const current = await tx.lockerKeyIssuance.findUnique({
+          where: { id: params.issuanceId },
+          select: { id: true, status: true },
+        });
+        if (!current) throw new Error("Key issuance not found");
+        throw new Error(
+          `Cannot return a key with status: ${current.status}`,
+        );
+      }
+
+      const issuance = await tx.lockerKeyIssuance.findUniqueOrThrow({
+        where: { id: params.issuanceId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: "locker_key_returned",
+          status: "success",
+          details: JSON.stringify({
+            issuanceId: issuance.id,
+            lockerId: issuance.lockerId,
+            userId: issuance.userId,
+            depositRefunded: refundDeposit,
+            depositAmount: Number(issuance.depositAmount),
+          }),
+          actorId: params.returnedById,
+          actorType: "worker",
+        },
+      });
+
+      return issuance;
     });
 
-    await tx.auditLog.create({
-      data: {
-        action: "locker_key_returned",
-        status: "success",
-        details: JSON.stringify({
-          issuanceId: issuance.id,
-          lockerId: issuance.lockerId,
-          userId: issuance.userId,
-          depositRefunded: refundDeposit,
-          depositAmount: Number(issuance.depositAmount),
-        }),
-        actorId: params.returnedById,
-        actorType: "worker",
-      },
-    });
-
-    return result;
-  });
-
-  return { success: true as const, issuance: updated };
+    return { success: true as const, issuance: result };
+  } catch (err) {
+    return {
+      success: false as const,
+      error:
+        err instanceof Error ? err.message : "Failed to return locker key",
+    };
+  }
 }
 
 type MarkLostParams = {
@@ -154,49 +177,78 @@ type MarkLostParams = {
 };
 
 export async function markLost(params: MarkLostParams) {
-  const issuance = await prisma.lockerKeyIssuance.findUnique({
-    where: { id: params.issuanceId },
-  });
-  if (!issuance) return { success: false as const, error: "Key issuance not found" };
-  if (issuance.status !== "issued") {
-    return { success: false as const, error: `Cannot mark lost a key with status: ${issuance.status}` };
-  }
   if (params.penaltyAmount < 0) {
     return { success: false as const, error: "Penalty amount must be non-negative" };
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.lockerKeyIssuance.update({
-      where: { id: params.issuanceId },
-      data: {
-        status: "lost",
-        penaltyAmount: params.penaltyAmount,
-        witnessId: params.witnessId ?? issuance.witnessId,
-        photoUrl: params.photoUrl ?? issuance.photoUrl,
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        action: "locker_key_lost",
-        status: "success",
-        details: JSON.stringify({
-          issuanceId: issuance.id,
-          lockerId: issuance.lockerId,
-          userId: issuance.userId,
+  // PR 12 audit fix (CRITICAL): idempotency + concurrency.
+  //
+  // Same flaw as returnKey — read-then-write across the transaction
+  // boundary let two concurrent "mark lost" calls both succeed (one
+  // overwriting the other's penaltyAmount + witness). Atomic conditional
+  // updateMany inside the tx fixes it: first call wins, second gets a
+  // clear "already in status X" error.
+  //
+  // Note: the schema's Payment model requires `memberTicketId`, so the
+  // forfeited deposit and the new penalty cannot be expressed as
+  // standalone Payment rows without a ticket fabrication. Audit log
+  // captures the financial intent here; surfacing the deposit forfeit +
+  // penalty into the cash drawer is a follow-up that needs schema work
+  // (e.g. `MemberTicket?` on Payment) — tracked separately.
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const upd = await tx.lockerKeyIssuance.updateMany({
+        where: { id: params.issuanceId, status: "issued" },
+        data: {
+          status: "lost",
           penaltyAmount: params.penaltyAmount,
-          depositForfeit: Number(issuance.depositAmount),
-          witnessId: params.witnessId ?? issuance.witnessId,
-        }),
-        actorId: params.actorId,
-        actorType: "worker",
-      },
+          ...(params.witnessId != null ? { witnessId: params.witnessId } : {}),
+          ...(params.photoUrl != null ? { photoUrl: params.photoUrl } : {}),
+        },
+      });
+      if (upd.count === 0) {
+        const current = await tx.lockerKeyIssuance.findUnique({
+          where: { id: params.issuanceId },
+          select: { id: true, status: true },
+        });
+        if (!current) throw new Error("Key issuance not found");
+        throw new Error(
+          `Cannot mark lost a key with status: ${current.status}`,
+        );
+      }
+
+      const issuance = await tx.lockerKeyIssuance.findUniqueOrThrow({
+        where: { id: params.issuanceId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: "locker_key_lost",
+          status: "success",
+          details: JSON.stringify({
+            issuanceId: issuance.id,
+            lockerId: issuance.lockerId,
+            userId: issuance.userId,
+            penaltyAmount: params.penaltyAmount,
+            depositForfeit: Number(issuance.depositAmount),
+            witnessId: params.witnessId ?? issuance.witnessId,
+          }),
+          actorId: params.actorId,
+          actorType: "worker",
+        },
+      });
+
+      return issuance;
     });
 
-    return result;
-  });
-
-  return { success: true as const, issuance: updated };
+    return { success: true as const, issuance: result };
+  } catch (err) {
+    return {
+      success: false as const,
+      error:
+        err instanceof Error ? err.message : "Failed to mark key lost",
+    };
+  }
 }
 
 type ReissueKeyParams = {

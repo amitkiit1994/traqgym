@@ -11,7 +11,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { upsertInsight } from "./_shared";
-import { isoWeekStart, startOfMonthUTC, startOfPrevMonthUTC } from "./_helpers";
+import { isoWeekStart } from "./_helpers";
+import { istCalendarFor, istMonthBoundsUtc } from "@/lib/utils/date-ist";
 
 const AGENT = "plan_mix_drift";
 
@@ -20,8 +21,17 @@ const MIN_BASELINE_TICKETS = 10;
 
 export async function run(): Promise<{ created: number; total: number }> {
   const now = new Date();
-  const thisMonthStart = startOfMonthUTC(now);
-  const lastMonthStart = startOfPrevMonthUTC(now);
+  // Use IST month boundaries (gym operates in IST). UTC boundaries would
+  // misclassify sales between 18:30–24:00 UTC into the wrong calendar month.
+  const istNow = istCalendarFor(now); // month is 0-indexed
+  const thisYear = istNow.year;
+  const thisMonth1 = istNow.month + 1; // make 1-indexed
+  const prevMonth1 = thisMonth1 === 1 ? 12 : thisMonth1 - 1;
+  const prevYear = thisMonth1 === 1 ? thisYear - 1 : thisYear;
+  const thisBounds = istMonthBoundsUtc(thisYear, thisMonth1);
+  const prevBounds = istMonthBoundsUtc(prevYear, prevMonth1);
+  const thisMonthStart = thisBounds.startUtc;
+  const lastMonthStart = prevBounds.startUtc;
 
   // Aggregate new tickets per plan for this month and last month.
   const [thisMonthRows, lastMonthRows] = await Promise.all([

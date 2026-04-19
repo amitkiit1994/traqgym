@@ -131,6 +131,41 @@ export async function recordPtSession(params: {
     const status = params.status ?? "scheduled";
 
     const result = await prisma.$transaction(async (tx) => {
+      // Reject sessions on expired packages — owner must extend or sell new
+      // package, not back-date sessions onto a closed one.
+      if (pkg.expiresAt && pkg.expiresAt.getTime() < Date.now()) {
+        throw new Error("Package has expired");
+      }
+
+      let updatedPkg = pkg;
+      if (status === "completed") {
+        // Conditional update is the race-safe guard. updateMany returns
+        // count===1 only if remaining capacity exists; otherwise abort BEFORE
+        // creating the session row.
+        const incCount = await tx.ptPackage.updateMany({
+          where: {
+            id: params.packageId,
+            sessionsUsed: { lt: pkg.sessionsTotal },
+          },
+          data: { sessionsUsed: { increment: 1 } },
+        });
+        if (incCount.count === 0) {
+          throw new Error("Package has no remaining sessions");
+        }
+        const fresh = await tx.ptPackage.findUnique({
+          where: { id: params.packageId },
+          select: { sessionsUsed: true, sessionsTotal: true, status: true, expiresAt: true },
+        });
+        if (fresh && fresh.sessionsUsed >= fresh.sessionsTotal) {
+          updatedPkg = await tx.ptPackage.update({
+            where: { id: params.packageId },
+            data: { status: "completed" },
+          });
+        } else if (fresh) {
+          updatedPkg = { ...pkg, sessionsUsed: fresh.sessionsUsed };
+        }
+      }
+
       const session = await tx.ptSession.create({
         data: {
           packageId: params.packageId,
@@ -140,22 +175,6 @@ export async function recordPtSession(params: {
           completedAt: status === "completed" ? new Date() : null,
         },
       });
-
-      let updatedPkg = pkg;
-      if (status === "completed") {
-        if (pkg.sessionsUsed >= pkg.sessionsTotal) {
-          throw new Error("Package has no remaining sessions");
-        }
-        updatedPkg = await tx.ptPackage.update({
-          where: { id: params.packageId },
-          data: {
-            sessionsUsed: { increment: 1 },
-            ...(pkg.sessionsUsed + 1 >= pkg.sessionsTotal
-              ? { status: "completed" }
-              : {}),
-          },
-        });
-      }
 
       await tx.auditLog.create({
         data: {
@@ -206,6 +225,12 @@ export async function completePtSession(params: {
       }
       if (session.package.status !== "active") {
         throw new Error(`Package is ${session.package.status}`);
+      }
+      if (
+        session.package.expiresAt &&
+        session.package.expiresAt.getTime() < Date.now()
+      ) {
+        throw new Error("Package has expired");
       }
 
       await tx.ptSession.update({

@@ -398,6 +398,20 @@ export async function processRefund(params: {
         },
       });
 
+      // Tag the reversing Payment to the currently-open CashShift at the
+      // refund's location (if any). Mirrors how forward cash payments are
+      // tagged so end-of-shift reconciliation includes refund outflows in the
+      // expected-cash calculation. If no shift is open (refund processed
+      // outside operating hours), shiftId stays null — explicit, not a bug.
+      let openShiftId: number | null = null;
+      if (refund.payment.locationId != null) {
+        const openShift = await tx.cashShift.findFirst({
+          where: { locationId: refund.payment.locationId, status: "open" },
+          select: { id: true },
+        });
+        openShiftId = openShift?.id ?? null;
+      }
+
       // Insert a reversing Payment row (negative amount, mode="refund").
       const reversing = await tx.payment.create({
         data: {
@@ -410,6 +424,7 @@ export async function processRefund(params: {
           paymentStatus: "full",
           paymentNote: `Refund #${refund.id} (${refund.reason}) via ${refund.refundMode}`,
           paymentFor: "refund",
+          shiftId: openShiftId,
           baseAmount:
             gstReversalAmount != null
               ? -Math.abs(amountRefunded - gstReversalAmount)
@@ -433,6 +448,7 @@ export async function processRefund(params: {
             gstReversalAmount,
             pgRefundId: params.pgRefundId ?? null,
             processedById: params.processedById,
+            shiftId: openShiftId,
           }),
           actorId: params.processedById,
           actorType: "worker",

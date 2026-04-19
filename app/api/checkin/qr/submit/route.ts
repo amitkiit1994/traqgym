@@ -9,6 +9,32 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  // PR 14 audit fix (HIGH): CSRF guard. This route accepts JSON POST and
+  // (in session mode) writes attendance against the caller's NextAuth
+  // cookie — i.e., it is a state-changing authenticated endpoint. Without
+  // an Origin/Host check, a malicious page could trigger drive-by check-ins
+  // for any signed-in member who scanned a QR earlier. Reject any cross-
+  // origin POST.
+  const originHeader = req.headers.get("origin");
+  const hostHeader = req.headers.get("host") ?? "";
+  if (originHeader) {
+    let originHost = "";
+    try {
+      originHost = new URL(originHeader).host;
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid Origin" },
+        { status: 403 },
+      );
+    }
+    if (originHost !== hostHeader) {
+      return NextResponse.json(
+        { success: false, error: "Cross-origin request rejected" },
+        { status: 403 },
+      );
+    }
+  }
+
   let body: {
     token?: unknown;
     mode?: unknown;
@@ -73,31 +99,19 @@ export async function POST(req: NextRequest) {
   }
 
   // mode === "phone"
-  // TODO(PR 14.1): require OTP verification before honoring this path.
-  // Existing OTP infrastructure was not present in the codebase at PR-14
-  // time. For now this path is gated by a separate setting so an admin
-  // must explicitly opt in.
-  const phoneOnlyAllowed =
-    (await getSetting("qr_checkin_allow_phone_only", "false")) === "true";
-  if (!phoneOnlyAllowed) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Phone-only check-in is disabled. Please sign in.",
-      },
-      { status: 403 },
-    );
-  }
-
-  const phone = typeof body.phone === "string" ? body.phone.trim() : "";
-  if (phone.length < 7) {
-    return NextResponse.json({ success: false, error: "Invalid phone" }, { status: 400 });
-  }
-
-  const result = await checkInViaQr({
-    locationId: verified.locationId,
-    phone,
-    scanSource: "qr_lobby",
-  });
-  return NextResponse.json(result, { status: result.success ? 200 : 400 });
+  // PR 14 audit fix (CRITICAL): hard-disabled in code path.
+  //
+  // The phone-only flow was previously gated only by the
+  // `qr_checkin_allow_phone_only` setting. That setting still has effect
+  // elsewhere (UI hints, admin status panel), but the API will refuse
+  // the path entirely until a real OTP service ships (tracked as PR 14.1).
+  // Without OTP, anyone with a member's phone number could mark them
+  // present from the QR — i.e., free attendance fraud / false alibi.
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Phone-only check-in is not available. Please sign in.",
+    },
+    { status: 503 },
+  );
 }

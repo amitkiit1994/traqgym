@@ -35,6 +35,7 @@ export default async function ApprovalsPage({
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
   const role = (session.user as { role?: string }).role ?? "staff";
+  if (role !== "admin") redirect("/admin/dashboard");
 
   const sp = await searchParams;
   const typeParam = typeof sp.type === "string" ? sp.type : "all";

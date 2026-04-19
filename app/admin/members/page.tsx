@@ -179,7 +179,7 @@ export default function MembersPage() {
   }, []);
 
   useEffect(() => {
-    load(search, page);
+    load(search, page, statusFilter, undefined, planFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortBy, sortOrder]);
 
@@ -534,7 +534,15 @@ export default function MembersPage() {
               <TableCell colSpan={8}>
                 <div className="flex flex-col items-center gap-2 py-8">
                   <Users className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No members found</p>
+                  <p className="text-sm text-muted-foreground">
+                    {planFilter !== "all"
+                      ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
+                      : statusFilter !== "all"
+                        ? `No ${statusFilter} members`
+                        : search
+                          ? `No members match "${search}"`
+                          : "No members found"}
+                  </p>
                   <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
                     Add Member
                   </Button>

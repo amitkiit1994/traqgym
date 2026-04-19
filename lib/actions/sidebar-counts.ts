@@ -26,7 +26,12 @@ const getCachedSidebarCounts = unstable_cache(
         where: { balanceDue: { gt: 0 }, status: "active" },
       }),
       prisma.leaveRequest.count({ where: { status: "pending" } }),
-      prisma.approval.count({ where: { status: "pending" } }),
+      prisma.approval.count({
+        where: {
+          status: "pending",
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+      }),
       prisma.refund.count({ where: { status: "pending" } }),
       prisma.cashShift.count({
         where: { status: { in: ["open", "pending_approval"] } },

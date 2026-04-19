@@ -13,12 +13,33 @@ function parseHHMM(value: string | undefined | null): number | null {
   return h * 60 + min;
 }
 
-/** Computes IST minutes-since-midnight from a given Date. */
+/**
+ * Computes IST minutes-since-midnight from a given Date.
+ *
+ * PR 12 audit fix (HIGH): the previous implementation mixed
+ * `getTimezoneOffset()` (which reflects the *server* TZ, not IST) with a
+ * fixed +5:30 shift and then called `getHours()` (which returns LOCAL
+ * hours). This worked by coincidence on UTC and IST hosts but produced
+ * wrong peak/late flags on any other server timezone (e.g. preview
+ * deployments in non-UTC regions, or local dev on an EU laptop).
+ *
+ * Use Intl.DateTimeFormat with timeZone: "Asia/Kolkata" — the standard
+ * library way to render a Date in a specific zone regardless of host TZ.
+ */
+const istHmFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 function istMinutes(d: Date): number {
-  // IST = UTC+5:30
-  const utc = d.getTime() + d.getTimezoneOffset() * 60_000;
-  const ist = new Date(utc + 5.5 * 60 * 60_000);
-  return ist.getHours() * 60 + ist.getMinutes();
+  const parts = istHmFormatter.formatToParts(d);
+  const h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  // Intl renders 24:xx as 00:xx for some locales; clamp defensively.
+  const hour = h === 24 ? 0 : h;
+  return hour * 60 + m;
 }
 
 async function computeTimeFlags(now: Date): Promise<{

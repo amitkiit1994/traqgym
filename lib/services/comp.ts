@@ -1088,6 +1088,35 @@ export async function getCompStats(opts?: {
     topConsumers.sort((a, b) => b.visits - a.visits);
   }
 
+  // 5+6. Batch fetch last-visit and recent visit-count per comp user (single groupBy each)
+  // — replaces 2 × N+1 loops over activeCompsRaw.
+  const compUserIdList = Array.from(compUserIds);
+  const [lastVisitsRows, recentVisitsRows] = compUserIdList.length
+    ? await Promise.all([
+        prisma.attendanceLog.groupBy({
+          by: ["userId"],
+          where: { userId: { in: compUserIdList } },
+          _max: { checkIn: true },
+        }),
+        prisma.attendanceLog.groupBy({
+          by: ["userId"],
+          where: {
+            userId: { in: compUserIdList },
+            checkIn: { gte: fourteenDaysAgo },
+          },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []];
+  const lastVisitByUser = new Map<number, Date | null>();
+  for (const r of lastVisitsRows) {
+    if (r.userId != null) lastVisitByUser.set(r.userId, r._max.checkIn);
+  }
+  const recentVisitsByUser = new Map<number, number>();
+  for (const r of recentVisitsRows) {
+    if (r.userId != null) recentVisitsByUser.set(r.userId, r._count._all);
+  }
+
   // 5. Stale comps — active comp tickets whose user has no visit in 14 days
   const staleComps: Array<{
     ticketId: number;
@@ -1095,12 +1124,7 @@ export async function getCompStats(opts?: {
     daysSinceLastVisit: number;
   }> = [];
   for (const t of activeCompsRaw) {
-    const lastVisit = await prisma.attendanceLog.findFirst({
-      where: { userId: t.userId },
-      orderBy: { checkIn: "desc" },
-      select: { checkIn: true },
-    });
-    const lastVisitDate = lastVisit?.checkIn ?? t.buyDate;
+    const lastVisitDate = lastVisitByUser.get(t.userId) ?? t.buyDate;
     const days = Math.floor(
       (today.getTime() - lastVisitDate.getTime()) / (24 * 60 * 60 * 1000)
     );
@@ -1121,12 +1145,7 @@ export async function getCompStats(opts?: {
     visitsLast30d: number;
   }> = [];
   for (const t of activeCompsRaw) {
-    const v = await prisma.attendanceLog.count({
-      where: {
-        userId: t.userId,
-        checkIn: { gte: fourteenDaysAgo },
-      },
-    });
+    const v = recentVisitsByUser.get(t.userId) ?? 0;
     if (v >= 8) {
       conversionCandidates.push({
         ticketId: t.id,

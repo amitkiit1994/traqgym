@@ -42,12 +42,15 @@ export default async function PosterPage({
   }
 
   const [maxAgeDaysSetting, gymName, gymLogo, gymPhone] = await Promise.all([
-    getSetting("qr_token_max_age_days", "365"),
+    // PR 14 audit fix (CRITICAL): default TTL is 1 day. Posters reprinted
+    // daily by default — owners can raise via setting if their workflow
+    // doesn't allow that, but the default has to fail closed.
+    getSetting("qr_token_max_age_days", "1"),
     getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME ?? "TraqGym"),
     getSetting("gym_logo", ""),
     getSetting("gym_phone", ""),
   ]);
-  const maxAgeDays = Math.max(1, parseInt(maxAgeDaysSetting, 10) || 365);
+  const maxAgeDays = Math.max(1, parseInt(maxAgeDaysSetting, 10) || 1);
   const expiresAt = Date.now() + maxAgeDays * 24 * 60 * 60 * 1000;
 
   const token = signQrToken({ locationId: location.id, expiresAt });

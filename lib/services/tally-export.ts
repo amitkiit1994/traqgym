@@ -158,5 +158,106 @@ export async function exportInvoicesAsTallyXml(
     partyEntry.ele("AMOUNT").txt(`+${totalAmount}`);
   }
 
+  // PR 13 audit fix (CRITICAL): Tally export previously emitted Sales
+  // vouchers only — refunds processed in the period silently disappeared
+  // from the books, leaving Tally over-stating revenue and GST liability.
+  // Emit a Credit Note voucher per processed Refund. Sign convention for
+  // Credit Note is the OPPOSITE of Sales:
+  //   - Sales ledger entry: positive (reverses income)
+  //   - GST output ledgers: negative (reverses output liability)
+  //   - Party ledger:       negative (we owe the party)
+  const refundsInPeriod = await prisma.refund.findMany({
+    where: {
+      status: "processed",
+      processedAt: { gte: from, lte: to },
+      ...(locationId
+        ? { payment: { locationId } }
+        : {}),
+    },
+    include: {
+      invoice: { include: { user: true } },
+      payment: {
+        include: {
+          user: true,
+          invoice: { include: { user: true } },
+          memberTicket: { include: { plan: true } },
+        },
+      },
+    },
+    orderBy: { processedAt: "asc" },
+  });
+
+  for (const refund of refundsInPeriod) {
+    const refundedAmount = Number(refund.amountRefunded ?? 0);
+    if (refundedAmount <= 0) continue;
+
+    const origInvoice = refund.invoice ?? refund.payment.invoice;
+    const customerUser = origInvoice?.user ?? refund.payment.user;
+    if (!customerUser) continue;
+
+    const taxableValue = round2(refundedAmount / (1 + gstRate / 100));
+    const gstTotal = round2(refundedAmount - taxableValue);
+
+    const customerGstin = (customerUser.gstin ?? "").trim() || null;
+    const customerStateCode = gstinStateCode(customerGstin);
+    const isIntraState =
+      !customerGstin || !gymStateCode || customerStateCode === gymStateCode;
+
+    const partyName = `${customerUser.firstname} ${customerUser.lastname}`.trim();
+    const date = formatTallyDate(refund.processedAt ?? refund.createdAt);
+    const cnNumber = `CN-${refund.id}`;
+
+    const tallyMessage = requestData.ele("TALLYMESSAGE", {
+      "xmlns:UDF": "TallyUDF",
+    });
+    const voucher = tallyMessage.ele("VOUCHER", {
+      VCHTYPE: "Credit Note",
+      ACTION: "Create",
+    });
+    voucher.ele("DATE").txt(date);
+    voucher.ele("VOUCHERTYPENAME").txt("Credit Note");
+    voucher.ele("VOUCHERNUMBER").txt(cnNumber);
+    voucher.ele("PARTYLEDGERNAME").txt(partyName || "Walk-in Customer");
+    voucher.ele("NARRATION").txt(
+      origInvoice
+        ? `Refund of ${origInvoice.invoiceNumber} (reason: ${refund.reason})`
+        : `Refund (reason: ${refund.reason})`,
+    );
+    if (origInvoice) {
+      voucher.ele("REFERENCE").txt(origInvoice.invoiceNumber);
+    }
+
+    // Sales (income reversal) — positive in Credit Note
+    const salesEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
+    salesEntry.ele("LEDGERNAME").txt(salesLedger);
+    salesEntry.ele("ISDEEMEDPOSITIVE").txt("Yes");
+    salesEntry.ele("AMOUNT").txt(`+${taxableValue}`);
+
+    if (isIntraState) {
+      const cgst = round2(gstTotal / 2);
+      const sgst = round2(gstTotal - cgst);
+      const cgstEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
+      cgstEntry.ele("LEDGERNAME").txt(cgstLedger);
+      cgstEntry.ele("ISDEEMEDPOSITIVE").txt("Yes");
+      cgstEntry.ele("AMOUNT").txt(`+${cgst}`);
+
+      const sgstEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
+      sgstEntry.ele("LEDGERNAME").txt(sgstLedger);
+      sgstEntry.ele("ISDEEMEDPOSITIVE").txt("Yes");
+      sgstEntry.ele("AMOUNT").txt(`+${sgst}`);
+    } else {
+      const igstEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
+      igstEntry.ele("LEDGERNAME").txt(igstLedger);
+      igstEntry.ele("ISDEEMEDPOSITIVE").txt("Yes");
+      igstEntry.ele("AMOUNT").txt(`+${gstTotal}`);
+    }
+
+    // Party credit (we owe them) — negative
+    const partyEntry = voucher.ele("ALLLEDGERENTRIES.LIST");
+    partyEntry.ele("LEDGERNAME").txt(partyName || "Walk-in Customer");
+    partyEntry.ele("ISDEEMEDPOSITIVE").txt("No");
+    partyEntry.ele("AMOUNT").txt(String(-refundedAmount));
+  }
+
   return root.end({ prettyPrint: true });
 }

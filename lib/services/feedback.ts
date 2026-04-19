@@ -95,11 +95,33 @@ export async function recordClassFeedback(params: {
     where: { id: params.classId },
     select: {
       id: true,
+      classId: true,
       gymClass: { select: { instructorId: true } },
     },
   });
   if (!klass) {
     return { success: false as const, error: "Class not found" };
+  }
+
+  // PR 12 audit fix (HIGH): a member must have actually booked + attended
+  // the class before they can rate it. Without this guard, anyone with a
+  // valid session could spam fake reviews — including members who never
+  // attended the class — and tank a trainer's average rating. Treat
+  // status="attended" as the only proof of attendance; status="booked" /
+  // "cancelled" / "no_show" are not enough.
+  const booking = await prisma.classBooking.findFirst({
+    where: {
+      userId: params.userId,
+      classId: klass.classId,
+      status: "attended",
+    },
+    select: { id: true },
+  });
+  if (!booking) {
+    return {
+      success: false as const,
+      error: "You can only rate classes you have attended",
+    };
   }
 
   const trainerId =

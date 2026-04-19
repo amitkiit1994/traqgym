@@ -77,10 +77,18 @@ export async function listPendingPayoutsAction(opts?: { trainerId?: number }) {
 }
 
 export async function listPayoutsForTrainerAction(trainerId: number) {
+  let session;
   try {
-    await requireWorker();
+    session = await requireWorker();
   } catch {
     return [];
   }
-  return listPayoutsForTrainer(trainerId);
+  // PR 15 audit fix (HIGH): IDOR. Previously any worker could pass any
+  // trainerId and read that trainer's commissions / gross revenue / payout
+  // status. Non-admins are now scoped to their own trainerId, regardless of
+  // what they pass. Admins may still query any trainer.
+  const callerId = parseInt(session.user.id, 10);
+  const isAdmin = session.user.role === "admin";
+  const effectiveTrainerId = isAdmin ? trainerId : callerId;
+  return listPayoutsForTrainer(effectiveTrainerId);
 }

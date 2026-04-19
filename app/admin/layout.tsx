@@ -12,12 +12,14 @@ const zeroCounts = { pendingFollowups: 0, newEnquiries: 0, balanceDueCount: 0, p
 
 async function SidebarWithCounts({ role }: { role: string }) {
   const counts = await getSidebarCounts();
-  return <AdminSidebar role={role} counts={counts} />;
+  const scoped = role === "admin" ? counts : { ...counts, pendingApprovalsCount: 0, pendingRefundsCount: 0 };
+  return <AdminSidebar role={role} counts={scoped} />;
 }
 
 async function MobileMenuWithCounts({ role }: { role: string }) {
   const counts = await getSidebarCounts();
-  return <AdminMobileMenu role={role} counts={counts} />;
+  const scoped = role === "admin" ? counts : { ...counts, pendingApprovalsCount: 0, pendingRefundsCount: 0 };
+  return <AdminMobileMenu role={role} counts={scoped} />;
 }
 
 export default async function AdminLayout({

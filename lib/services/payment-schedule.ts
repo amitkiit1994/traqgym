@@ -332,6 +332,9 @@ export async function getOverdueInstallments(opts?: {
   }
 
   const where: Prisma.PaymentInstallmentWhereInput = {
+    // Defensive: an installment whose parent schedule is cancelled but the
+    // installment itself is still "pending" (legacy bug or partial state)
+    // would otherwise leak through. Both filters are required.
     status: { in: ["pending", "overdue"] },
     dueDate: { lte: cutoff },
     schedule: {
@@ -524,6 +527,16 @@ export async function cancelSchedule(
   await prisma.$transaction(async (tx) => {
     await tx.paymentSchedule.update({
       where: { id: scheduleId },
+      data: { status: "cancelled" },
+    });
+    // Mark unpaid installments as cancelled too — keeps reminder cron + UI
+    // queries clean even if downstream code forgets to filter by parent
+    // schedule status. Idempotent via status guard.
+    await tx.paymentInstallment.updateMany({
+      where: {
+        scheduleId,
+        status: { in: ["pending", "overdue"] },
+      },
       data: { status: "cancelled" },
     });
     await tx.auditLog.create({

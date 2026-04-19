@@ -21,7 +21,12 @@ export default async function QrCheckinAdminPage() {
     await Promise.all([
       getSetting("qr_checkin_enabled", "false"),
       getSetting("qr_checkin_rate_limit_hours", "4"),
-      getSetting("qr_token_max_age_days", "365"),
+      // PR 14 audit fix (CRITICAL): default TTL was 365d — way too long
+      // for a static lobby poster. If someone photographs the QR (trivial
+      // — it's printed on the wall), they can spoof check-ins for a year
+      // until the secret is rotated. Default to 1 day; admins can raise
+      // it consciously per gym policy (e.g. 7d for poster reprints).
+      getSetting("qr_token_max_age_days", "1"),
       getSetting("qr_checkin_allow_phone_only", "false"),
       Promise.resolve(Boolean(process.env.QR_TOKEN_SECRET && process.env.QR_TOKEN_SECRET.trim())),
       prisma.location.findMany({

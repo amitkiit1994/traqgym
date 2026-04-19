@@ -52,7 +52,7 @@ export async function runCompAuditor(opts?: {
           args: { href: "/admin/comps" },
         },
       ],
-      dedupeKey: `comp_audit:${dateKey}:${severity}:comp_ratio${locSuffix}`,
+      dedupeKey: `comp_auditor:${dateKey}:${severity}:comp_ratio${locSuffix}`,
     });
     if (result.created) insightsCreated++;
   }
@@ -75,7 +75,7 @@ export async function runCompAuditor(opts?: {
           args: { href: "/admin/comps?filter=stale" },
         },
       ],
-      dedupeKey: `comp_audit:${dateKey}:medium:stale_comps${locSuffix}`,
+      dedupeKey: `comp_auditor:${dateKey}:medium:stale_comps${locSuffix}`,
     });
     if (result.created) insightsCreated++;
   }
@@ -101,7 +101,7 @@ export async function runCompAuditor(opts?: {
           args: { href: "/admin/comps?filter=conversion_ready" },
         },
       ],
-      dedupeKey: `comp_audit:${dateKey}:high:conversion_candidates${locSuffix}`,
+      dedupeKey: `comp_auditor:${dateKey}:high:conversion_candidates${locSuffix}`,
     });
     if (result.created) insightsCreated++;
   }
@@ -126,7 +126,7 @@ export async function runCompAuditor(opts?: {
           args: { href: "/admin/comps" },
         },
       ],
-      dedupeKey: `comp_audit:${dateKey}:${severity}:revenue_leak${locSuffix}`,
+      dedupeKey: `comp_auditor:${dateKey}:${severity}:revenue_leak${locSuffix}`,
     });
     if (result.created) insightsCreated++;
   }

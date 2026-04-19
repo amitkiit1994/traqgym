@@ -161,9 +161,12 @@ export async function getMyClientDetail(
   trainerId: number,
   userId: number
 ): Promise<TrainerClientDetail | null> {
-  // First verify this user has at least one package with this trainer.
+  // PR 15 audit fix (HIGH): only expose clients on currently-active packages.
+  // Without the status filter, a trainer continued seeing measurements +
+  // session history of ex-clients whose packages were marked
+  // completed/cancelled — sometimes long after the relationship ended.
   const packages = await prisma.ptPackage.findMany({
-    where: { userId, trainerId },
+    where: { userId, trainerId, status: "active" },
     include: {
       sessions: { orderBy: { scheduledAt: "desc" } },
       user: {

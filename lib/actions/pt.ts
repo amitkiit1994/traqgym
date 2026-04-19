@@ -188,21 +188,38 @@ export async function listPtPackagesAction(opts?: {
   status?: string;
   locationId?: number;
 }) {
+  let session;
   try {
-    await requireWorker();
+    session = await requireWorker();
   } catch {
     return [];
+  }
+  const role = (session.user as { role?: string }).role ?? "staff";
+  const callerWorkerId = parseInt(session.user.id, 10);
+  // Trainers (non-admin) may only list their own packages.
+  if (role !== "admin") {
+    if (!Number.isFinite(callerWorkerId)) return [];
+    return listPtPackages({ ...opts, trainerId: callerWorkerId });
   }
   return listPtPackages(opts);
 }
 
 export async function getPtPackageDetailAction(packageId: number) {
+  let session;
   try {
-    await requireWorker();
+    session = await requireWorker();
   } catch {
     return null;
   }
-  return getPtPackageDetail(packageId);
+  const role = (session.user as { role?: string }).role ?? "staff";
+  const callerWorkerId = parseInt(session.user.id, 10);
+  const detail = await getPtPackageDetail(packageId);
+  if (!detail) return null;
+  // Non-admins may only read packages they own as the assigned trainer.
+  if (role !== "admin" && detail.trainerId !== callerWorkerId) {
+    return null;
+  }
+  return detail;
 }
 
 export async function getTrainersAction() {

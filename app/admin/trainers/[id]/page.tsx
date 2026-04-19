@@ -46,7 +46,13 @@ export default async function TrainerDetailPage({
     getMyPtClients(trainerId),
     listPayoutsForTrainer(trainerId),
     prisma.ptSession.findMany({
-      where: { package: { trainerId } },
+      where: {
+        package: { trainerId },
+        // Bound the index scan — at multi-year scale, scanning all-time
+        // sessions to take 25 is wasteful. Last 90 days is enough for
+        // the recent-activity panel.
+        scheduledAt: { gte: new Date(Date.now() - 90 * 86_400_000) },
+      },
       orderBy: { scheduledAt: "desc" },
       take: 25,
       include: {

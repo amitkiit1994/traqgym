@@ -151,6 +151,19 @@ export async function approveRequest(params: {
     return { success: true, alreadyDecided: true };
   }
 
+  // Reject expired approvals — never dispatch underlying mutation.
+  if (approval.expiresAt && approval.expiresAt.getTime() < Date.now()) {
+    await prisma.approval.update({
+      where: { id: params.approvalId },
+      data: {
+        status: "expired",
+        decidedAt: new Date(),
+        decisionNote: "Auto-rejected at approval time: request expired",
+      },
+    });
+    return { success: false, error: "Approval request has expired" };
+  }
+
   const decider = await prisma.worker.findUnique({
     where: { id: params.decidedById },
   });

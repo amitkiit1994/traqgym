@@ -315,7 +315,45 @@ async function handlePairCommand(params: {
     return OK();
   }
 
-  await setSetting("gym_owner_telegram_chat_id", String(params.chatId));
+  // PR 9 audit fix (CRITICAL): pairing race / hijack hardening.
+  // The previous flow did `setSetting("gym_owner_telegram_chat_id", chatId)` —
+  // last-write-wins. Two parties presenting today's valid /pair code would
+  // race; the loser's chat_id silently overwrote the winner. Mitigation:
+  // first-pair-wins. Once paired, refuse re-pair from a *different* chat
+  // until the existing owner explicitly unpairs from inside their chat.
+  // The DB `upsert` is atomic per row, so we use `create` + catch-on-conflict
+  // semantics to claim ownership.
+  const existing = await prisma.gymSettings.findUnique({
+    where: { key: "gym_owner_telegram_chat_id" },
+  });
+  const presentedChatId = String(params.chatId);
+  if (existing?.value && existing.value.length > 0 && existing.value !== presentedChatId) {
+    await sendMessage({
+      chatId: params.chatId,
+      text:
+        "\u274C This gym is already paired with another Telegram chat. Ask the existing operator to send <code>/unpair</code> from their chat first, then try again.",
+      parseMode: "HTML",
+    });
+    await prisma.auditLog
+      .create({
+        data: {
+          action: "telegram.pair",
+          status: "rejected",
+          actorId: null,
+          actorType: "system",
+          details: JSON.stringify({
+            reason: "already_paired",
+            attemptedChatId: presentedChatId,
+            existingChatId: existing.value,
+            telegramUserId: params.telegramUserId,
+          }),
+        },
+      })
+      .catch(() => {});
+    return OK();
+  }
+
+  await setSetting("gym_owner_telegram_chat_id", presentedChatId);
   if (params.telegramUserId) {
     await setSetting("gym_owner_telegram_user_id", params.telegramUserId);
   }
@@ -674,17 +712,45 @@ async function handleCallbackQuery(cq: TgCallbackQuery): Promise<Response> {
   return OK();
 }
 
+// PR 9 audit fix: cap voice payloads before downloading + transcribing.
+// Whisper bills per minute of audio (~$0.006/min) and unbounded uploads are a
+// cheap DoS vector — an attacker who pairs (or spoofs into) a chat can flood
+// 50×20MB clips and burn the OpenAI quota in minutes. 8MB ≈ 10–15 min of
+// OGG/Opus voice, well above any normal owner reply length.
+const MAX_VOICE_BYTES = 8 * 1024 * 1024;
+const MAX_VOICE_DURATION_S = 180;
+
 // ── Process a voice note: download + Whisper + treat as text ───────────────
 async function handleVoiceMessage(args: {
   chatId: number;
   voice: TgVoice;
   telegramUserId?: string;
 }): Promise<void> {
+  if (
+    typeof args.voice.duration === "number" &&
+    args.voice.duration > MAX_VOICE_DURATION_S
+  ) {
+    await sendMessage({
+      chatId: args.chatId,
+      text: `\u26A0\uFE0F Voice note too long (max ${MAX_VOICE_DURATION_S}s). Please send a shorter clip or type the message.`,
+    });
+    return;
+  }
   const fileInfo = await getFile({ fileId: args.voice.file_id });
   if (!fileInfo.success || !fileInfo.data.file_path) {
     await sendMessage({
       chatId: args.chatId,
       text: "\u26A0\uFE0F Couldn't fetch your voice note.",
+    });
+    return;
+  }
+  if (
+    typeof fileInfo.data.file_size === "number" &&
+    fileInfo.data.file_size > MAX_VOICE_BYTES
+  ) {
+    await sendMessage({
+      chatId: args.chatId,
+      text: "\u26A0\uFE0F Voice note too large (max 8 MB). Please send a shorter clip.",
     });
     return;
   }
@@ -828,6 +894,19 @@ export async function POST(request: Request) {
         text: "\u26A0\uFE0F Snooze failed. Try again or use the dashboard.",
       });
     }
+    return OK();
+  }
+
+  // PR 16 audit fix: catch any other `/snooze ...` form so we don't silently
+  // forward it to the AI agent (which would treat it as natural language and
+  // produce confusing answers). Word boundary keeps `/snoozeable` etc. out.
+  if (msg.text && /^\/snooze(@\w+)?\b/i.test(msg.text.trim())) {
+    await sendMessage({
+      chatId,
+      text:
+        "\u2139\uFE0F Unsupported snooze command. Try <code>/snooze today</code> to mute all active insights until tomorrow 06:00 IST.",
+      parseMode: "HTML",
+    });
     return OK();
   }
 

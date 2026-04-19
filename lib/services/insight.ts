@@ -16,6 +16,7 @@ import {
 import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
 import { send as sendSms } from "@/lib/channels/sms";
 import { notifyUser, notifyWorkersByRole } from "@/lib/services/in-app-notification";
+import { hashActionSnapshot } from "@/lib/ai/manager";
 
 export type InsightSeverity = "critical" | "high" | "medium" | "low";
 
@@ -194,6 +195,18 @@ export async function executeInsightAction(params: {
   insightId: number;
   actionIndex: number;
   executedById: number;
+  /**
+   * PR 16 audit fix (CRITICAL): when the caller comes from a magic link,
+   * the link's HMAC binds the action contents at sign-time via this hash.
+   * If the live `Insight.suggestedActions[actionIndex]` no longer matches,
+   * the action was edited after signing — refuse to execute. This blocks
+   * a "bait and switch" where a benign action ("Send reminder") is
+   * mutated into a destructive one ("Refund ₹50,000") before the click.
+   *
+   * Optional: callers without a magic link (dashboard click, API agent)
+   * skip the check.
+   */
+  expectedActionHash?: string;
 }): Promise<
   | { success: true; result?: unknown; alreadyDone?: boolean }
   | { success: false; error: string }
@@ -215,9 +228,34 @@ export async function executeInsightAction(params: {
     return { success: false, error: "Insight has no suggested actions" };
   }
 
+  if (
+    !Number.isInteger(params.actionIndex) ||
+    params.actionIndex < 0 ||
+    params.actionIndex >= actions.length
+  ) {
+    return { success: false, error: "Action index out of bounds" };
+  }
+
   const chosen = actions[params.actionIndex];
   if (!chosen || typeof chosen.action !== "string") {
     return { success: false, error: "Invalid action index" };
+  }
+
+  // PR 16 audit fix: verify args binding BEFORE we claim the insight, so a
+  // mismatched hash doesn't dismiss a still-valid insight.
+  if (params.expectedActionHash) {
+    const liveHash = hashActionSnapshot({
+      label: chosen.label ?? "",
+      action: chosen.action,
+      args: chosen.args ?? {},
+    });
+    if (liveHash !== params.expectedActionHash) {
+      return {
+        success: false,
+        error:
+          "Action contents have changed since the link was issued — open the dashboard to act on the current version.",
+      };
+    }
   }
 
   // R03/R06: Atomic claim. updateMany with dismissedAt: null guard means only
@@ -521,6 +559,107 @@ export async function executeInsightAction(params: {
         },
       });
       return { success: true, result: { ticketId, kind, recorded: true } };
+    }
+
+    case "upgrade.send_offer": {
+      const userId = num("userId");
+      const recommendedPlanId = num("recommendedPlanId");
+      const discountPct = num("discountPct") ?? 0;
+      if (userId === null || recommendedPlanId === null) {
+        return {
+          success: false,
+          error: "upgrade.send_offer requires userId, recommendedPlanId",
+        };
+      }
+      if (discountPct < 0 || discountPct > 100) {
+        return {
+          success: false,
+          error: "discountPct must be between 0 and 100",
+        };
+      }
+      // Resolve user + plan, then dispatch a notification — this is an
+      // outreach action, not a mutation against the membership.
+      const [user, plan] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, firstname: true, lastname: true, phone: true },
+        }),
+        prisma.ticketPlan.findUnique({
+          where: { id: recommendedPlanId },
+          select: { id: true, name: true, price: true },
+        }),
+      ]);
+      if (!user) return { success: false, error: "User not found" };
+      if (!plan) return { success: false, error: "Recommended plan not found" };
+
+      const planPrice = Number(plan.price ?? 0);
+      const offerPrice = discountPct > 0
+        ? Math.round(planPrice * (1 - discountPct / 100))
+        : planPrice;
+
+      const memberName = `${user.firstname ?? ""} ${user.lastname ?? ""}`.trim();
+      const variables = {
+        name: memberName,
+        plan: plan.name,
+        price: offerPrice.toLocaleString("en-IN"),
+        ...(discountPct > 0 ? { discount: String(discountPct) } : {}),
+      };
+
+      let dispatched = false;
+      if (user.phone) {
+        try {
+          await sendWhatsApp({
+            recipient: user.phone,
+            templateName: discountPct > 0 ? "upgrade_offer_discount" : "upgrade_offer",
+            variables,
+          });
+          dispatched = true;
+        } catch (err) {
+          // Fall back to SMS if WA fails.
+          try {
+            await sendSms({
+              recipient: user.phone,
+              templateName: discountPct > 0 ? "upgrade_offer_discount" : "upgrade_offer",
+              variables,
+            });
+            dispatched = true;
+          } catch (smsErr) {
+            return {
+              success: false,
+              error: `Outreach send failed (whatsapp + sms): ${smsErr instanceof Error ? smsErr.message : "unknown"}`,
+            };
+          }
+        }
+      }
+
+      // In-app notification mirrors the offer for in-app users.
+      await notifyUser({
+        userId: user.id,
+        type: "promo",
+        title: `Upgrade to ${plan.name}`,
+        message: discountPct > 0
+          ? `Limited offer: upgrade to ${plan.name} for ₹${offerPrice.toLocaleString("en-IN")} (${discountPct}% off).`
+          : `Try ${plan.name} for ₹${offerPrice.toLocaleString("en-IN")}.`,
+        link: "/member/plans",
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          action: "insight.action.upgrade.send_offer",
+          status: "success",
+          actorId: params.executedById,
+          actorType: "worker",
+          details: JSON.stringify({
+            insightId: params.insightId,
+            userId,
+            recommendedPlanId,
+            discountPct,
+            offerPrice,
+            dispatched,
+          }),
+        },
+      });
+      return { success: true, result: { userId, recommendedPlanId, dispatched } };
     }
 
     default:

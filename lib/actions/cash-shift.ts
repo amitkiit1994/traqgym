@@ -2,6 +2,7 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { requireWorker } from "@/lib/auth-guard";
+import { prisma } from "@/lib/prisma";
 import {
   openShift,
   closeShift,
@@ -71,6 +72,23 @@ export async function closeShiftAction(params: {
     return unauthorized();
   }
   const closedById = parseInt(session.user.id, 10);
+
+  // Authz: a staff worker may only close shifts at their own location. Admins
+  // may close any shift. Reason: prevents Location-A staff from closing
+  // Location-B's shift (drawer counts and variance approvals must stay with
+  // the staff who actually held the cash).
+  const role = session.user.role;
+  if (role !== "admin") {
+    const shift = await prisma.cashShift.findUnique({
+      where: { id: params.shiftId },
+      select: { locationId: true },
+    });
+    if (!shift) return { success: false, error: "Shift not found" };
+    const callerLocationId = session.user.locationId;
+    if (callerLocationId == null || callerLocationId !== shift.locationId) {
+      return { success: false, error: "Forbidden: not your shift's location" };
+    }
+  }
 
   const res = await closeShift({
     shiftId: params.shiftId,

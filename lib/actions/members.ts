@@ -82,8 +82,9 @@ export async function getMembers(params?: string | { search?: string; page?: num
     };
   }
 
-  // Plan filter: restrict to members with an active ticket on the selected plan.
-  // Compose with any existing memberTickets `some` clause from status filters.
+  // Plan filter: restrict to members with a ticket on the selected plan.
+  // Compose with any existing memberTickets `some` clause from status filters
+  // (so e.g. status=expired&planId=5 means "expired tickets on plan 5").
   if (planFilter !== undefined && Number.isFinite(planFilter)) {
     const existingSome = (where.memberTickets && typeof where.memberTickets === "object" && "some" in where.memberTickets)
       ? where.memberTickets.some
@@ -92,7 +93,6 @@ export async function getMembers(params?: string | { search?: string; page?: num
       some: {
         ...(existingSome ?? {}),
         planId: planFilter,
-        status: "active",
       },
     };
   }
