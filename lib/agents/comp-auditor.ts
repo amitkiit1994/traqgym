@@ -8,12 +8,18 @@
  */
 
 import { getCompStats } from "@/lib/services/comp";
+import { istCalendarFor } from "@/lib/utils/date-ist";
 import { upsertInsight, type InsightSeverity } from "./_shared";
 
 const AGENT = "comp_auditor";
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const cal = istCalendarFor(new Date());
+  // istCalendarFor returns month as 0-indexed (UTC getMonth semantics).
+  const y = String(cal.year).padStart(4, "0");
+  const m = String(cal.month + 1).padStart(2, "0");
+  const d = String(cal.day).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function inr(n: number): string {

@@ -316,18 +316,57 @@ async function handlePairCommand(params: {
   }
 
   // PR 9 audit fix (CRITICAL): pairing race / hijack hardening.
-  // The previous flow did `setSetting("gym_owner_telegram_chat_id", chatId)` —
-  // last-write-wins. Two parties presenting today's valid /pair code would
-  // race; the loser's chat_id silently overwrote the winner. Mitigation:
-  // first-pair-wins. Once paired, refuse re-pair from a *different* chat
-  // until the existing owner explicitly unpairs from inside their chat.
-  // The DB `upsert` is atomic per row, so we use `create` + catch-on-conflict
-  // semantics to claim ownership.
-  const existing = await prisma.gymSettings.findUnique({
-    where: { key: "gym_owner_telegram_chat_id" },
-  });
+  // The previous flow did `findUnique` + `setSetting` — two concurrent /pair
+  // requests from different chats could both pass the null check and the
+  // second write would silently overwrite the first. Mitigation: collapse
+  // the claim into a single atomic conditional Prisma op.
+  //
+  // Strategy:
+  //   1. updateMany({ where: { key, value: "" } }) — captures the case where
+  //      a previous /disconnect left the row with an empty-string sentinel.
+  //      If count === 1, we won the race; nobody else can flip a "" row to
+  //      our chatId after we did, because their updateMany would now match
+  //      0 rows.
+  //   2. If updateMany returned 0, the row either doesn't exist OR is
+  //      already populated with a non-empty value. Try create() — if it
+  //      succeeds we won (row didn't exist). If it throws on unique
+  //      constraint (P2002), the row exists; re-read to learn the winner.
+  //
+  // Same chatId re-pairing (no-op idempotent re-pair) is handled by the
+  // post-claim equality check.
   const presentedChatId = String(params.chatId);
-  if (existing?.value && existing.value.length > 0 && existing.value !== presentedChatId) {
+
+  let claimedByUs = false;
+  let currentValue: string | null = null;
+
+  // Step 1: try to flip an empty-sentinel row to our chatId atomically.
+  const updated = await prisma.gymSettings.updateMany({
+    where: { key: "gym_owner_telegram_chat_id", value: "" },
+    data: { value: presentedChatId },
+  });
+  if (updated.count === 1) {
+    claimedByUs = true;
+    currentValue = presentedChatId;
+  } else {
+    // Step 2: try to create the row. Succeeds iff no row exists at all.
+    try {
+      await prisma.gymSettings.create({
+        data: { key: "gym_owner_telegram_chat_id", value: presentedChatId },
+      });
+      claimedByUs = true;
+      currentValue = presentedChatId;
+    } catch {
+      // Unique-constraint violation (or any other failure): row exists with
+      // a non-empty value owned by someone (possibly us, on a re-pair).
+      const row = await prisma.gymSettings.findUnique({
+        where: { key: "gym_owner_telegram_chat_id" },
+      });
+      currentValue = row?.value ?? null;
+      claimedByUs = currentValue === presentedChatId;
+    }
+  }
+
+  if (!claimedByUs) {
     await sendMessage({
       chatId: params.chatId,
       text:
@@ -344,7 +383,7 @@ async function handlePairCommand(params: {
           details: JSON.stringify({
             reason: "already_paired",
             attemptedChatId: presentedChatId,
-            existingChatId: existing.value,
+            existingChatId: currentValue,
             telegramUserId: params.telegramUserId,
           }),
         },
@@ -353,7 +392,6 @@ async function handlePairCommand(params: {
     return OK();
   }
 
-  await setSetting("gym_owner_telegram_chat_id", presentedChatId);
   if (params.telegramUserId) {
     await setSetting("gym_owner_telegram_user_id", params.telegramUserId);
   }
@@ -529,9 +567,15 @@ async function handleCallbackQuery(cq: TgCallbackQuery): Promise<Response> {
   }
 
   // Owner gate (same as text messages).
+  // SECURITY: when ownerChatId is empty/falsy (no owner paired, or after
+  // /disconnect), reject ALL callback queries. Callbacks never carry /pair
+  // or /start text, so there is no legitimate unauthenticated callback. The
+  // previous `ownerChatId && ...` truthiness check short-circuited to "not
+  // rejected" when unpaired, letting any random Telegram user fire
+  // insight_action / snooze / amb_cancel callbacks.
   const ownerChatId = await getOwnerChatId();
   const fromChatId = cq.message?.chat.id;
-  if (!fromChatId || (ownerChatId && String(fromChatId) !== ownerChatId)) {
+  if (!fromChatId || !ownerChatId || String(fromChatId) !== ownerChatId) {
     await answerCallbackQuery({
       callbackQueryId: cq.id,
       text: "Not authorized.",

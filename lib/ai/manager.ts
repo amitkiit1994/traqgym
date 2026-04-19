@@ -163,6 +163,15 @@ function resolveSecret(explicitSecret?: string): string {
   if (explicitSecret && explicitSecret.length > 0) return explicitSecret;
   const env = process.env.MANAGER_ACTION_SECRET;
   if (env && env.length > 0) return env;
+  // SECURITY: In production, refuse to fall back to a NEXTAUTH_SECRET-derived
+  // key. Silently deriving from NEXTAUTH_SECRET means an attacker who learns
+  // NEXTAUTH_SECRET (e.g. via a leaked env dump) can also forge manager
+  // magic links. Force operators to set MANAGER_ACTION_SECRET explicitly.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "MANAGER_ACTION_SECRET must be set in production (refusing to derive from NEXTAUTH_SECRET)."
+    );
+  }
   const fallback = process.env.NEXTAUTH_SECRET;
   if (fallback && fallback.length > 0) {
     if (!warnedFallbackSecret) {

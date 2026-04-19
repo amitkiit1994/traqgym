@@ -154,15 +154,23 @@ export async function getTrainerStatsAction(
   fromDate: string,
   toDate: string
 ) {
+  let session;
   try {
-    await requireWorker();
+    session = await requireWorker();
   } catch {
     return null;
   }
+  // PR 15 audit fix (HIGH): IDOR. Previously any worker could pass any
+  // trainerId and read another trainer's commission earnings / session
+  // counts. Non-admins are now scoped to their own trainerId, regardless of
+  // what they pass. Admins may still query any trainer.
+  const callerId = parseInt(session.user.id, 10);
+  const isAdmin = session.user.role === "admin";
+  const effectiveTrainerId = isAdmin ? trainerId : callerId;
   const from = new Date(fromDate);
   const to = new Date(toDate);
   if (isNaN(from.getTime()) || isNaN(to.getTime())) return null;
-  return getTrainerStats(trainerId, { from, to });
+  return getTrainerStats(effectiveTrainerId, { from, to });
 }
 
 export async function getMyPtClientsAction(_trainerId?: number) {
@@ -223,8 +231,12 @@ export async function getPtPackageDetailAction(packageId: number) {
 }
 
 export async function getTrainersAction() {
+  // PR 15 audit fix (HIGH): this returns commission percentages
+  // (defaultGymCutPct, ownTrainerCutPct) for every trainer. Restricted to
+  // admins so non-admin workers cannot enumerate other trainers' commission
+  // structure.
   try {
-    await requireWorker();
+    await requireWorker(["admin"]);
   } catch {
     return [];
   }
@@ -256,8 +268,11 @@ export async function getTrainersAction() {
 }
 
 export async function searchMembersForPtAction(query: string) {
+  // PR 15 audit fix (HIGH): this allows substring search across member name
+  // and phone (2-char min). Restricted to admins so non-admin workers cannot
+  // bulk-enumerate the member directory via short queries.
   try {
-    await requireWorker();
+    await requireWorker(["admin"]);
   } catch {
     return [];
   }

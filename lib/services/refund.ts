@@ -17,7 +17,7 @@
  *
  * All state transitions are idempotent — calling them twice is a no-op.
  */
-import type { Refund } from "@prisma/client";
+import { Prisma, type Refund } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
 
@@ -285,19 +285,33 @@ export async function approveRefund(
   if (!approver) return { success: false, error: "Approver not found" };
 
   try {
-    await prisma.$transaction(async (tx) => {
-      const fresh = await tx.refund.findUnique({ where: { id: refundId } });
-      if (!fresh || fresh.status !== "pending") return;
-
-      await tx.refund.update({
-        where: { id: refundId },
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Atomic conditional update — only flips if status is still "pending".
+      // Two concurrent admins (one approving, one rejecting) cannot both win:
+      // whichever transaction commits first sets status away from "pending",
+      // and the other's updateMany matches 0 rows.
+      const updated = await tx.refund.updateMany({
+        where: { id: refundId, status: "pending" },
         data: {
           status: "approved",
           approvedById: approverId,
           approvedAt: new Date(),
-          notes: note ?? fresh.notes,
+          ...(note !== undefined ? { notes: note } : {}),
         },
       });
+
+      if (updated.count !== 1) {
+        // Lost the race — read the current state to report who decided it.
+        const current = await tx.refund.findUnique({
+          where: { id: refundId },
+          select: {
+            status: true,
+            approvedById: true,
+            approvedAt: true,
+          },
+        });
+        return { raced: true as const, current };
+      }
 
       await tx.auditLog.create({
         data: {
@@ -312,7 +326,21 @@ export async function approveRefund(
           actorType: "worker",
         },
       });
+
+      return { raced: false as const };
     });
+
+    if (outcome.raced) {
+      const decidedBy = outcome.current?.approvedById ?? "unknown";
+      const decidedAt = outcome.current?.approvedAt
+        ? outcome.current.approvedAt.toISOString()
+        : "unknown time";
+      const status = outcome.current?.status ?? "unknown";
+      return {
+        success: false,
+        error: `Refund #${refundId} was already decided (status="${status}") by worker ${decidedBy} at ${decidedAt}`,
+      };
+    }
 
     return { success: true, refundId };
   } catch (err) {
@@ -371,10 +399,34 @@ export async function processRefund(params: {
   const safeGstRate = Number.isFinite(gstRate) && gstRate > 0 ? gstRate : 18;
 
   const amountRefunded = Number(refund.amountRequested);
-  const gstReversalAmount =
-    gstScheme === "regular"
-      ? +(amountRefunded * (safeGstRate / (100 + safeGstRate))).toFixed(2)
-      : null;
+
+  // Compute GST reversal in Decimal to avoid binary-float drift on paise.
+  // Tax-inclusive total = base + tax, where tax = base * rate/100.
+  //   => base = total / (1 + rate/100)
+  //   => tax  = total - base   (guarantees base + tax === total exactly)
+  let gstReversalAmount: number | null = null;
+  let gstBaseAmount: number | null = null;
+  if (gstScheme === "regular") {
+    const total = new Prisma.Decimal(refund.amountRequested.toString());
+    const divisor = new Prisma.Decimal(1).plus(
+      new Prisma.Decimal(safeGstRate).div(100),
+    );
+    const baseAmountDec = total
+      .div(divisor)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const taxAmountDec = total.minus(baseAmountDec);
+
+    // Sanity check: base + tax must equal total exactly (no residual paise).
+    if (!baseAmountDec.plus(taxAmountDec).equals(total)) {
+      return {
+        success: false,
+        error: `GST split failed integrity check: base ${baseAmountDec.toString()} + tax ${taxAmountDec.toString()} != total ${total.toString()}`,
+      };
+    }
+
+    gstReversalAmount = taxAmountDec.toNumber();
+    gstBaseAmount = baseAmountDec.toNumber();
+  }
 
   const processedAt = params.processedAt ?? new Date();
 
@@ -426,9 +478,7 @@ export async function processRefund(params: {
           paymentFor: "refund",
           shiftId: openShiftId,
           baseAmount:
-            gstReversalAmount != null
-              ? -Math.abs(amountRefunded - gstReversalAmount)
-              : null,
+            gstBaseAmount != null ? -Math.abs(gstBaseAmount) : null,
           taxRate: gstReversalAmount != null ? safeGstRate : null,
           taxAmount: gstReversalAmount != null ? -gstReversalAmount : null,
           razorpayPaymentId: params.pgRefundId ?? null,

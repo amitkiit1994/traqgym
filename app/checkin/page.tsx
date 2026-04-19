@@ -17,7 +17,11 @@ export default async function CheckinPage({
 }) {
   const sp = await searchParams;
   const token = (sp.token ?? "").trim();
-  const force = sp.force === "true" || sp.force === "1";
+  const session = await getServerSession(authOptions);
+  const isAdminWorker =
+    (session?.user as { actorType?: string; role?: string } | undefined)?.actorType === "worker" &&
+    (session?.user as { actorType?: string; role?: string } | undefined)?.role === "admin";
+  const force = isAdminWorker && (sp.force === "true" || sp.force === "1");
 
   const enabledSetting = await getSetting("qr_checkin_enabled", "false");
   const enabled = enabledSetting === "true";
@@ -65,7 +69,6 @@ export default async function CheckinPage({
     );
   }
 
-  const session = await getServerSession(authOptions);
   const memberSession =
     session && (session.user as { actorType?: string })?.actorType === "member"
       ? {

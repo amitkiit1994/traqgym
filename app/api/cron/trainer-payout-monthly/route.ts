@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeMonthlyPayout } from "@/lib/services/trainer-payout";
 import { requireCronSecret } from "@/lib/auth-cron";
+import { istCalendarFor } from "@/lib/utils/date-ist";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,11 +11,14 @@ export async function GET(req: NextRequest) {
   const guard = requireCronSecret(req);
   if (guard) return guard;
 
-  // Compute payout for the prior month (UTC). For a 1st-of-month cron run,
-  // this targets the month that just ended.
+  // Compute payout for the prior IST month. The cron fires at 00:00 IST on the
+  // 1st of each month, which on the UTC server is 18:30 UTC on the LAST day of
+  // the prior month. Using getUTCMonth() here would yield the wrong calendar
+  // month, so anchor to the IST calendar before subtracting 1.
   const now = new Date();
-  let month = now.getUTCMonth() - 1; // 0-11; subtract 1 for prior month
-  let year = now.getUTCFullYear();
+  const ist = istCalendarFor(now); // month is 0-11
+  let month = ist.month - 1; // 0-11; subtract 1 for prior month
+  let year = ist.year;
   if (month < 0) {
     month = 11;
     year -= 1;

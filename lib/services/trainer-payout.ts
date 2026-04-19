@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveSharePct } from "@/lib/services/pt";
 
@@ -44,17 +45,39 @@ export async function computeMonthlyPayout(
       },
     });
 
-    let grossRevenue = 0;
-    let trainerShare = 0;
+    let grossRevenueDec = new Prisma.Decimal(0);
+    let trainerShareDec = new Prisma.Decimal(0);
     for (const s of sessions) {
-      const price = Number(s.package.pricePerSession);
-      grossRevenue += price;
-      const pct = resolveSharePct(s.package.trainerSharePct, trainer);
-      trainerShare += (price * pct) / 100;
+      const price = new Prisma.Decimal(s.package.pricePerSession ?? 0);
+      const pct = new Prisma.Decimal(
+        resolveSharePct(s.package.trainerSharePct, trainer)
+      );
+      const sessionTrainerShare = price.times(pct).div(100);
+      grossRevenueDec = grossRevenueDec.plus(price);
+      trainerShareDec = trainerShareDec.plus(sessionTrainerShare);
     }
-    grossRevenue = Math.round(grossRevenue * 100) / 100;
-    trainerShare = Math.round(trainerShare * 100) / 100;
-    const gymShare = Math.round((grossRevenue - trainerShare) * 100) / 100;
+    const gymShareDec = grossRevenueDec.minus(trainerShareDec);
+
+    // Sanity-check the sum invariant before rounding.
+    if (!gymShareDec.plus(trainerShareDec).equals(grossRevenueDec)) {
+      return {
+        success: false,
+        error: "Payout sum invariant failed: gymShare + trainerShare !== grossRevenue",
+      };
+    }
+
+    const grossRevenue = grossRevenueDec.toDecimalPlaces(
+      2,
+      Prisma.Decimal.ROUND_HALF_UP
+    );
+    const trainerShare = trainerShareDec.toDecimalPlaces(
+      2,
+      Prisma.Decimal.ROUND_HALF_UP
+    );
+    const gymShare = gymShareDec.toDecimalPlaces(
+      2,
+      Prisma.Decimal.ROUND_HALF_UP
+    );
 
     const payout = await prisma.trainerPayout.upsert({
       where: {
@@ -92,9 +115,9 @@ export async function computeMonthlyPayout(
           periodStart: start.toISOString(),
           periodEnd: end.toISOString(),
           sessionsCount: sessions.length,
-          grossRevenue,
-          gymShare,
-          trainerShare,
+          grossRevenue: grossRevenue.toString(),
+          gymShare: gymShare.toString(),
+          trainerShare: trainerShare.toString(),
         }),
         actorType: "system",
       },

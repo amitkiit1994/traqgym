@@ -27,6 +27,26 @@ const SEVERITY_RANK: Record<string, number> = {
   low: 3,
 };
 
+/**
+ * Marker actions are dispatcher branches that DO NOT complete the destructive
+ * work themselves — they only record intent (audit log + in-app notification +
+ * approval request). The actual side-effect (write-off, etc.) still requires
+ * a human approval step elsewhere.
+ *
+ * For these actions we MUST NOT auto-dismiss the insight after running them,
+ * otherwise the insight vanishes from the dashboard while no real change has
+ * occurred — the human loses visibility and the work silently disappears.
+ *
+ * Non-marker actions (e.g. `member.send_reminder`, `comp.convert_to_paid`)
+ * complete the work in-line and SHOULD dismiss the insight on success.
+ */
+const MARKER_ACTIONS: ReadonlySet<string> = new Set([
+  // No formal write-off pipeline yet — only logs intent + notifies admins.
+  "ticket.flag_writeoff",
+  // Records investigation signal only; the real conversion is `comp.convert`.
+  "comp.investigate",
+]);
+
 // ─── listActiveInsights ────────────────────────────────────────────────────
 export async function listActiveInsights(opts?: {
   severity?: InsightSeverity;
@@ -261,16 +281,25 @@ export async function executeInsightAction(params: {
   // R03/R06: Atomic claim. updateMany with dismissedAt: null guard means only
   // one concurrent caller wins. If count === 0, someone else already claimed
   // and ran (or is about to run) the side-effect — bail out cleanly.
-  const claim = await prisma.insight.updateMany({
-    where: { id: params.insightId, dismissedAt: null },
-    data: {
-      dismissedAt: new Date(),
-      dismissedById: params.executedById,
-    },
-  });
-  if (claim.count === 0) {
-    // Lost the race to another concurrent caller.
-    return { success: true, alreadyDone: true };
+  //
+  // EXCEPTION: marker actions (see MARKER_ACTIONS) only record intent — they
+  // do not complete the destructive work. Dismissing the insight would hide
+  // it from the dashboard while no real change has occurred. For markers we
+  // skip pre-dismissal entirely and let the side-effect run; the insight
+  // stays active until a human acts on the resulting approval / notification.
+  const isMarker = MARKER_ACTIONS.has(chosen.action);
+  if (!isMarker) {
+    const claim = await prisma.insight.updateMany({
+      where: { id: params.insightId, dismissedAt: null },
+      data: {
+        dismissedAt: new Date(),
+        dismissedById: params.executedById,
+      },
+    });
+    if (claim.count === 0) {
+      // Lost the race to another concurrent caller.
+      return { success: true, alreadyDone: true };
+    }
   }
 
   const args = (chosen.args ?? {}) as Record<string, unknown>;
@@ -386,6 +415,9 @@ export async function executeInsightAction(params: {
     // ── PR 4: insight-driven member nudges ───────────────────────────────────
     case "member.send_reminder": {
       // Silent-churn / engagement nudge. Best-effort WhatsApp + in-app.
+      // Each channel is wrapped in try/catch so a failure on one (e.g. WA)
+      // does not abort the audit log write — we always record the per-channel
+      // outcome regardless of which channels succeeded or failed.
       const userId = num("userId");
       if (userId === null) {
         return { success: false, error: "member.send_reminder requires userId" };
@@ -397,41 +429,71 @@ export async function executeInsightAction(params: {
       if (!user) return { success: false, error: "User not found" };
 
       const reason = str("reason") ?? "engagement_nudge";
-      const channels: string[] = ["in_app"];
-      await notifyUser({
-        userId: user.id,
-        type: "engagement_nudge",
-        title: "We miss you at the gym!",
-        message: "It's been a while — book your next session today.",
-        link: "/member",
-      });
-      if (user.phone) {
-        await sendWhatsApp({
-          recipient: user.phone,
-          templateName: "member_engagement_reminder",
-          variables: { name: user.firstname },
+      const results: Record<string, boolean> = {};
+      const errors: Record<string, string> = {};
+
+      try {
+        await notifyUser({
+          userId: user.id,
+          type: "engagement_nudge",
+          title: "We miss you at the gym!",
+          message: "It's been a while — book your next session today.",
+          link: "/member",
         });
-        channels.push("whatsapp");
+        results.in_app = true;
+      } catch (err) {
+        results.in_app = false;
+        errors.in_app = err instanceof Error ? err.message : "unknown";
       }
-      await prisma.auditLog.create({
-        data: {
-          action: "insight.action.member.send_reminder",
-          status: "success",
-          actorId: params.executedById,
-          actorType: "worker",
-          details: JSON.stringify({
-            insightId: params.insightId,
-            userId,
-            reason,
-            channels,
-          }),
-        },
-      });
-      return { success: true, result: { userId, channels } };
+
+      if (user.phone) {
+        try {
+          await sendWhatsApp({
+            recipient: user.phone,
+            templateName: "member_engagement_reminder",
+            variables: { name: user.firstname },
+          });
+          results.whatsapp = true;
+        } catch (err) {
+          results.whatsapp = false;
+          errors.whatsapp = err instanceof Error ? err.message : "unknown";
+        }
+      }
+
+      const channels = Object.keys(results).filter((c) => results[c]);
+      const anySuccess = channels.length > 0;
+
+      try {
+        await prisma.auditLog.create({
+          data: {
+            action: "insight.action.member.send_reminder",
+            status: anySuccess ? "success" : "failed",
+            actorId: params.executedById,
+            actorType: "worker",
+            details: JSON.stringify({
+              insightId: params.insightId,
+              userId,
+              reason,
+              channels,
+              results,
+              ...(Object.keys(errors).length > 0 ? { errors } : {}),
+            }),
+          },
+        });
+      } catch {
+        // Swallow audit-log write errors — never let logging failures mask
+        // the underlying action outcome.
+      }
+
+      return { success: true, result: { userId, channels, results } };
     }
 
     case "member.send_recovery_message": {
       // Defaulted-ticket escalator. Best-effort WhatsApp + SMS + in-app.
+      // Each channel is wrapped in try/catch so a single channel failure
+      // (e.g. WA template rejected) does not abort the audit log write —
+      // we always record the per-channel outcome regardless of which
+      // channels succeeded or failed.
       const userId = num("userId");
       const ticketId = num("ticketId");
       const stage = num("stage") ?? 1;
@@ -447,44 +509,75 @@ export async function executeInsightAction(params: {
       });
       if (!user) return { success: false, error: "User not found" };
 
-      const channels: string[] = ["in_app"];
-      await notifyUser({
-        userId: user.id,
-        type: "payment_recovery",
-        title: "Pending balance on your membership",
-        message: "Please clear the outstanding amount to keep your access active.",
-        link: "/member/invoices",
-      });
-      if (user.phone) {
-        await sendWhatsApp({
-          recipient: user.phone,
-          templateName: "payment_recovery_reminder",
-          variables: { name: user.firstname, stage: String(stage) },
+      const results: Record<string, boolean> = {};
+      const errors: Record<string, string> = {};
+
+      try {
+        await notifyUser({
+          userId: user.id,
+          type: "payment_recovery",
+          title: "Pending balance on your membership",
+          message: "Please clear the outstanding amount to keep your access active.",
+          link: "/member/invoices",
         });
-        channels.push("whatsapp");
-        await sendSms({
-          recipient: user.phone,
-          templateName: "payment_recovery_reminder",
-          variables: { name: user.firstname },
-        });
-        channels.push("sms");
+        results.in_app = true;
+      } catch (err) {
+        results.in_app = false;
+        errors.in_app = err instanceof Error ? err.message : "unknown";
       }
-      await prisma.auditLog.create({
-        data: {
-          action: "insight.action.member.send_recovery_message",
-          status: "success",
-          actorId: params.executedById,
-          actorType: "worker",
-          details: JSON.stringify({
-            insightId: params.insightId,
-            userId,
-            ticketId,
-            stage,
-            channels,
-          }),
-        },
-      });
-      return { success: true, result: { userId, ticketId, stage, channels } };
+
+      if (user.phone) {
+        try {
+          await sendWhatsApp({
+            recipient: user.phone,
+            templateName: "payment_recovery_reminder",
+            variables: { name: user.firstname, stage: String(stage) },
+          });
+          results.whatsapp = true;
+        } catch (err) {
+          results.whatsapp = false;
+          errors.whatsapp = err instanceof Error ? err.message : "unknown";
+        }
+        try {
+          await sendSms({
+            recipient: user.phone,
+            templateName: "payment_recovery_reminder",
+            variables: { name: user.firstname },
+          });
+          results.sms = true;
+        } catch (err) {
+          results.sms = false;
+          errors.sms = err instanceof Error ? err.message : "unknown";
+        }
+      }
+
+      const channels = Object.keys(results).filter((c) => results[c]);
+      const anySuccess = channels.length > 0;
+
+      try {
+        await prisma.auditLog.create({
+          data: {
+            action: "insight.action.member.send_recovery_message",
+            status: anySuccess ? "success" : "failed",
+            actorId: params.executedById,
+            actorType: "worker",
+            details: JSON.stringify({
+              insightId: params.insightId,
+              userId,
+              ticketId,
+              stage,
+              channels,
+              results,
+              ...(Object.keys(errors).length > 0 ? { errors } : {}),
+            }),
+          },
+        });
+      } catch {
+        // Swallow audit-log write errors — never let logging failures mask
+        // the underlying action outcome.
+      }
+
+      return { success: true, result: { userId, ticketId, stage, channels, results } };
     }
 
     case "ticket.flag_writeoff": {
