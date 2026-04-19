@@ -27,14 +27,26 @@ export async function recordPartialPayment(params: {
     const newBalanceDue = Number(ticket.balanceDue) - params.amount;
     const isFullyPaid = newBalanceDue <= 0;
 
-    // Update ticket balance
-    await tx.memberTicket.update({
-      where: { id: params.ticketId },
+    // Atomic compare-and-swap: only succeed if the balance/paid we read are
+    // still the current values. Under READ COMMITTED two concurrent partial
+    // payments could both see the same balance snapshot and double-credit;
+    // updateMany() with the expected values in the WHERE clause makes the
+    // database enforce optimistic locking. count===0 means another writer
+    // beat us — reject and let the caller retry on a fresh snapshot.
+    const updated = await tx.memberTicket.updateMany({
+      where: {
+        id: params.ticketId,
+        amountPaid: ticket.amountPaid,
+        balanceDue: ticket.balanceDue,
+      },
       data: {
         amountPaid: newAmountPaid,
         balanceDue: Math.max(0, newBalanceDue),
       },
     });
+    if (updated.count === 0) {
+      return { error: "Ticket was modified concurrently — please retry" as const };
+    }
 
     // Create payment record
     const payment = await tx.payment.create({

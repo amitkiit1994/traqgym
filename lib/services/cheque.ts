@@ -7,8 +7,10 @@ export async function updateChequeStatus(
 ) {
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Re-read inside the txn so the not-already-bounced check is based on a
-      // consistent snapshot. Two concurrent calls cannot both pass this check.
+      // Re-read inside the txn for the followup-creation context (we need
+      // userId/amount/memberTicketId), but the actual status flip uses an
+      // atomic compare-and-swap below so two concurrent calls cannot both
+      // observe "pending" and both flip the row.
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
         select: { id: true, chequeStatus: true, userId: true, memberTicketId: true, amount: true },
@@ -22,10 +24,17 @@ export async function updateChequeStatus(
         return { success: false as const, error: `Cheque is already ${payment.chequeStatus}` };
       }
 
-      const updated = await tx.payment.update({
-        where: { id: paymentId },
+      // Atomic conditional update — only flips if chequeStatus is still
+      // "pending" at write time. Database enforces the invariant; the second
+      // concurrent caller's updateMany returns count===0 and we abort cleanly.
+      const flipped = await tx.payment.updateMany({
+        where: { id: paymentId, chequeStatus: "pending" },
         data: { chequeStatus: status },
       });
+      if (flipped.count === 0) {
+        return { success: false as const, error: "Cheque was updated concurrently — please refresh" };
+      }
+      const updated = await tx.payment.findUnique({ where: { id: paymentId } });
 
       // If bounced, auto-create a PaymentFollowup atomically with the status flip
       // so a second concurrent call cannot double-insert a follow-up / penalty.

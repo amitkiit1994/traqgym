@@ -3,6 +3,7 @@ import { recordPayment } from "./payment";
 import { generateInvoice } from "./invoice";
 import { sendPaymentNotification } from "./payment-notification";
 import { todayIST } from "@/lib/utils/date";
+import { withSerializableRetry } from "@/lib/utils/serializable";
 
 export async function renewMembership(params: {
   userId: number;
@@ -32,15 +33,12 @@ export async function renewMembership(params: {
   if (!worker) throw new Error("Worker not found");
   if (!worker.isActive) throw new Error("Worker account is not active");
 
-  // 4. Idempotency check moved INSIDE the $transaction below (see step 7).
-  //    Note: under Prisma's default READ COMMITTED isolation this still has a
-  //    residual race where two concurrent renewals both miss each other's
-  //    pending insert. The check defends against accidental UI double-submits
-  //    (typical inter-click gap is tens of ms, well within a single txn's
-  //    snapshot lifetime). True concurrency hardening would require
-  //    Serializable isolation OR a partial unique index on
-  //    (userId, planId, paymentMode, collectedById, date_trunc('minute', createdAt)).
-  //    Tracked for the isolation-hardening sweep.
+  // 4. Idempotency check runs INSIDE the $transaction below (see step 7) under
+  //    SERIALIZABLE isolation via withSerializableRetry. Two concurrent
+  //    renewals can no longer both miss each other's pending insert: the
+  //    second commit gets a 40001 serialization failure and the helper
+  //    retries against a snapshot that now sees the first row, returning
+  //    the duplicatePayment branch. Closes the residual READ COMMITTED race.
 
   // 5. Get latest expiry
   const latestTicket = await prisma.memberTicket.findFirst({
@@ -79,8 +77,8 @@ export async function renewMembership(params: {
   const planJoiningFee = Number(plan.joiningFee ?? 0);
   const appliesOn = plan.joiningFeeAppliesOn ?? "first_only";
 
-  // 7. Prisma $transaction
-  const result = await prisma.$transaction(async (tx) => {
+  // 7. Prisma $transaction under SERIALIZABLE isolation w/ retry
+  const result = await withSerializableRetry(async (tx) => {
     // Idempotency check INSIDE the txn: same userId+planId+paymentMode+
     // collectedById in last 60 seconds. Running this under the txn snapshot
     // closes the race where two concurrent calls both pass an outside-txn

@@ -14,6 +14,7 @@ import type { MemberTicket } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
 import { todayIST } from "@/lib/utils/date";
+import { withSerializableRetry } from "@/lib/utils/serializable";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -193,33 +194,35 @@ export async function issueComp(params: {
     return { success: true, approvalRequested: true, approvalId: approvalRes.approvalId };
   }
 
-  // 7. Idempotency: same userId + planId + issuedById + isComplimentary in last 60s
-  const sixtySecondsAgo = new Date(Date.now() - 60_000);
-  const recentDuplicate = await prisma.memberTicket.findFirst({
-    where: {
-      userId: params.userId,
-      planId: params.planId,
-      compIssuedById: params.issuedById,
-      isComplimentary: true,
-      createdAt: { gte: sixtySecondsAgo },
-    },
-  });
-  if (recentDuplicate) {
-    return { success: true, ticket: recentDuplicate };
-  }
-
-  // 8. Compute dates
+  // 7. Compute dates (idempotency check now runs INSIDE the txn below)
   const today = todayIST();
   const buyDate = new Date();
   const expireDate = new Date(today);
   expireDate.setDate(expireDate.getDate() + days);
 
-  // 9. Resolve a sensible locationId — prefer user's, fall back to issuer's.
+  // 8. Resolve a sensible locationId — prefer user's, fall back to issuer's.
   const locationId = user.locationId ?? issuer.locationId ?? null;
 
-  // 10. Atomic transaction
+  // 9. Atomic transaction under SERIALIZABLE isolation. Idempotency check
+  //    lives inside the txn so two concurrent issueComp calls cannot both
+  //    miss each other's pending insert; the second commit gets a 40001 and
+  //    the retry sees the first row and returns it as the duplicate branch.
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const sixtySecondsAgo = new Date(Date.now() - 60_000);
+    const result = await withSerializableRetry(async (tx) => {
+      const recentDuplicate = await tx.memberTicket.findFirst({
+        where: {
+          userId: params.userId,
+          planId: params.planId,
+          compIssuedById: params.issuedById,
+          isComplimentary: true,
+          createdAt: { gte: sixtySecondsAgo },
+        },
+      });
+      if (recentDuplicate) {
+        return { duplicate: true as const, ticket: recentDuplicate };
+      }
+
       const ticket = await tx.memberTicket.create({
         data: {
           userId: params.userId,
@@ -280,10 +283,10 @@ export async function issueComp(params: {
         },
       });
 
-      return ticket;
+      return { duplicate: false as const, ticket };
     });
 
-    return { success: true, ticket: result };
+    return { success: true, ticket: result.ticket };
   } catch (err) {
     return {
       success: false,
