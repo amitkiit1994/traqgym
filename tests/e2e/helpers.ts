@@ -180,6 +180,43 @@ export class TestClient {
   }
 }
 
+// Cron client — sends Authorization: Bearer ${CRON_SECRET} so the
+// Sprint 8 requireCronSecret guard accepts the request. If CRON_SECRET is
+// missing in the test env, requests skip the auth header and will get a 401
+// (still useful for negative tests). Tests that need a real 200 from a cron
+// route should call `CronClient.skipIfNoSecret()` to short-circuit when the
+// env value isn't available locally.
+export class CronClient {
+  private readonly secret: string | undefined;
+  constructor() {
+    this.secret = process.env.CRON_SECRET;
+  }
+  isReady(): boolean {
+    return Boolean(this.secret);
+  }
+  async get(path: string): Promise<{ status: number; body: any }> {
+    const headers: Record<string, string> = {};
+    if (this.secret) headers["Authorization"] = `Bearer ${this.secret}`;
+    const res = await fetch(`${BASE_URL}${path}`, { headers, redirect: "manual" });
+    const ct = res.headers.get("content-type") || "";
+    const body = ct.includes("json") ? await res.json() : await res.text();
+    return { status: res.status, body };
+  }
+  async post(path: string, data: any = {}): Promise<{ status: number; body: any }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.secret) headers["Authorization"] = `Bearer ${this.secret}`;
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+      redirect: "manual",
+    });
+    const ct = res.headers.get("content-type") || "";
+    const body = ct.includes("json") ? await res.json() : await res.text();
+    return { status: res.status, body };
+  }
+}
+
 // Unauthenticated client (no cookies)
 export class AnonClient {
   async get(path: string): Promise<{ status: number; body: any }> {

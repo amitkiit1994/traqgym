@@ -136,7 +136,16 @@ vi.mock("@/lib/prisma", () => ({
     enquiry: { count: vi.fn() },
     leaveRequest: { count: vi.fn() },
     approval: { count: vi.fn() },
+    refund: { count: vi.fn() },
+    cashShift: { count: vi.fn() },
   },
+}));
+
+// getSidebarCounts gates on requireWorker() which reads session via Next
+// request scope — unavailable in unit tests. Stub the guard to a no-op so
+// the shape assertions can run against the cached counts.
+vi.mock("@/lib/auth-guard", () => ({
+  requireWorker: vi.fn().mockResolvedValue({ id: 1, role: "admin", actorType: "worker" }),
 }));
 
 import { prisma } from "@/lib/prisma";
@@ -228,18 +237,22 @@ describe("getSidebarCounts – shape validation", () => {
     (prisma.memberTicket.count as MockFn).mockResolvedValue(2);
     (prisma.leaveRequest.count as MockFn).mockResolvedValue(1);
     (prisma.approval.count as MockFn).mockResolvedValue(4);
+    (prisma.refund.count as MockFn).mockResolvedValue(6);
+    (prisma.cashShift.count as MockFn).mockResolvedValue(7);
   });
 
-  it("returns object with exactly 5 keys", async () => {
+  it("returns object with exactly 7 keys", async () => {
     const result = await getSidebarCounts();
-    expect(Object.keys(result)).toHaveLength(5);
+    expect(Object.keys(result)).toHaveLength(7);
     expect(Object.keys(result).sort()).toEqual(
       [
         "balanceDueCount",
         "newEnquiries",
+        "openShiftsCount",
         "pendingApprovalsCount",
         "pendingFollowups",
         "pendingLeaves",
+        "pendingRefundsCount",
       ].sort()
     );
   });
@@ -258,5 +271,7 @@ describe("getSidebarCounts – shape validation", () => {
     expect(result.balanceDueCount).toBe(2);
     expect(result.pendingLeaves).toBe(1);
     expect(result.pendingApprovalsCount).toBe(4);
+    expect(result.pendingRefundsCount).toBe(6);
+    expect(result.openShiftsCount).toBe(7);
   });
 });
