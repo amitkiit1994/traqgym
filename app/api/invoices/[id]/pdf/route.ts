@@ -70,14 +70,27 @@ export async function GET(
     }
   }
 
-  const gymName = await getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym");
-  const gymLogoRaw = await getSetting("gym_logo", "");
+  // Sprint 3 perf: parallel-fetch all 7 settings (was 7 sequential round-trips
+  // = ~5× DB latency on every invoice download). Each setting is a separate
+  // KV row in GymSettings, so they're independent.
+  const [
+    gymName,
+    gymLogoRaw,
+    gymGstin,
+    gymAddress,
+    gymState,
+    gymPhone,
+    gymEmail,
+  ] = await Promise.all([
+    getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym"),
+    getSetting("gym_logo", ""),
+    getSetting("gym_gstin", process.env.GYM_GSTIN || ""),
+    getSetting("gym_address", process.env.GYM_ADDRESS || ""),
+    getSetting("gym_state", process.env.GYM_STATE || "Maharashtra"),
+    getSetting("gym_phone", process.env.GYM_PHONE || ""),
+    getSetting("gym_email", process.env.GYM_EMAIL || ""),
+  ]);
   const gymLogo = safeLogoUrl(gymLogoRaw);
-  const gymGstin = await getSetting("gym_gstin", process.env.GYM_GSTIN || "");
-  const gymAddress = await getSetting("gym_address", process.env.GYM_ADDRESS || "");
-  const gymState = await getSetting("gym_state", process.env.GYM_STATE || "Maharashtra");
-  const gymPhone = await getSetting("gym_phone", process.env.GYM_PHONE || "");
-  const gymEmail = await getSetting("gym_email", process.env.GYM_EMAIL || "");
   const isTaxInvoice = gymGstin.length > 0;
 
   const memberName = `${invoice.user.firstname} ${invoice.user.lastname}`;

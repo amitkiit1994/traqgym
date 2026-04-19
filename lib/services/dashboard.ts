@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { todayIST } from "@/lib/utils/date";
 import { unstable_cache } from "next/cache";
 
@@ -765,67 +766,105 @@ export async function getRevenueChartData(
 
 /**
  * Monthly revenue trend for the last N months.
+ *
+ * Sprint 3 perf: was N months × 6 queries = 72 sequential round-trips for the
+ * default 12-month window. Rewritten to issue 4 raw bucketed queries (window
+ * sums + per-month buckets via PostgreSQL `date_trunc`) totalling 4
+ * round-trips regardless of N. On E-GYM (~14k payments) the old path
+ * dominated dashboard cold-load latency; the new path is constant-time and
+ * pushes the heavy lifting (group + sum) into the DB where indexes apply.
  */
 export async function getMonthlyRevenueTrend(months: number = 12, locationId?: number) {
   const now = todayIST();
-  const result: {
-    month: string;
-    revenue: number;
-    expenses: number;
-    net: number;
-    cash: number;
-    upi: number;
-    renewals: number;
-    newMembers: number;
-  }[] = [];
+  const windowStart = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+  const windowEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  for (let i = months - 1; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-    const locFilter = locationId ? { locationId } : {};
-
-    const [payments, cashAgg, upiAgg, expenseAgg, renewalCount, newMemberCount] =
-      await Promise.all([
-        prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd } },
-          _sum: { amount: true },
-        }),
-        prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["Cash", "cash"] } },
-          _sum: { amount: true },
-        }),
-        prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["UPI", "upi"] } },
-          _sum: { amount: true },
-        }),
-        prisma.expense.aggregate({
-          where: { ...locFilter, expenseDate: { gte: monthStart, lt: monthEnd } },
-          _sum: { amount: true },
-        }),
-        prisma.memberTicket.count({
-          where: { ...locFilter, buyDate: { gte: monthStart, lt: monthEnd } },
-        }),
-        prisma.user.count({
-          where: { createdAt: { gte: monthStart, lt: monthEnd } },
-        }),
-      ]);
-
-    const revenue = Number(payments._sum.amount || 0);
-    const expenses = Number(expenseAgg._sum.amount || 0);
-
-    result.push({
-      month: monthStart.toISOString().slice(0, 7),
-      revenue,
-      expenses,
-      net: revenue - expenses,
-      cash: Number(cashAgg._sum.amount || 0),
-      upi: Number(upiAgg._sum.amount || 0),
-      renewals: renewalCount,
-      newMembers: newMemberCount,
-    });
+  type Bucket = { month: string; cash: number; upi: number; other: number; renewals: number; newMembers: number; expenses: number };
+  const bucketMap = new Map<string, Bucket>();
+  for (let i = 0; i < months; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1) + i, 1);
+    const key = d.toISOString().slice(0, 7);
+    bucketMap.set(key, { month: key, cash: 0, upi: 0, other: 0, renewals: 0, newMembers: 0, expenses: 0 });
   }
 
-  return result;
+  // Run all 4 bucketed queries in parallel. Each does a single index range
+  // scan + group, replacing what used to be N×6 separate round-trips.
+  const locClause = (col: string) =>
+    locationId ? Prisma.sql`AND "${Prisma.raw(col)}" = ${locationId}` : Prisma.empty;
+
+  const [paymentRows, expenseRows, renewalRows, newMemberRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ month: Date; mode: string; total: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "createdAt") AS month,
+             "paymentMode" AS mode,
+             COALESCE(SUM("amount"), 0)::float8 AS total
+      FROM "Payment"
+      WHERE "createdAt" >= ${windowStart} AND "createdAt" < ${windowEnd}
+      ${locClause("locationId")}
+      GROUP BY 1, 2
+    `),
+    prisma.$queryRaw<Array<{ month: Date; total: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "expenseDate") AS month,
+             COALESCE(SUM("amount"), 0)::float8 AS total
+      FROM "Expense"
+      WHERE "expenseDate" >= ${windowStart} AND "expenseDate" < ${windowEnd}
+      ${locClause("locationId")}
+      GROUP BY 1
+    `),
+    prisma.$queryRaw<Array<{ month: Date; cnt: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "buyDate") AS month,
+             COUNT(*)::int AS cnt
+      FROM "MemberTicket"
+      WHERE "buyDate" >= ${windowStart} AND "buyDate" < ${windowEnd}
+      ${locClause("locationId")}
+      GROUP BY 1
+    `),
+    prisma.$queryRaw<Array<{ month: Date; cnt: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "createdAt") AS month,
+             COUNT(*)::int AS cnt
+      FROM "User"
+      WHERE "createdAt" >= ${windowStart} AND "createdAt" < ${windowEnd}
+      GROUP BY 1
+    `),
+  ]);
+
+  const monthKey = (d: Date) => new Date(d).toISOString().slice(0, 7);
+
+  for (const r of paymentRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (!b) continue;
+    const mode = (r.mode ?? "").toLowerCase();
+    if (mode === "cash") b.cash += Number(r.total);
+    else if (mode === "upi") b.upi += Number(r.total);
+    else b.other += Number(r.total);
+  }
+  for (const r of expenseRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (b) b.expenses = Number(r.total);
+  }
+  for (const r of renewalRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (b) b.renewals = Number(r.cnt);
+  }
+  for (const r of newMemberRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (b) b.newMembers = Number(r.cnt);
+  }
+
+  return Array.from(bucketMap.values())
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((b) => {
+      const revenue = b.cash + b.upi + b.other;
+      return {
+        month: b.month,
+        revenue,
+        expenses: b.expenses,
+        net: revenue - b.expenses,
+        cash: b.cash,
+        upi: b.upi,
+        renewals: b.renewals,
+        newMembers: b.newMembers,
+      };
+    });
 }
 
 // --- Cached wrappers ---

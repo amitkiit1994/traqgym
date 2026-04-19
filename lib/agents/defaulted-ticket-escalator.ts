@@ -46,6 +46,10 @@ export async function run(): Promise<{ created: number; total: number }> {
   const now = new Date();
   const graceCutoff = new Date(now.getTime() - grace * 86400000);
 
+  // Sprint 3 perf: cap the cohort. On E-GYM (~14k payments, hundreds of stale
+  // unpaid tickets at any time), an unbounded findMany loaded everything into
+  // memory + did per-row upsert. We surface the OLDEST defaulters first so
+  // the cap actually prioritises real risk instead of dropping it.
   const tickets = await prisma.memberTicket.findMany({
     where: {
       balanceDue: { gt: 0 },
@@ -63,6 +67,7 @@ export async function run(): Promise<{ created: number; total: number }> {
       plan: { select: { name: true } },
     },
     orderBy: { createdAt: "asc" },
+    take: 500,
   });
 
   const dateKey = isoDay();

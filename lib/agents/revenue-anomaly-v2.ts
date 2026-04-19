@@ -14,6 +14,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { upsertInsight, type InsightSeverity } from "./_shared";
 import { inr, isoDay, istDayWindow, median } from "./_helpers";
 
@@ -62,36 +63,32 @@ export async function run(): Promise<{ created: number; total: number }> {
     byCollector[cid].total += amt;
   }
 
-  // Build daily totals for the previous 30 IST days (excluding yesterday).
-  // Single-shot: fetch all payments in the 30-day window, bucket client-side
-  // into IST-day boxes — avoids 30 sequential Prisma round-trips.
+  // Sprint 3 perf: build daily totals via SQL group-by instead of dragging
+  // every payment in the 30-day window into Node. On E-GYM (~500 payments/day
+  // = ~15k rows) the previous fetch-then-bucket cost was network-dominant and
+  // ran every 6h. `date_trunc(day, createdAt AT TIME ZONE 'Asia/Kolkata')`
+  // bucketises in PostgreSQL using IST calendar boundaries — same semantics
+  // as `istDayWindow`.
   const oldestWin = istDayWindow(new Date(now.getTime() - 31 * 86_400_000));
   const newestWin = istDayWindow(new Date(now.getTime() - 2 * 86_400_000));
-  const baselinePayments = await prisma.payment.findMany({
-    where: { createdAt: { gte: oldestWin.start, lt: newestWin.end } },
-    select: { amount: true, createdAt: true },
-  });
-  const bucketByDayStartMs = new Map<number, number>();
+  const dailyRows = await prisma.$queryRaw<Array<{ day: Date; total: number }>>(Prisma.sql`
+    SELECT date_trunc('day', "createdAt" AT TIME ZONE 'Asia/Kolkata') AS day,
+           COALESCE(SUM("amount"), 0)::float8 AS total
+    FROM "Payment"
+    WHERE "createdAt" >= ${oldestWin.start} AND "createdAt" < ${newestWin.end}
+    GROUP BY 1
+  `);
+  const totalsByDayKey = new Map<string, number>();
+  for (const r of dailyRows) {
+    const key = new Date(r.day).toISOString().slice(0, 10);
+    totalsByDayKey.set(key, Number(r.total));
+  }
+  const dailyTotals: number[] = [];
   for (let i = 2; i <= 31; i++) {
     const w = istDayWindow(new Date(now.getTime() - i * 86_400_000));
-    bucketByDayStartMs.set(w.start.getTime(), 0);
+    const key = w.start.toISOString().slice(0, 10);
+    dailyTotals.push(totalsByDayKey.get(key) ?? 0);
   }
-  // Pre-compute the sorted day-start anchors descending so binary-search isn't
-  // needed; for each payment, find the matching IST day window.
-  const dayStarts = Array.from(bucketByDayStartMs.keys()).sort((a, b) => a - b);
-  const ONE_DAY_MS = 86_400_000;
-  for (const p of baselinePayments) {
-    const t = p.createdAt.getTime();
-    // Find the day-bucket whose [start, start+ONE_DAY_MS) contains t.
-    // Linear scan over 30 entries is cheap; binary search not required.
-    for (const ds of dayStarts) {
-      if (t >= ds && t < ds + ONE_DAY_MS) {
-        bucketByDayStartMs.set(ds, (bucketByDayStartMs.get(ds) ?? 0) + Number(p.amount ?? 0));
-        break;
-      }
-    }
-  }
-  const dailyTotals = Array.from(bucketByDayStartMs.values());
 
   const med = median(dailyTotals);
   if (med <= 0) {

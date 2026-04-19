@@ -1054,6 +1054,12 @@ model Insight {
 
   @@index([agent, createdAt])
   @@index([severity, dismissedAt])
+  // Sprint 3 perf: every dashboard load + manager briefing filters by
+  // `dismissedAt IS NULL` + `snoozedUntil < now()`. Without this composite
+  // index Postgres falls back to a sequential scan once the table grows past
+  // a few thousand rows. Most rows carry NULL on both columns so the index
+  // also stays small.
+  @@index([dismissedAt, snoozedUntil])
 }
 
 // ─── Refund workflow ───
