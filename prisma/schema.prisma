@@ -46,38 +46,38 @@ model User {
   isActive   Boolean   @default(true)
   createdAt  DateTime  @default(now())
 
-  memberTickets     MemberTicket[]
-  payments          Payment[]
-  attendanceLogs    AttendanceLog[]
-  notifications     NotificationLog[]
-  invoices          Invoice[]
-  deviceMappings    DeviceUserMapping[]
-  freezes           MembershipFreeze[]
-  bodyMeasurements  BodyMeasurement[]
-  referralsGiven    Referral[] @relation("referrals_given")
-  referralsReceived Referral[] @relation("referrals_received")
-  classBookings     ClassBooking[]
-  paymentFollowups  PaymentFollowup[]
-  familyGroupId     Int?
-  familyGroup       FamilyGroup?     @relation(fields: [familyGroupId], references: [id])
-  waiverSignatures  WaiverSignature[]
-  facilityBookings  FacilityBooking[]
-  userWorkoutPlans  UserWorkoutPlan[]
-  userDietPlans         UserDietPlan[]
-  inAppNotifications   InAppNotification[] @relation("UserInAppNotifications")
-  extensions           MembershipExtension[]
-  lockers              Locker[]
-  feedbacks            Feedback[]
-  appointments         Appointment[]
-  compPasses           CompPass[]
-  lockerKeyIssuances   LockerKeyIssuance[]
-  alternatePhone       String?
-  address              String?
-  occupation           String?
-  anniversaryDate      DateTime?
-  govtId               String?
-  ptPackages           PtPackage[]
-  gstin                String?  // optional B2B customer GSTIN for GSTR-1 export
+  memberTickets      MemberTicket[]
+  payments           Payment[]
+  attendanceLogs     AttendanceLog[]
+  notifications      NotificationLog[]
+  invoices           Invoice[]
+  deviceMappings     DeviceUserMapping[]
+  freezes            MembershipFreeze[]
+  bodyMeasurements   BodyMeasurement[]
+  referralsGiven     Referral[]            @relation("referrals_given")
+  referralsReceived  Referral[]            @relation("referrals_received")
+  classBookings      ClassBooking[]
+  paymentFollowups   PaymentFollowup[]
+  familyGroupId      Int?
+  familyGroup        FamilyGroup?          @relation(fields: [familyGroupId], references: [id])
+  waiverSignatures   WaiverSignature[]
+  facilityBookings   FacilityBooking[]
+  userWorkoutPlans   UserWorkoutPlan[]
+  userDietPlans      UserDietPlan[]
+  inAppNotifications InAppNotification[]   @relation("UserInAppNotifications")
+  extensions         MembershipExtension[]
+  lockers            Locker[]
+  feedbacks          Feedback[]
+  appointments       Appointment[]
+  compPasses         CompPass[]
+  lockerKeyIssuances LockerKeyIssuance[]
+  alternatePhone     String?
+  address            String?
+  occupation         String?
+  anniversaryDate    DateTime?
+  govtId             String?
+  ptPackages         PtPackage[]
+  gstin              String? // optional B2B customer GSTIN for GSTR-1 export
 
   @@index([phone])
   @@index([locationId])
@@ -100,77 +100,77 @@ model Worker {
   defaultGymCutPct Decimal @default(0) @db.Decimal(5, 2)
   ownTrainerCutPct Decimal @default(0) @db.Decimal(5, 2)
 
-  paymentsCollected Payment[]
-  attendanceLogs    AttendanceLog[]
-  deviceMappings    DeviceUserMapping[]
-  leaveRequests     LeaveRequest[]
-  classes           GymClass[]
-  followupAssignments PaymentFollowup[] @relation("FollowupAssignee")
-  enquiryFollowups    EnquiryFollowup[] @relation("EnquiryFollowupWorker")
+  paymentsCollected   Payment[]
+  attendanceLogs      AttendanceLog[]
+  deviceMappings      DeviceUserMapping[]
+  leaveRequests       LeaveRequest[]
+  classes             GymClass[]
+  followupAssignments PaymentFollowup[]   @relation("FollowupAssignee")
+  enquiryFollowups    EnquiryFollowup[]   @relation("EnquiryFollowupWorker")
   payrolls            Payroll[]
   createdWorkoutPlans WorkoutPlan[]
   createdDietPlans    DietPlan[]
   inAppNotifications  InAppNotification[] @relation("WorkerInAppNotifications")
   appointments        Appointment[]
-  compApprovedTickets MemberTicket[] @relation("CompApprovedTickets")
-  compIssuedTickets   MemberTicket[] @relation("CompIssuedTickets")
-  compPassesIssued    CompPass[]     @relation("CompPassIssuer")
-  compPassesApproved  CompPass[]     @relation("CompPassApprover")
-  compPassesRevoked   CompPass[]     @relation("CompPassRevoker")
-  insightsDismissed   Insight[]      @relation("InsightDismisser")
-  approvalsRequested  Approval[]     @relation("ApprovalRequester")
-  approvalsDecided    Approval[]     @relation("ApprovalDecider")
-  ptPackagesAsTrainer PtPackage[]      @relation("PtPackageTrainer")
-  trainerPayments     Payment[]        @relation("PaymentTrainer")
-  trainerPayouts      TrainerPayout[]  @relation("TrainerPayout")
-  refundsRequested    Refund[]       @relation("RefundRequester")
-  refundsApproved     Refund[]       @relation("RefundApprover")
-  shiftsOpened        CashShift[]    @relation("ShiftOpener")
-  shiftsClosed        CashShift[]    @relation("ShiftCloser")
-  shiftsApproved      CashShift[]    @relation("ShiftApprover")
-  feedbacksAsTrainer  Feedback[]     @relation("FeedbackTrainer")
+  compApprovedTickets MemberTicket[]      @relation("CompApprovedTickets")
+  compIssuedTickets   MemberTicket[]      @relation("CompIssuedTickets")
+  compPassesIssued    CompPass[]          @relation("CompPassIssuer")
+  compPassesApproved  CompPass[]          @relation("CompPassApprover")
+  compPassesRevoked   CompPass[]          @relation("CompPassRevoker")
+  insightsDismissed   Insight[]           @relation("InsightDismisser")
+  approvalsRequested  Approval[]          @relation("ApprovalRequester")
+  approvalsDecided    Approval[]          @relation("ApprovalDecider")
+  ptPackagesAsTrainer PtPackage[]         @relation("PtPackageTrainer")
+  trainerPayments     Payment[]           @relation("PaymentTrainer")
+  trainerPayouts      TrainerPayout[]     @relation("TrainerPayout")
+  refundsRequested    Refund[]            @relation("RefundRequester")
+  refundsApproved     Refund[]            @relation("RefundApprover")
+  shiftsOpened        CashShift[]         @relation("ShiftOpener")
+  shiftsClosed        CashShift[]         @relation("ShiftCloser")
+  shiftsApproved      CashShift[]         @relation("ShiftApprover")
+  feedbacksAsTrainer  Feedback[]          @relation("FeedbackTrainer")
   keysIssued          LockerKeyIssuance[] @relation("KeyIssuer")
   keysReturned        LockerKeyIssuance[] @relation("KeyReturner")
   keyWitnessed        LockerKeyIssuance[] @relation("KeyWitness")
 }
 
 model TicketPlan {
-  id         Int      @id @default(autoincrement())
-  name       String
-  expireDays Int
-  price      Decimal  @db.Decimal(10, 2)
-  occasions  Int?
-  isActive   Boolean  @default(true)
-  isTrial    Boolean  @default(false)
-  trialDays  Int?
-  joiningFee          Decimal @default(0) @db.Decimal(10, 2)
-  joiningFeeAppliesOn String  @default("first_only") // first_only, every_renewal, never
-  createdAt  DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  name                String
+  expireDays          Int
+  price               Decimal  @db.Decimal(10, 2)
+  occasions           Int?
+  isActive            Boolean  @default(true)
+  isTrial             Boolean  @default(false)
+  trialDays           Int?
+  joiningFee          Decimal  @default(0) @db.Decimal(10, 2)
+  joiningFeeAppliesOn String   @default("first_only") // first_only, every_renewal, never
+  createdAt           DateTime @default(now())
 
   memberTickets MemberTicket[]
 }
 
 model MemberTicket {
-  id         Int        @id @default(autoincrement())
-  userId     Int
-  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  planId     Int
-  plan       TicketPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
-  locationId Int?
-  location   Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  buyDate    DateTime   @default(now())
-  expireDate DateTime
-  occasions  Int?
-  renewedBy  Int?
-  status     String     @default("active") // active, cancelled
-  cancelledAt DateTime?
-  isTrial    Boolean    @default(false)
-  totalAmount Decimal?  @db.Decimal(10, 2)
-  amountPaid  Decimal   @default(0) @db.Decimal(10, 2)
-  balanceDue  Decimal   @default(0) @db.Decimal(10, 2)
-  joiningFeeCharged Decimal @default(0) @db.Decimal(10, 2)
-  dueDate     DateTime?
-  createdAt  DateTime   @default(now())
+  id                Int        @id @default(autoincrement())
+  userId            Int
+  user              User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  planId            Int
+  plan              TicketPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  locationId        Int?
+  location          Location?  @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  buyDate           DateTime   @default(now())
+  expireDate        DateTime
+  occasions         Int?
+  renewedBy         Int?
+  status            String     @default("active") // active, cancelled
+  cancelledAt       DateTime?
+  isTrial           Boolean    @default(false)
+  totalAmount       Decimal?   @db.Decimal(10, 2)
+  amountPaid        Decimal    @default(0) @db.Decimal(10, 2)
+  balanceDue        Decimal    @default(0) @db.Decimal(10, 2)
+  joiningFeeCharged Decimal    @default(0) @db.Decimal(10, 2)
+  dueDate           DateTime?
+  createdAt         DateTime   @default(now())
 
   externalRef String?
 
@@ -183,12 +183,12 @@ model MemberTicket {
   compExpiresAt         DateTime?
   compConvertedToPaidAt DateTime?
 
-  payments Payment[]
-  freezes  MembershipFreeze[]
-  extensions MembershipExtension[]
-  compPassConverted CompPass[] @relation("CompPassConvertedTicket")
-  paymentSchedule PaymentSchedule?
-  refunds  Refund[]
+  payments          Payment[]
+  freezes           MembershipFreeze[]
+  extensions        MembershipExtension[]
+  compPassConverted CompPass[]            @relation("CompPassConvertedTicket")
+  paymentSchedule   PaymentSchedule?
+  refunds           Refund[]
 
   @@index([userId, expireDate])
   @@index([locationId, expireDate])
@@ -198,28 +198,28 @@ model MemberTicket {
 }
 
 model Payment {
-  id             Int          @id @default(autoincrement())
-  userId         Int
-  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
-  memberTicketId Int
-  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Restrict)
-  locationId     Int?
-  location       Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  amount         Decimal      @db.Decimal(10, 2)
-  paymentMode    String
-  upiReference   String?
-  paymentNote    String?
-  collectedById  Int
-  collectedBy    Worker       @relation(fields: [collectedById], references: [id], onDelete: Restrict)
-  oldExpiryDate  DateTime?
-  newExpiryDate  DateTime?
-  baseAmount     Decimal? @db.Decimal(10, 2)
-  taxRate        Decimal? @db.Decimal(5, 2)
-  taxAmount      Decimal? @db.Decimal(10, 2)
-  paymentStatus  String       @default("full") // full, partial, advance
-  chequeNumber   String?
-  chequeDate     DateTime?
-  chequeStatus   String?      // pending, cleared, bounced
+  id                Int          @id @default(autoincrement())
+  userId            Int
+  user              User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  memberTicketId    Int
+  memberTicket      MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Restrict)
+  locationId        Int?
+  location          Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  amount            Decimal      @db.Decimal(10, 2)
+  paymentMode       String
+  upiReference      String?
+  paymentNote       String?
+  collectedById     Int
+  collectedBy       Worker       @relation(fields: [collectedById], references: [id], onDelete: Restrict)
+  oldExpiryDate     DateTime?
+  newExpiryDate     DateTime?
+  baseAmount        Decimal?     @db.Decimal(10, 2)
+  taxRate           Decimal?     @db.Decimal(5, 2)
+  taxAmount         Decimal?     @db.Decimal(10, 2)
+  paymentStatus     String       @default("full") // full, partial, advance
+  chequeNumber      String?
+  chequeDate        DateTime?
+  chequeStatus      String? // pending, cleared, bounced
   bankName          String?
   razorpayOrderId   String?
   razorpayPaymentId String?
@@ -227,15 +227,15 @@ model Payment {
   paymentFor        String?
   createdAt         DateTime     @default(now())
 
-  trainerId       Int?
-  trainer         Worker?      @relation("PaymentTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
-  shiftId         Int?
-  shift           CashShift?   @relation("ShiftPayment", fields: [shiftId], references: [id], onDelete: SetNull)
+  trainerId Int?
+  trainer   Worker?    @relation("PaymentTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
+  shiftId   Int?
+  shift     CashShift? @relation("ShiftPayment", fields: [shiftId], references: [id], onDelete: SetNull)
 
-  invoice Invoice?
-  ptPackages PtPackage[]
+  invoice             Invoice?
+  ptPackages          PtPackage[]
   installmentPayments PaymentInstallment[]
-  refunds Refund[]
+  refunds             Refund[]
 
   @@index([createdAt])
   @@index([locationId, createdAt])
@@ -255,7 +255,7 @@ model Invoice {
   status        String   @default("paid")
   createdAt     DateTime @default(now())
 
-  refunds       Refund[]
+  refunds Refund[]
 }
 
 model AttendanceLog {
@@ -275,7 +275,7 @@ model AttendanceLog {
   notes          String?
   isLateEntry    Boolean   @default(false)
   isPeakHours    Boolean   @default(false)
-  scanSource     String?   // qr_lobby, biometric, manual, etc.
+  scanSource     String? // qr_lobby, biometric, manual, etc.
   createdAt      DateTime  @default(now())
 
   @@unique([userId, locationId, attendanceDate], name: "uk_member_daily")
@@ -356,18 +356,18 @@ model DeviceUserMapping {
 }
 
 model NotificationLog {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   userId       Int
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   templateName String
   channel      String
   recipient    String?
-  status       String   @default("pending")
+  status       String    @default("pending")
   errorMessage String?
-  deliveryDate DateTime @db.Date
+  deliveryDate DateTime  @db.Date
   sentAt       DateTime?
   readAt       DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@unique([userId, templateName, deliveryDate])
 }
@@ -440,7 +440,6 @@ model LeaveRequest {
   @@index([status])
 }
 
-
 model GymSettings {
   id    Int    @id @default(autoincrement())
   key   String @unique
@@ -465,10 +464,10 @@ model Enquiry {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  prospectType    String?
-  referredByName  String?
+  prospectType   String?
+  referredByName String?
 
-  followups       EnquiryFollowup[]
+  followups EnquiryFollowup[]
 
   @@index([status])
 }
@@ -502,14 +501,14 @@ model Referral {
 
 model Expense {
   id          Int       @id @default(autoincrement())
-  category    String    // rent, salary, equipment, maintenance, utilities, marketing, other
+  category    String // rent, salary, equipment, maintenance, utilities, marketing, other
   description String
   amount      Decimal   @db.Decimal(10, 2)
   expenseDate DateTime  @db.Date
   locationId  Int?
   location    Location? @relation(fields: [locationId], references: [id])
-  paidBy      String?   // cash, upi, bank_transfer
-  receipt     String?   // receipt reference
+  paidBy      String? // cash, upi, bank_transfer
+  receipt     String? // receipt reference
   recordedBy  Int?
   createdAt   DateTime  @default(now())
 }
@@ -533,7 +532,7 @@ model Announcement {
 model Equipment {
   id              Int       @id @default(autoincrement())
   name            String
-  category        String    // cardio, strength, free_weights, accessories, other
+  category        String // cardio, strength, free_weights, accessories, other
   locationId      Int
   location        Location  @relation(fields: [locationId], references: [id])
   purchaseDate    DateTime? @db.Date
@@ -547,32 +546,32 @@ model Equipment {
 }
 
 model GymClass {
-  id           Int       @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   name         String
   description  String?
-  classType    String    @default("group") // group, personal_training, workshop
+  classType    String   @default("group") // group, personal_training, workshop
   instructorId Int?
-  instructor   Worker?   @relation(fields: [instructorId], references: [id])
+  instructor   Worker?  @relation(fields: [instructorId], references: [id])
   locationId   Int
-  location     Location  @relation(fields: [locationId], references: [id])
-  maxCapacity  Int       @default(20)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
+  location     Location @relation(fields: [locationId], references: [id])
+  maxCapacity  Int      @default(20)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
-  schedules    ClassSchedule[]
-  bookings     ClassBooking[]
+  schedules ClassSchedule[]
+  bookings  ClassBooking[]
 }
 
 model ClassSchedule {
-  id         Int      @id @default(autoincrement())
-  classId    Int
-  gymClass   GymClass @relation(fields: [classId], references: [id], onDelete: Cascade)
-  dayOfWeek  Int      // 0=Sunday, 1=Monday, ..., 6=Saturday
-  startTime  String   // "07:00"
-  endTime    String   // "08:00"
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  classId   Int
+  gymClass  GymClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  dayOfWeek Int // 0=Sunday, 1=Monday, ..., 6=Saturday
+  startTime String // "07:00"
+  endTime   String // "08:00"
+  createdAt DateTime @default(now())
 
-  feedbacks  Feedback[]
+  feedbacks Feedback[]
 }
 
 model ClassBooking {
@@ -608,15 +607,15 @@ model AiConversation {
   title          String?
   channel        String      @default("web") // web | email | telegram | system
   // PR 9: Telegram channel pairing.
-  telegramChatId String?     // when channel = "telegram"
-  telegramUserId String?     // for outbound DM (optional)
+  telegramChatId String? // when channel = "telegram"
+  telegramUserId String? // for outbound DM (optional)
   // PR 9 (also used by PR 16): detected language for the conversation.
   detectedLang   String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   messages       AiMessage[]
 
-  @@index([channel, telegramChatId])
+  @@unique([channel, telegramChatId], name: "AiConversation_channel_telegramChatId_key")
 }
 
 model AiMessage {
@@ -664,16 +663,16 @@ model PaymentFollowup {
 }
 
 model EnquiryFollowup {
-  id            Int      @id @default(autoincrement())
-  enquiryId     Int
-  enquiry       Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
-  workerId      Int
-  worker        Worker   @relation("EnquiryFollowupWorker", fields: [workerId], references: [id])
-  action        String   // call, visit, whatsapp, email, sms, demo
-  outcome       String   // interested, not_interested, no_answer, callback, visited, converted
-  notes         String?
+  id             Int       @id @default(autoincrement())
+  enquiryId      Int
+  enquiry        Enquiry   @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  workerId       Int
+  worker         Worker    @relation("EnquiryFollowupWorker", fields: [workerId], references: [id])
+  action         String // call, visit, whatsapp, email, sms, demo
+  outcome        String // interested, not_interested, no_answer, callback, visited, converted
+  notes          String?
   nextFollowupAt DateTime?
-  createdAt     DateTime @default(now())
+  createdAt      DateTime  @default(now())
 }
 
 // ─── Gift Cards ───
@@ -681,8 +680,8 @@ model EnquiryFollowup {
 model GiftCard {
   id             Int       @id @default(autoincrement())
   code           String    @unique
-  amount         Decimal  @db.Decimal(10, 2)
-  balance        Decimal  @db.Decimal(10, 2)
+  amount         Decimal   @db.Decimal(10, 2)
+  balance        Decimal   @db.Decimal(10, 2)
   purchaserId    Int?
   recipientName  String?
   recipientPhone String?
@@ -694,24 +693,25 @@ model GiftCard {
 // ─── Digital Waivers ───
 
 model WaiverTemplate {
-  id        Int       @id @default(autoincrement())
-  name      String
-  content   String
-  isActive  Boolean   @default(true)
-  required  Boolean   @default(true)
-  createdAt DateTime  @default(now())
+  id         Int               @id @default(autoincrement())
+  name       String
+  content    String
+  isActive   Boolean           @default(true)
+  required   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
   signatures WaiverSignature[]
 }
 
 model WaiverSignature {
-  id         Int      @id @default(autoincrement())
+  id         Int            @id @default(autoincrement())
   userId     Int
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   templateId Int
   template   WaiverTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  signedAt   DateTime @default(now())
+  signedAt   DateTime       @default(now())
   ipAddress  String?
   signature  String?
+
   @@unique([userId, templateId])
 }
 
@@ -731,6 +731,7 @@ model Payroll {
   status     String    @default("pending") // pending, processed, paid
   paidAt     DateTime?
   createdAt  DateTime  @default(now())
+
   @@unique([workerId, month, year])
 }
 
@@ -747,13 +748,13 @@ model FamilyGroup {
 // ─── POS / Retail ───
 
 model Product {
-  id        Int      @id @default(autoincrement())
-  name      String
-  price     Decimal  @db.Decimal(10, 2)
-  stock     Int      @default(0)
-  category  String   @default("general")
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id            Int            @id @default(autoincrement())
+  name          String
+  price         Decimal        @db.Decimal(10, 2)
+  stock         Int            @default(0)
+  category      String         @default("general")
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
   sales         Sale[]
   inventoryLogs InventoryLog[]
 }
@@ -776,73 +777,75 @@ model InventoryLog {
   id        Int      @id @default(autoincrement())
   productId Int
   product   Product  @relation(fields: [productId], references: [id])
-  change    Int      // positive = restock, negative = sale/loss
-  reason    String   // sale, restock, adjustment, loss
+  change    Int // positive = restock, negative = sale/loss
+  reason    String // sale, restock, adjustment, loss
   createdAt DateTime @default(now())
 }
 
 // ─── Facility Bookings ───
 
 model Facility {
-  id         Int      @id @default(autoincrement())
+  id         Int            @id @default(autoincrement())
   name       String
-  type       String   // court, pool, studio, track
+  type       String // court, pool, studio, track
   locationId Int?
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  isActive   Boolean        @default(true)
+  createdAt  DateTime       @default(now())
   slots      FacilitySlot[]
 }
 
 model FacilitySlot {
-  id         Int      @id @default(autoincrement())
-  facilityId Int
-  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  date       DateTime @db.Date
-  startTime  String   // "07:00"
-  endTime    String   // "08:00"
-  maxCapacity Int     @default(1)
-  status     String   @default("available") // available, full, blocked
-  createdAt  DateTime @default(now())
-  bookings   FacilityBooking[]
+  id          Int               @id @default(autoincrement())
+  facilityId  Int
+  facility    Facility          @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  date        DateTime          @db.Date
+  startTime   String // "07:00"
+  endTime     String // "08:00"
+  maxCapacity Int               @default(1)
+  status      String            @default("available") // available, full, blocked
+  createdAt   DateTime          @default(now())
+  bookings    FacilityBooking[]
+
   @@unique([facilityId, date, startTime])
 }
 
 model FacilityBooking {
-  id       Int          @id @default(autoincrement())
-  slotId   Int
-  slot     FacilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
-  userId   Int
-  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status   String       @default("booked") // booked, cancelled, completed
-  createdAt DateTime    @default(now())
+  id        Int          @id @default(autoincrement())
+  slotId    Int
+  slot      FacilitySlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String       @default("booked") // booked, cancelled, completed
+  createdAt DateTime     @default(now())
+
   @@unique([slotId, userId])
 }
 
 // ─── Workout & Diet Plans ───
 
 model WorkoutPlan {
-  id          Int      @id @default(autoincrement())
+  id          Int               @id @default(autoincrement())
   name        String
   description String?
   createdById Int
-  createdBy   Worker   @relation(fields: [createdById], references: [id])
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  createdBy   Worker            @relation(fields: [createdById], references: [id])
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
   exercises   WorkoutExercise[]
   assignments UserWorkoutPlan[]
 }
 
 model WorkoutExercise {
-  id        Int         @id @default(autoincrement())
-  planId    Int
-  plan      WorkoutPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  name      String
-  sets      Int         @default(3)
-  reps      Int         @default(12)
-  weight    Float?
-  day       String      // "monday", "tuesday", etc.
-  order     Int         @default(0)
-  notes     String?
+  id     Int         @id @default(autoincrement())
+  planId Int
+  plan   WorkoutPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  name   String
+  sets   Int         @default(3)
+  reps   Int         @default(12)
+  weight Float?
+  day    String // "monday", "tuesday", etc.
+  order  Int         @default(0)
+  notes  String?
 }
 
 model UserWorkoutPlan {
@@ -854,17 +857,18 @@ model UserWorkoutPlan {
   startDate DateTime    @default(now())
   endDate   DateTime?
   isActive  Boolean     @default(true)
+
   @@unique([userId, planId])
 }
 
 model DietPlan {
-  id          Int      @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   name        String
   description String?
   createdById Int
-  createdBy   Worker   @relation(fields: [createdById], references: [id])
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  createdBy   Worker         @relation(fields: [createdById], references: [id])
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
   meals       DietMeal[]
   assignments UserDietPlan[]
 }
@@ -873,7 +877,7 @@ model DietMeal {
   id          Int      @id @default(autoincrement())
   planId      Int
   plan        DietPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  mealType    String   // breakfast, lunch, dinner, snack
+  mealType    String // breakfast, lunch, dinner, snack
   description String
   calories    Int?
   protein     Float?
@@ -883,14 +887,15 @@ model DietMeal {
 }
 
 model UserDietPlan {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   planId    Int
-  plan      DietPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  startDate DateTime @default(now())
+  plan      DietPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  startDate DateTime  @default(now())
   endDate   DateTime?
-  isActive  Boolean  @default(true)
+  isActive  Boolean   @default(true)
+
   @@unique([userId, planId])
 }
 
@@ -915,10 +920,10 @@ model InAppNotification {
 
 model AiProactiveLog {
   id         Int      @id @default(autoincrement())
-  feature    String   // daily_briefing, churn_alert, lead_followup, member_nudge, weekly_summary, milestone
-  targetType String   // "worker" | "user"
+  feature    String // daily_briefing, churn_alert, lead_followup, member_nudge, weekly_summary, milestone
+  targetType String // "worker" | "user"
   targetId   Int
-  channel    String   // "whatsapp" | "in_app" | "both"
+  channel    String // "whatsapp" | "in_app" | "both"
   content    String
   tokensUsed Int?
   status     String   @default("sent") // sent | failed | skipped
@@ -965,17 +970,17 @@ model Locker {
 }
 
 model Feedback {
-  id        Int      @id @default(autoincrement())
+  id        Int            @id @default(autoincrement())
   userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rating    Int      // 1-5
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int // 1-5
   comment   String?
-  category  String?  // facility, trainer, cleanliness, general, class
+  category  String? // facility, trainer, cleanliness, general, class
   classId   Int?
   class     ClassSchedule? @relation(fields: [classId], references: [id], onDelete: SetNull)
   trainerId Int?
-  trainer   Worker?  @relation("FeedbackTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
+  trainer   Worker?        @relation("FeedbackTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
+  createdAt DateTime       @default(now())
 
   @@index([userId, createdAt])
   @@index([trainerId, createdAt])
@@ -1004,7 +1009,7 @@ model CompPass {
   id                Int           @id @default(autoincrement())
   userId            Int
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reason            String        // money_crunch, trial, influencer, family, compensation, owner_friend, legacy_zero_payment, other
+  reason            String // money_crunch, trial, influencer, family, compensation, owner_friend, legacy_zero_payment, other
   reasonDetail      String?
   startsAt          DateTime      @default(now())
   expiresAt         DateTime
@@ -1030,13 +1035,13 @@ model CompPass {
 // ─── AI agent insights (proactive findings — comp auditor, silent churn, etc.) ───
 model Insight {
   id               Int       @id @default(autoincrement())
-  agent            String    // "comp_auditor", "silent_churn", etc.
-  severity         String    // "critical", "high", "medium", "low"
+  agent            String // "comp_auditor", "silent_churn", etc.
+  severity         String // "critical", "high", "medium", "low"
   title            String
   body             String    @db.Text
   dataJson         Json?
-  suggestedActions Json?     // [{label, action, args}]
-  entityType       String?   // "user", "worker", "ticket", "enquiry", "global"
+  suggestedActions Json? // [{label, action, args}]
+  entityType       String? // "user", "worker", "ticket", "enquiry", "global"
   entityId         Int?
   dedupeKey        String    @unique
   dismissedAt      DateTime?
@@ -1050,7 +1055,7 @@ model Insight {
   createdAt        DateTime  @default(now())
 
   // PR 16 K.4: cross-channel delivery tracking (email + telegram message_ids).
-  deliveries       InsightDelivery[]
+  deliveries InsightDelivery[]
 
   @@index([agent, createdAt])
   @@index([severity, dismissedAt])
@@ -1064,31 +1069,31 @@ model Insight {
 
 // ─── Refund workflow ───
 model Refund {
-  id                  Int       @id @default(autoincrement())
-  paymentId           Int
-  payment             Payment   @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  invoiceId           Int?
-  invoice             Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  memberTicketId      Int?
-  memberTicket        MemberTicket? @relation(fields: [memberTicketId], references: [id], onDelete: SetNull)
-  amountRequested     Decimal   @db.Decimal(10, 2)
-  amountRefunded      Decimal   @default(0) @db.Decimal(10, 2)
-  refundMode          String    // cash | upi | bank_transfer | adjust_against_next_plan
-  reason              String    // quit | dissatisfied | duplicate_charge | medical | gym_closure | other
-  reasonDetail        String?
-  status              String    @default("pending") // pending, approved, processed, rejected, failed
-  requestedById       Int
-  requestedBy         Worker    @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: Restrict)
-  approvedById        Int?
-  approvedBy          Worker?   @relation("RefundApprover", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt          DateTime?
-  processedAt         DateTime?
-  pgRefundId          String?
-  gstReversalAmount   Decimal?  @db.Decimal(10, 2)
-  proRataDays         Int?
-  notes               String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                Int           @id @default(autoincrement())
+  paymentId         Int
+  payment           Payment       @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  invoiceId         Int?
+  invoice           Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  memberTicketId    Int?
+  memberTicket      MemberTicket? @relation(fields: [memberTicketId], references: [id], onDelete: SetNull)
+  amountRequested   Decimal       @db.Decimal(10, 2)
+  amountRefunded    Decimal       @default(0) @db.Decimal(10, 2)
+  refundMode        String // cash | upi | bank_transfer | adjust_against_next_plan
+  reason            String // quit | dissatisfied | duplicate_charge | medical | gym_closure | other
+  reasonDetail      String?
+  status            String        @default("pending") // pending, approved, processed, rejected, failed
+  requestedById     Int
+  requestedBy       Worker        @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedById      Int?
+  approvedBy        Worker?       @relation("RefundApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt        DateTime?
+  processedAt       DateTime?
+  pgRefundId        String?
+  gstReversalAmount Decimal?      @db.Decimal(10, 2)
+  proRataDays       Int?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   @@index([status, createdAt])
   @@index([paymentId])
@@ -1096,42 +1101,42 @@ model Refund {
 
 // ─── Cash shift management (per-location end-of-day reconciliation) ───
 model CashShift {
-  id                Int       @id @default(autoincrement())
-  locationId        Int
-  location          Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  openedById        Int
-  openedBy          Worker    @relation("ShiftOpener", fields: [openedById], references: [id], onDelete: Restrict)
-  openedAt          DateTime  @default(now())
-  openingFloat      Decimal   @db.Decimal(10, 2)
-  closedById        Int?
-  closedBy          Worker?   @relation("ShiftCloser", fields: [closedById], references: [id], onDelete: SetNull)
-  closedAt          DateTime?
-  closingExpected   Decimal?  @db.Decimal(10, 2)
-  closingCounted    Decimal?  @db.Decimal(10, 2)
-  variance          Decimal?  @db.Decimal(10, 2)
-  varianceReason    String?
-  status            String    @default("open") // open, pending_approval, closed, voided
-  approvedById      Int?
-  approvedBy        Worker?   @relation("ShiftApprover", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt        DateTime?
-  notes             String?
+  id              Int       @id @default(autoincrement())
+  locationId      Int
+  location        Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  openedById      Int
+  openedBy        Worker    @relation("ShiftOpener", fields: [openedById], references: [id], onDelete: Restrict)
+  openedAt        DateTime  @default(now())
+  openingFloat    Decimal   @db.Decimal(10, 2)
+  closedById      Int?
+  closedBy        Worker?   @relation("ShiftCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closedAt        DateTime?
+  closingExpected Decimal?  @db.Decimal(10, 2)
+  closingCounted  Decimal?  @db.Decimal(10, 2)
+  variance        Decimal?  @db.Decimal(10, 2)
+  varianceReason  String?
+  status          String    @default("open") // open, pending_approval, closed, voided
+  approvedById    Int?
+  approvedBy      Worker?   @relation("ShiftApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt      DateTime?
+  notes           String?
 
-  payments          Payment[] @relation("ShiftPayment")
-  movements         CashShiftMovement[]
+  payments  Payment[]           @relation("ShiftPayment")
+  movements CashShiftMovement[]
 
   @@index([locationId, status])
   @@index([openedAt])
 }
 
 model CashShiftMovement {
-  id           Int       @id @default(autoincrement())
-  shiftId      Int
-  shift        CashShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  type         String    // float_topup, cash_withdrawal, expense, deposit_to_bank
-  amount       Decimal   @db.Decimal(10, 2)
-  reason       String
-  createdById  Int
-  createdAt    DateTime  @default(now())
+  id          Int       @id @default(autoincrement())
+  shiftId     Int
+  shift       CashShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  type        String // float_topup, cash_withdrawal, expense, deposit_to_bank
+  amount      Decimal   @db.Decimal(10, 2)
+  reason      String
+  createdById Int
+  createdAt   DateTime  @default(now())
 
   @@index([shiftId, createdAt])
 }
@@ -1139,10 +1144,10 @@ model CashShiftMovement {
 // ─── Universal approval queue (comp, freeze, extension, refund, discount, ...) ───
 model Approval {
   id            Int       @id @default(autoincrement())
-  type          String    // "comp", "comp_pass", "freeze", "extension", "refund", "discount_over_threshold"
-  entityType    String    // "MemberTicket", "CompPass", "MembershipFreeze", "MembershipExtension", "Payment"
-  entityId      Int?      // null until the entity is created (deferred-create approvals)
-  payloadJson   Json      // params to apply on approval
+  type          String // "comp", "comp_pass", "freeze", "extension", "refund", "discount_over_threshold"
+  entityType    String // "MemberTicket", "CompPass", "MembershipFreeze", "MembershipExtension", "Payment"
+  entityId      Int? // null until the entity is created (deferred-create approvals)
+  payloadJson   Json // params to apply on approval
   status        String    @default("pending") // pending, approved, rejected, expired, cancelled
   requestedById Int
   requestedBy   Worker    @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Restrict)
@@ -1218,62 +1223,62 @@ model TrainerPayout {
 // ─── Payment Schedules / Installment Plans ───
 
 model PaymentSchedule {
-  id              Int       @id @default(autoincrement())
-  memberTicketId  Int       @unique
-  memberTicket    MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Cascade)
-  totalAmount     Decimal   @db.Decimal(10, 2)
-  status          String    @default("active") // active, completed, defaulted, cancelled
-  createdById     Int
-  createdAt       DateTime  @default(now())
+  id             Int          @id @default(autoincrement())
+  memberTicketId Int          @unique
+  memberTicket   MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Cascade)
+  totalAmount    Decimal      @db.Decimal(10, 2)
+  status         String       @default("active") // active, completed, defaulted, cancelled
+  createdById    Int
+  createdAt      DateTime     @default(now())
 
-  installments    PaymentInstallment[]
+  installments PaymentInstallment[]
 
   @@index([status])
 }
 
 model PaymentInstallment {
-  id              Int       @id @default(autoincrement())
-  scheduleId      Int
-  schedule        PaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  sequenceNumber  Int
-  dueDate         DateTime
-  amount          Decimal   @db.Decimal(10, 2)
-  paidAmount      Decimal   @default(0) @db.Decimal(10, 2)
-  paidAt          DateTime?
-  paymentId       Int?
-  payment         Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  status          String    @default("pending") // pending, paid, overdue, waived
-  reminderSentAt  DateTime?
+  id             Int             @id @default(autoincrement())
+  scheduleId     Int
+  schedule       PaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  sequenceNumber Int
+  dueDate        DateTime
+  amount         Decimal         @db.Decimal(10, 2)
+  paidAmount     Decimal         @default(0) @db.Decimal(10, 2)
+  paidAt         DateTime?
+  paymentId      Int?
+  payment        Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  status         String          @default("pending") // pending, paid, overdue, waived
+  reminderSentAt DateTime?
 
   @@unique([scheduleId, sequenceNumber])
   @@index([dueDate, status])
 }
 
 model LockerKeyIssuance {
-  id                Int       @id @default(autoincrement())
+  id                Int                 @id @default(autoincrement())
   lockerId          Int
-  locker            Locker    @relation(fields: [lockerId], references: [id], onDelete: Cascade)
+  locker            Locker              @relation(fields: [lockerId], references: [id], onDelete: Cascade)
   userId            Int
-  user              User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-  issuedAt          DateTime  @default(now())
+  user              User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  issuedAt          DateTime            @default(now())
   issuedById        Int
-  issuedBy          Worker    @relation("KeyIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  issuedBy          Worker              @relation("KeyIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
   expectedReturnAt  DateTime?
   returnedAt        DateTime?
   returnedById      Int?
-  returnedBy        Worker?   @relation("KeyReturner", fields: [returnedById], references: [id], onDelete: SetNull)
-  depositAmount     Decimal   @db.Decimal(10, 2)
+  returnedBy        Worker?             @relation("KeyReturner", fields: [returnedById], references: [id], onDelete: SetNull)
+  depositAmount     Decimal             @db.Decimal(10, 2)
   depositRefundedAt DateTime?
   conditionNotes    String?
-  status            String    @default("issued") // issued, returned, lost, forfeited
-  penaltyAmount     Decimal   @default(0) @db.Decimal(10, 2)
+  status            String              @default("issued") // issued, returned, lost, forfeited
+  penaltyAmount     Decimal             @default(0) @db.Decimal(10, 2)
   photoUrl          String?
   witnessId         Int?
-  witness           Worker?   @relation("KeyWitness", fields: [witnessId], references: [id], onDelete: SetNull)
+  witness           Worker?             @relation("KeyWitness", fields: [witnessId], references: [id], onDelete: SetNull)
   parentIssuanceId  Int?
-  parentIssuance    LockerKeyIssuance? @relation("KeyReissue", fields: [parentIssuanceId], references: [id], onDelete: SetNull)
+  parentIssuance    LockerKeyIssuance?  @relation("KeyReissue", fields: [parentIssuanceId], references: [id], onDelete: SetNull)
   reissues          LockerKeyIssuance[] @relation("KeyReissue")
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime            @default(now())
 
   @@index([userId, status])
   @@index([status, expectedReturnAt])
@@ -1285,15 +1290,22 @@ model LockerKeyIssuance {
 // via channel A, locate the original message in channel B and edit it to
 // reflect the new state ("Done via email").
 model InsightDelivery {
-  id                Int       @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   insightId         Int
-  insight           Insight   @relation(fields: [insightId], references: [id], onDelete: Cascade)
-  channel           String    // "email" | "telegram"
-  recipient         String?   // email address OR telegram chat id
+  insight           Insight  @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  channel           String // "email" | "telegram"
+  recipient         String? // email address OR telegram chat id
   telegramChatId    String?
   telegramMessageId Int?
-  sentAt            DateTime  @default(now())
+  sentAt            DateTime @default(now())
 
   @@index([insightId])
   @@index([channel, sentAt])
+}
+
+model ProcessedTelegramUpdate {
+  updateId    BigInt   @id // Telegram update_id is a 64-bit integer
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
 }

@@ -1,6 +1,7 @@
 import { create } from "xmlbuilder2";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
+import { istDayBoundsUtc } from "@/lib/utils/date-ist";
 
 export type TallyExportParams = {
   from: Date;
@@ -45,6 +46,20 @@ export async function exportInvoicesAsTallyXml(
 ): Promise<string> {
   const { from, to, locationId } = params;
 
+  // Treat the caller-supplied `from`/`to` as IST calendar dates (inclusive on
+  // both ends) and convert to UTC instant boundaries. Without this, a `from`
+  // of `new Date("2026-04-01")` is parsed as 2026-04-01T00:00Z = 05:30 IST,
+  // dropping invoices created between 00:00–05:30 IST on Apr 1 from the April
+  // export — even though formatTallyDate stamps them as 20260401. Tally and
+  // the Prisma filter would disagree on the fiscal month → books mismatch.
+  // We use `gte: startUtc` and `lt: endNextDayUtc` (the start of the IST day
+  // AFTER `to`) so the inclusive window is captured without a double-count
+  // at the boundary instant.
+  const fromBounds = istDayBoundsUtc(from);
+  const toBounds = istDayBoundsUtc(to);
+  const rangeStartUtc = fromBounds.startUtc;
+  const rangeEndUtc = toBounds.endUtc;
+
   const [salesLedger, cgstLedger, sgstLedger, igstLedger, gstRateStr, gymGstin] =
     await Promise.all([
       getSetting("tally_sales_ledger", "Sales"),
@@ -60,7 +75,7 @@ export async function exportInvoicesAsTallyXml(
 
   const invoices = await prisma.invoice.findMany({
     where: {
-      createdAt: { gte: from, lte: to },
+      createdAt: { gte: rangeStartUtc, lt: rangeEndUtc },
       ...(locationId
         ? { payment: { locationId } }
         : {}),
@@ -169,7 +184,7 @@ export async function exportInvoicesAsTallyXml(
   const refundsInPeriod = await prisma.refund.findMany({
     where: {
       status: "processed",
-      processedAt: { gte: from, lte: to },
+      processedAt: { gte: rangeStartUtc, lt: rangeEndUtc },
       ...(locationId
         ? { payment: { locationId } }
         : {}),

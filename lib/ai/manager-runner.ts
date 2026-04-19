@@ -27,7 +27,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { getSetting } from "@/lib/services/settings";
+import { getSetting, setSetting } from "@/lib/services/settings";
 import { listActiveInsights, type InsightSeverity } from "@/lib/services/insight";
 import { composeBriefing, type Lang, type ComposedBriefing } from "@/lib/ai/manager";
 import { renderEmail } from "@/lib/ai/manager-email";
@@ -126,6 +126,28 @@ export async function runManagerBriefing(opts?: {
   /** Override which channels to deliver on. Defaults to enabled-by-settings. */
   channels?: BriefingChannel[];
 }): Promise<Response> {
+  // Telegram /snooze command writes `briefing_quiet_until` (ISO datetime) to
+  // silence the next briefing. Honour it before any other work.
+  const quietUntil = await getSetting("briefing_quiet_until", "");
+  if (quietUntil) {
+    const quietDate = new Date(quietUntil);
+    if (!Number.isNaN(quietDate.getTime()) && quietDate > new Date()) {
+      console.log(
+        `[manager-runner] briefing_quiet_until in effect: ${quietUntil}, skipping`
+      );
+      return Response.json({
+        ok: true,
+        sent: 0,
+        insightCount: 0,
+        skipped: true,
+        reason: "quiet_until",
+        quietUntil,
+      });
+    }
+    // expired or invalid — clear it so it doesn't accumulate
+    await setSetting("briefing_quiet_until", "");
+  }
+
   const enabled = await getSetting("manager_briefing_enabled", "false");
   if (enabled !== "true") {
     return Response.json({

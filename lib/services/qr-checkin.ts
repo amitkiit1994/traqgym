@@ -65,7 +65,12 @@ export async function checkInViaQr(params: {
   if (!user) return { success: false, error: "Member not found" };
   if (!user.isActive) return { success: false, error: "Member account is inactive" };
 
-  // Rate limit: check most recent QR check-in for this user across any location.
+  // Rate limit: check most recent QR check-in for this user at THIS location.
+  // Scoping by locationId keeps the rate-limit consistent with the daily
+  // unique-per-(user, location) attendance constraint enforced by `checkIn`.
+  // A multi-location member can still check in at a different branch within
+  // the window; the per-location uniqueness invariant remains the second
+  // line of defense against duplicate same-day rows.
   const rateLimitHoursSetting = await getSetting("qr_checkin_rate_limit_hours", "4");
   const rateLimitHours = Math.max(1, parseInt(rateLimitHoursSetting, 10) || 4);
   const since = new Date(Date.now() - rateLimitHours * 60 * 60 * 1000);
@@ -73,6 +78,7 @@ export async function checkInViaQr(params: {
   const recent = await prisma.attendanceLog.findFirst({
     where: {
       userId: user.id,
+      locationId,
       scanSource,
       createdAt: { gt: since },
     },

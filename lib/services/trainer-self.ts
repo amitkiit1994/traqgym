@@ -182,11 +182,29 @@ export async function getMyClientDetail(
 
   const user = packages[0].user;
 
-  const measurements = await prisma.bodyMeasurement.findMany({
-    where: { userId },
-    orderBy: { date: "desc" },
-    take: 6,
+  // PR 16 audit fix (HIGH): scope measurements to the trainer's relationship
+  // window. Without this, a trainer inheriting a client previously trained by
+  // someone else could read the prior trainer's full measurement history for
+  // that user. Limit to measurements taken on or after the EARLIEST startedAt
+  // of the trainer's currently-active package(s) for this user. The active
+  // package check above already returns null when no relationship exists, so
+  // earliestActiveStart is guaranteed to be present here, but we guard
+  // defensively in case aggregate returns null.
+  const earliestActiveStart = await prisma.ptPackage.aggregate({
+    where: { trainerId, userId, status: "active" },
+    _min: { startedAt: true },
   });
+
+  const measurements = earliestActiveStart._min.startedAt
+    ? await prisma.bodyMeasurement.findMany({
+        where: {
+          userId,
+          date: { gte: earliestActiveStart._min.startedAt },
+        },
+        orderBy: { date: "desc" },
+        take: 10,
+      })
+    : [];
 
   return {
     userId: user.id,

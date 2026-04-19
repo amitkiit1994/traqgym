@@ -46,24 +46,23 @@ export const runtime = "nodejs";
 
 const OK = () => Response.json({ ok: true });
 
-// ── R07: process-local update_id dedupe (LRU, bounded) ─────────────────────
+// ── R07: cross-instance update_id dedupe via DB ────────────────────────────
 // Telegram retries non-2xx responses, and even 2xx responses occasionally
 // get re-delivered (network blips, our process restarting mid-handler, etc).
 // Without dedupe a single inline-keyboard tap can be processed twice.
 //
-// Schema is frozen for this sprint, so we use a process-local LRU. Map
-// preserves insertion order in JS, so we evict the oldest entry when the
-// cache exceeds the cap. Acceptable tradeoff: a webhook hitting two
-// different serverless instances within the dedupe window can still
-// double-process — but the atomic claim in executeInsightAction (R03/R06)
-// is the second line of defence for the action-execution path.
+// Source of truth: ProcessedTelegramUpdate table (unique on updateId). We
+// attempt an insert and treat a P2002 unique-constraint violation as a
+// duplicate — this works correctly across multi-instance Vercel replicas
+// where a process-local Set would not.
 //
-// TODO: replace with a DB table (e.g. ProcessedTelegramUpdate{ updateId,
-// processedAt }) in the next schema window for true cross-instance dedupe.
+// Optimisation: a small process-local LRU acts as a fast-path so obvious
+// dupes (same update re-delivered to the same warm instance) skip the DB
+// round-trip. The DB call is still authoritative.
 const SEEN_UPDATE_IDS = new Map<number, number>();
 const SEEN_UPDATE_IDS_MAX = 1000;
 
-function rememberUpdateId(updateId: number): boolean {
+function rememberInProcess(updateId: number): boolean {
   if (SEEN_UPDATE_IDS.has(updateId)) return false;
   SEEN_UPDATE_IDS.set(updateId, Date.now());
   if (SEEN_UPDATE_IDS.size > SEEN_UPDATE_IDS_MAX) {
@@ -177,6 +176,10 @@ async function snoozeAllUntilTomorrowMorning(snoozedById: number): Promise<{
     },
     data: { snoozedUntil: until },
   });
+  // PR 16 K.1 (sprint6 fix): also persist a global "quiet until" so insights
+  // CREATED later in the day still respect this snooze. The actual
+  // briefing-skip is enforced in lib/ai/manager.ts which reads this setting.
+  await setSetting("briefing_quiet_until", until.toISOString());
   // Best-effort audit.
   await prisma.auditLog
     .create({
@@ -266,26 +269,32 @@ async function resolveSystemWorkerId(): Promise<number | null> {
 }
 
 // ── Find or create the AiConversation for this telegram chat ───────────────
+// Uses an atomic upsert against the @@unique([channel, telegramChatId])
+// index so concurrent webhook deliveries can't race to create two
+// conversations for the same chat.
 async function findOrCreateTelegramConversation(args: {
   chatId: string;
   telegramUserId?: string;
   workerId: number;
 }): Promise<number> {
-  const existing = await prisma.aiConversation.findFirst({
-    where: { channel: "telegram", telegramChatId: args.chatId },
-    orderBy: { id: "desc" },
-  });
-  if (existing) return existing.id;
-  const created = await prisma.aiConversation.create({
-    data: {
+  const conversation = await prisma.aiConversation.upsert({
+    where: {
+      AiConversation_channel_telegramChatId_key: {
+        channel: "telegram",
+        telegramChatId: args.chatId,
+      },
+    },
+    update: {},
+    create: {
       workerId: args.workerId,
       channel: "telegram",
       telegramChatId: args.chatId,
       telegramUserId: args.telegramUserId,
       title: `Telegram ${args.chatId}`,
     },
+    select: { id: true },
   });
-  return created.id;
+  return conversation.id;
 }
 
 // ── Pairing flow handler (called for /pair <code>) ─────────────────────────
@@ -855,15 +864,30 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "bad_json" }, { status: 400 });
   }
 
-  // R07: process-local update_id dedupe. Telegram occasionally re-delivers
+  // R07: cross-instance update_id dedupe. Telegram occasionally re-delivers
   // updates (especially after non-2xx responses or transient network errors).
-  // Skip silently with 200 OK so Telegram stops retrying.
+  // Process-local LRU is a fast-path; DB insert is the source of truth so
+  // that two different Vercel replicas can't both process the same update.
   if (typeof update.update_id === "number") {
-    if (!rememberUpdateId(update.update_id)) {
+    if (!rememberInProcess(update.update_id)) {
       console.log(
-        `[telegram-webhook] dedupe: ignoring duplicate update_id=${update.update_id}`
+        `[telegram-webhook] dedupe (in-process): ignoring duplicate update_id=${update.update_id}`
       );
       return OK();
+    }
+    try {
+      await prisma.processedTelegramUpdate.create({
+        data: { updateId: BigInt(update.update_id) },
+      });
+    } catch (err: unknown) {
+      const code = (err as { code?: string } | null)?.code;
+      if (code === "P2002") {
+        console.log(
+          `[telegram-webhook] dedupe (db): ignoring duplicate update_id=${update.update_id}`
+        );
+        return Response.json({ ok: true, duplicate: true });
+      }
+      throw err;
     }
   }
 
