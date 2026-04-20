@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { todayIST } from "@/lib/utils/date";
 import { unstable_cache } from "next/cache";
 
@@ -37,12 +38,24 @@ export async function getStats(locationId?: number) {
     planDistRaw
   ] = await Promise.all([
     // Active members
+    // C4: only count currently-usable tickets — exclude cancelled, expired, upgraded, renewed.
+    // Also exclude members whose ticket is currently frozen (freeze does not flip ticket.status).
     prisma.user.count({
       where: {
         ...where,
         memberTickets: {
           some: {
+            status: "active",
             expireDate: { gte: now },
+          },
+        },
+        NOT: {
+          freezes: {
+            some: {
+              status: "active",
+              freezeStart: { lte: now },
+              freezeEnd: { gte: now },
+            },
           },
         },
       },
@@ -110,21 +123,21 @@ export async function getStats(locationId?: number) {
         },
       },
     }),
-    // Cash this month (case-insensitive: "Cash" or "cash")
+    // Cash this month — M6: canonical lowercase + case-insensitive match
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: { in: ["Cash", "cash"] },
+        paymentMode: { equals: "cash", mode: "insensitive" },
       },
       _sum: { amount: true },
     }),
-    // UPI this month (case-insensitive: "UPI" or "upi")
+    // UPI this month — M6: canonical lowercase + case-insensitive match
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: { in: ["UPI", "upi"] },
+        paymentMode: { equals: "upi", mode: "insensitive" },
       },
       _sum: { amount: true },
     }),
@@ -140,36 +153,32 @@ export async function getStats(locationId?: number) {
         user: { select: { firstname: true, lastname: true } },
       },
     }),
-    // Overdue members — scoped to last 90 days (not all-time)
-    (() => {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      return prisma.user.findMany({
-        where: {
-          ...where,
+    // Overdue members — surface ALL expired members (M4: removed 90-day floor)
+    prisma.user.findMany({
+      where: {
+        ...where,
+        memberTickets: {
+          some: {
+            expireDate: { lt: sevenDaysAgoDate },
+          },
+        },
+        NOT: {
           memberTickets: {
             some: {
-              expireDate: { gte: ninetyDaysAgo, lt: sevenDaysAgoDate },
-            },
-          },
-          NOT: {
-            memberTickets: {
-              some: {
-                expireDate: { gte: sevenDaysAgoDate },
-              },
+              expireDate: { gte: sevenDaysAgoDate },
             },
           },
         },
-        include: {
-          memberTickets: {
-            orderBy: { expireDate: "desc" },
-            take: 1,
-            include: { plan: { select: { id: true, name: true } } },
-          },
+      },
+      include: {
+        memberTickets: {
+          orderBy: { expireDate: "desc" },
+          take: 1,
+          include: { plan: { select: { id: true, name: true } } },
         },
-        take: 50,
-      });
-    })(),
+      },
+      take: 50,
+    }),
     // Plan distribution
     prisma.memberTicket.groupBy({
       by: ["planId"],
@@ -399,6 +408,8 @@ export async function getDailyCollection(locationId?: number) {
 
   const where: Record<string, unknown> = {
     createdAt: { gte: todayStart, lt: todayEnd },
+    // C1: exclude complimentary payments from daily collection totals + staff breakdown
+    paymentMode: { not: { equals: "complimentary", mode: "insensitive" } },
   };
   if (locationId) where.locationId = locationId;
 
@@ -433,8 +444,11 @@ export async function getDailyCollection(locationId?: number) {
     if (existing) {
       existing.total += amt;
     } else {
+      // M7: defensive null-coalesce — POS sale paths recently became more permissive
+      const firstname = p.collectedBy?.firstname ?? "Unknown";
+      const lastname = p.collectedBy?.lastname ?? "";
       staffMap.set(p.collectedById, {
-        name: `${p.collectedBy.firstname} ${p.collectedBy.lastname}`,
+        name: `${firstname} ${lastname}`.trim(),
         total: amt,
       });
     }
@@ -447,7 +461,7 @@ export async function getDailyCollection(locationId?: number) {
 }
 
 export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
-  const [workers, paymentsByWorker, attendance] = await Promise.all([
+  const [workers, paymentsByWorker, distinctTicketRows, attendance] = await Promise.all([
     prisma.worker.findMany({
       where: { isActive: true },
       select: { id: true, firstname: true, lastname: true, role: true },
@@ -456,8 +470,17 @@ export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
       by: ["collectedById", "paymentMode"],
       where: { createdAt: { gte: monthStart, lt: monthEnd } },
       _sum: { amount: true },
-      _count: { id: true },
     }),
+    // M2: renewal count must be DISTINCT memberTicketId per worker — partial
+    // payments share a memberTicketId so raw payment-row counts double-count.
+    prisma.$queryRaw<Array<{ collectedById: number; cnt: bigint }>>(Prisma.sql`
+      SELECT "collectedById", COUNT(DISTINCT "memberTicketId")::bigint AS cnt
+      FROM "Payment"
+      WHERE "createdAt" >= ${monthStart}
+        AND "createdAt" < ${monthEnd}
+        AND "memberTicketId" IS NOT NULL
+      GROUP BY "collectedById"
+    `),
     prisma.attendanceLog.findMany({
       where: {
         attendanceDate: { gte: monthStart, lt: monthEnd },
@@ -472,11 +495,17 @@ export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
   const workerStatsMap = new Map<number, { cash: number; upi: number; count: number }>();
   for (const row of paymentsByWorker) {
     const existing = workerStatsMap.get(row.collectedById) || { cash: 0, upi: 0, count: 0 };
-    const amt = Number(row._sum.amount || 0);
+    // M5: use Prisma.Decimal.toNumber() for the conventional precision-aware path
+    const amt = (row._sum.amount ?? new Prisma.Decimal(0)).toNumber();
     const mode = row.paymentMode.toLowerCase();
     if (mode === "cash") existing.cash += amt;
     else if (mode === "upi") existing.upi += amt;
-    existing.count += row._count.id;
+    workerStatsMap.set(row.collectedById, existing);
+  }
+  // Apply distinct-ticket counts (M2)
+  for (const row of distinctTicketRows) {
+    const existing = workerStatsMap.get(row.collectedById) || { cash: 0, upi: 0, count: 0 };
+    existing.count = Number(row.cnt);
     workerStatsMap.set(row.collectedById, existing);
   }
 
@@ -588,27 +617,27 @@ export async function getDailyPOSCollection(locationId?: number) {
 export async function getTodayCounts(locationId?: number) {
   const now = todayIST();
   const todayStart = new Date(now);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  // M1: use exclusive end (start + 24h) for clean half-open interval semantics
+  const todayEndExclusive = new Date(todayStart.getTime() + 86400000);
 
   const [prospects, followups, renewals, newMembers] = await Promise.all([
     prisma.enquiry.count({
       where: {
-        createdAt: { gte: todayStart, lte: todayEnd },
+        createdAt: { gte: todayStart, lt: todayEndExclusive },
         ...(locationId ? { locationId } : {}),
       },
     }),
     prisma.enquiryFollowup.count({
-      where: { createdAt: { gte: todayStart, lte: todayEnd } },
+      where: { createdAt: { gte: todayStart, lt: todayEndExclusive } },
     }),
     prisma.memberTicket.count({
       where: {
-        buyDate: { gte: todayStart, lte: todayEnd },
+        buyDate: { gte: todayStart, lt: todayEndExclusive },
         ...(locationId ? { locationId } : {}),
       },
     }),
     prisma.user.count({
-      where: { createdAt: { gte: todayStart, lte: todayEnd } },
+      where: { createdAt: { gte: todayStart, lt: todayEndExclusive } },
     }),
   ]);
 
@@ -619,7 +648,8 @@ export async function getFinancialSplit(locationId?: number) {
   const locFilter = locationId ? { locationId } : {};
 
   const all = await prisma.memberTicket.aggregate({
-    where: { status: { not: "cancelled" }, ...locFilter },
+    // C3: exclude complimentary tickets from billed/received/due totals
+    where: { status: { not: "cancelled" }, isComplimentary: false, ...locFilter },
     _sum: { totalAmount: true, amountPaid: true },
   });
 
@@ -765,67 +795,105 @@ export async function getRevenueChartData(
 
 /**
  * Monthly revenue trend for the last N months.
+ *
+ * Sprint 3 perf: was N months × 6 queries = 72 sequential round-trips for the
+ * default 12-month window. Rewritten to issue 4 raw bucketed queries (window
+ * sums + per-month buckets via PostgreSQL `date_trunc`) totalling 4
+ * round-trips regardless of N. On E-GYM (~14k payments) the old path
+ * dominated dashboard cold-load latency; the new path is constant-time and
+ * pushes the heavy lifting (group + sum) into the DB where indexes apply.
  */
 export async function getMonthlyRevenueTrend(months: number = 12, locationId?: number) {
   const now = todayIST();
-  const result: {
-    month: string;
-    revenue: number;
-    expenses: number;
-    net: number;
-    cash: number;
-    upi: number;
-    renewals: number;
-    newMembers: number;
-  }[] = [];
+  const windowStart = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+  const windowEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  for (let i = months - 1; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-    const locFilter = locationId ? { locationId } : {};
-
-    const [payments, cashAgg, upiAgg, expenseAgg, renewalCount, newMemberCount] =
-      await Promise.all([
-        prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd } },
-          _sum: { amount: true },
-        }),
-        prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["Cash", "cash"] } },
-          _sum: { amount: true },
-        }),
-        prisma.payment.aggregate({
-          where: { ...locFilter, createdAt: { gte: monthStart, lt: monthEnd }, paymentMode: { in: ["UPI", "upi"] } },
-          _sum: { amount: true },
-        }),
-        prisma.expense.aggregate({
-          where: { ...locFilter, expenseDate: { gte: monthStart, lt: monthEnd } },
-          _sum: { amount: true },
-        }),
-        prisma.memberTicket.count({
-          where: { ...locFilter, buyDate: { gte: monthStart, lt: monthEnd } },
-        }),
-        prisma.user.count({
-          where: { createdAt: { gte: monthStart, lt: monthEnd } },
-        }),
-      ]);
-
-    const revenue = Number(payments._sum.amount || 0);
-    const expenses = Number(expenseAgg._sum.amount || 0);
-
-    result.push({
-      month: monthStart.toISOString().slice(0, 7),
-      revenue,
-      expenses,
-      net: revenue - expenses,
-      cash: Number(cashAgg._sum.amount || 0),
-      upi: Number(upiAgg._sum.amount || 0),
-      renewals: renewalCount,
-      newMembers: newMemberCount,
-    });
+  type Bucket = { month: string; cash: number; upi: number; other: number; renewals: number; newMembers: number; expenses: number };
+  const bucketMap = new Map<string, Bucket>();
+  for (let i = 0; i < months; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1) + i, 1);
+    const key = d.toISOString().slice(0, 7);
+    bucketMap.set(key, { month: key, cash: 0, upi: 0, other: 0, renewals: 0, newMembers: 0, expenses: 0 });
   }
 
-  return result;
+  // Run all 4 bucketed queries in parallel. Each does a single index range
+  // scan + group, replacing what used to be N×6 separate round-trips.
+  const locClause = (col: string) =>
+    locationId ? Prisma.sql`AND "${Prisma.raw(col)}" = ${locationId}` : Prisma.empty;
+
+  const [paymentRows, expenseRows, renewalRows, newMemberRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ month: Date; mode: string; total: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "createdAt") AS month,
+             "paymentMode" AS mode,
+             COALESCE(SUM("amount"), 0)::float8 AS total
+      FROM "Payment"
+      WHERE "createdAt" >= ${windowStart} AND "createdAt" < ${windowEnd}
+      ${locClause("locationId")}
+      GROUP BY 1, 2
+    `),
+    prisma.$queryRaw<Array<{ month: Date; total: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "expenseDate") AS month,
+             COALESCE(SUM("amount"), 0)::float8 AS total
+      FROM "Expense"
+      WHERE "expenseDate" >= ${windowStart} AND "expenseDate" < ${windowEnd}
+      ${locClause("locationId")}
+      GROUP BY 1
+    `),
+    prisma.$queryRaw<Array<{ month: Date; cnt: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "buyDate") AS month,
+             COUNT(*)::int AS cnt
+      FROM "MemberTicket"
+      WHERE "buyDate" >= ${windowStart} AND "buyDate" < ${windowEnd}
+      ${locClause("locationId")}
+      GROUP BY 1
+    `),
+    prisma.$queryRaw<Array<{ month: Date; cnt: number }>>(Prisma.sql`
+      SELECT date_trunc('month', "createdAt") AS month,
+             COUNT(*)::int AS cnt
+      FROM "User"
+      WHERE "createdAt" >= ${windowStart} AND "createdAt" < ${windowEnd}
+      GROUP BY 1
+    `),
+  ]);
+
+  const monthKey = (d: Date) => new Date(d).toISOString().slice(0, 7);
+
+  for (const r of paymentRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (!b) continue;
+    const mode = (r.mode ?? "").toLowerCase();
+    if (mode === "cash") b.cash += Number(r.total);
+    else if (mode === "upi") b.upi += Number(r.total);
+    else b.other += Number(r.total);
+  }
+  for (const r of expenseRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (b) b.expenses = Number(r.total);
+  }
+  for (const r of renewalRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (b) b.renewals = Number(r.cnt);
+  }
+  for (const r of newMemberRows) {
+    const b = bucketMap.get(monthKey(r.month));
+    if (b) b.newMembers = Number(r.cnt);
+  }
+
+  return Array.from(bucketMap.values())
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((b) => {
+      const revenue = b.cash + b.upi + b.other;
+      return {
+        month: b.month,
+        revenue,
+        expenses: b.expenses,
+        net: revenue - b.expenses,
+        cash: b.cash,
+        upi: b.upi,
+        renewals: b.renewals,
+        newMembers: b.newMembers,
+      };
+    });
 }
 
 // --- Cached wrappers ---

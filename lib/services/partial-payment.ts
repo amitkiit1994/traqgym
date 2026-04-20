@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeGstSplitInclusive, getGymGstRate } from "./tax";
 
 export async function recordPartialPayment(params: {
   ticketId: number;
@@ -7,33 +8,55 @@ export async function recordPartialPayment(params: {
   upiReference?: string;
   collectedById: number;
 }) {
-  const ticket = await prisma.memberTicket.findUnique({
-    where: { id: params.ticketId },
-    include: { plan: true, user: true },
-  });
-
-  if (!ticket) return { success: false, error: "Ticket not found" };
-  if (Number(ticket.balanceDue) <= 0) return { success: false, error: "No balance due on this ticket" };
   if (params.amount <= 0) return { success: false, error: "Amount must be positive" };
-  if (params.amount > Number(ticket.balanceDue)) {
-    return { success: false, error: `Amount exceeds balance due (${ticket.balanceDue})` };
-  }
+
+  // Resolve GST rate outside the txn — read-mostly setting, no need to refetch
+  // on every retry. Used to populate the Payment row's tax breakdown.
+  const gymGstRate = await getGymGstRate();
+  const gstSplit = computeGstSplitInclusive(params.amount, gymGstRate);
 
   const result = await prisma.$transaction(async (tx) => {
+    // Read ticket inside the transaction so the validation snapshot matches the writes,
+    // closing the race window where two concurrent payments both pass the balance check.
+    const ticket = await tx.memberTicket.findUnique({
+      where: { id: params.ticketId },
+      include: { plan: true, user: true },
+    });
+
+    if (!ticket) return { error: "Ticket not found" as const };
+    if (Number(ticket.balanceDue) <= 0) return { error: "No balance due on this ticket" as const };
+    if (params.amount > Number(ticket.balanceDue)) {
+      return { error: `Amount exceeds balance due (${ticket.balanceDue})` as const };
+    }
+
     const newAmountPaid = Number(ticket.amountPaid) + params.amount;
     const newBalanceDue = Number(ticket.balanceDue) - params.amount;
     const isFullyPaid = newBalanceDue <= 0;
 
-    // Update ticket balance
-    await tx.memberTicket.update({
-      where: { id: params.ticketId },
+    // Atomic compare-and-swap: only succeed if the balance/paid we read are
+    // still the current values. Under READ COMMITTED two concurrent partial
+    // payments could both see the same balance snapshot and double-credit;
+    // updateMany() with the expected values in the WHERE clause makes the
+    // database enforce optimistic locking. count===0 means another writer
+    // beat us — reject and let the caller retry on a fresh snapshot.
+    const updated = await tx.memberTicket.updateMany({
+      where: {
+        id: params.ticketId,
+        amountPaid: ticket.amountPaid,
+        balanceDue: ticket.balanceDue,
+      },
       data: {
         amountPaid: newAmountPaid,
         balanceDue: Math.max(0, newBalanceDue),
       },
     });
+    if (updated.count === 0) {
+      return { error: "Ticket was modified concurrently — please retry" as const };
+    }
 
-    // Create payment record
+    // Create payment record. GST split (base + rate + tax) is populated so
+    // Tally / GSTR-1 see the correct breakdown — every partial collection is
+    // also a taxable supply under GST inclusive pricing.
     const payment = await tx.payment.create({
       data: {
         userId: ticket.userId,
@@ -45,6 +68,9 @@ export async function recordPartialPayment(params: {
         collectedById: params.collectedById,
         paymentStatus: isFullyPaid ? "full" : "partial",
         newExpiryDate: ticket.expireDate,
+        baseAmount: gstSplit.baseAmount,
+        taxRate: gstSplit.taxRate,
+        taxAmount: gstSplit.taxAmount,
       },
     });
 
@@ -69,6 +95,10 @@ export async function recordPartialPayment(params: {
 
     return { payment, newBalanceDue: Math.max(0, newBalanceDue), isFullyPaid };
   });
+
+  if ("error" in result) {
+    return { success: false, error: result.error };
+  }
 
   return {
     success: true,

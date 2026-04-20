@@ -7,7 +7,16 @@ vi.mock("@/lib/prisma", () => ({
     memberTicket: { count: vi.fn(), findMany: vi.fn() },
     leaveRequest: { count: vi.fn() },
     attendanceLog: { groupBy: vi.fn() },
+    approval: { count: vi.fn().mockResolvedValue(0) },
+    refund: { count: vi.fn().mockResolvedValue(0) },
+    cashShift: { count: vi.fn().mockResolvedValue(0) },
   },
+}));
+
+// Sprint 8 Agent E added requireWorker() to getSidebarCounts. Stub it so the
+// test exercises the data-shape contract without needing a Next request scope.
+vi.mock("@/lib/auth-guard", () => ({
+  requireWorker: vi.fn().mockResolvedValue({ id: 1, role: "admin" }),
 }));
 
 import { prisma } from "@/lib/prisma";
@@ -39,11 +48,14 @@ beforeEach(() => {
 // getSidebarCounts
 // ---------------------------------------------------------------------------
 describe("getSidebarCounts", () => {
-  it("returns all 4 counts", async () => {
+  it("returns all 7 counts", async () => {
     mockPrisma.paymentFollowup.count.mockResolvedValue(3);
     mockPrisma.enquiry.count.mockResolvedValue(5);
     mockPrisma.memberTicket.count.mockResolvedValue(2);
     mockPrisma.leaveRequest.count.mockResolvedValue(1);
+    (mockPrisma as any).approval.count.mockResolvedValue(4);
+    (mockPrisma as any).refund.count.mockResolvedValue(2);
+    (mockPrisma as any).cashShift.count.mockResolvedValue(1);
 
     const result = await getSidebarCounts();
 
@@ -52,10 +64,13 @@ describe("getSidebarCounts", () => {
       newEnquiries: 5,
       balanceDueCount: 2,
       pendingLeaves: 1,
+      pendingApprovalsCount: 4,
+      pendingRefundsCount: 2,
+      openShiftsCount: 1,
     });
   });
 
-  it("each count queries the correct model with correct filter", async () => {
+  it("queries each model with the expected filter", async () => {
     mockPrisma.paymentFollowup.count.mockResolvedValue(0);
     mockPrisma.enquiry.count.mockResolvedValue(0);
     mockPrisma.memberTicket.count.mockResolvedValue(0);
@@ -63,12 +78,18 @@ describe("getSidebarCounts", () => {
 
     await getSidebarCounts();
 
-    expect(mockPrisma.paymentFollowup.count).toHaveBeenCalledWith({
-      where: { status: "pending" },
-    });
-    expect(mockPrisma.enquiry.count).toHaveBeenCalledWith({
-      where: { status: "new" },
-    });
+    // paymentFollowup uses windowed dueDate + non-zero amountDue + multi-status
+    const fuCall = mockPrisma.paymentFollowup.count.mock.calls[0][0] as any;
+    expect(fuCall.where.status.in).toEqual(["pending", "contacted", "promised"]);
+    expect(fuCall.where.amountDue).toEqual({ gt: 0 });
+    expect(fuCall.where.dueDate.gte).toBeInstanceOf(Date);
+    expect(fuCall.where.dueDate.lt).toBeInstanceOf(Date);
+
+    // enquiry: 120-day window of "new"
+    const enqCall = mockPrisma.enquiry.count.mock.calls[0][0] as any;
+    expect(enqCall.where.status).toBe("new");
+    expect(enqCall.where.createdAt.gte).toBeInstanceOf(Date);
+
     expect(mockPrisma.memberTicket.count).toHaveBeenCalledWith({
       where: { balanceDue: { gt: 0 }, status: "active" },
     });
@@ -82,6 +103,9 @@ describe("getSidebarCounts", () => {
     mockPrisma.enquiry.count.mockResolvedValue(0);
     mockPrisma.memberTicket.count.mockResolvedValue(0);
     mockPrisma.leaveRequest.count.mockResolvedValue(0);
+    (mockPrisma as any).approval.count.mockResolvedValue(0);
+    (mockPrisma as any).refund.count.mockResolvedValue(0);
+    (mockPrisma as any).cashShift.count.mockResolvedValue(0);
 
     const result = await getSidebarCounts();
 
@@ -90,6 +114,9 @@ describe("getSidebarCounts", () => {
       newEnquiries: 0,
       balanceDueCount: 0,
       pendingLeaves: 0,
+      pendingApprovalsCount: 0,
+      pendingRefundsCount: 0,
+      openShiftsCount: 0,
     });
   });
 });

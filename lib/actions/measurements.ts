@@ -52,10 +52,18 @@ export async function addMeasurement(
   const session = await getServerSession(authOptions);
   if (!session) return { error: "Unauthorized" };
   // Members can only add their own measurements
+  let recordedById: number | null = null;
   if (session.user.actorType === "member") {
     const sessionUserId = parseInt(session.user.id);
     if (sessionUserId !== userId) return { error: "Unauthorized" };
-  } else if (session.user.actorType !== "worker") {
+    // Member self-recorded: recordedBy stays null (members are not workers)
+  } else if (session.user.actorType === "worker") {
+    // Worker branch: ALWAYS override any client-supplied recordedBy with the
+    // authenticated worker's id. A malicious client could otherwise attribute
+    // measurements to another worker.
+    const workerId = parseInt(session.user.id);
+    recordedById = Number.isFinite(workerId) ? workerId : null;
+  } else {
     return { error: "Unauthorized" };
   }
   const parsed = measurementSchema.safeParse(data);
@@ -79,7 +87,7 @@ export async function addMeasurement(
       hips: data.hips ?? null,
       biceps: data.biceps ?? null,
       notes: data.notes ?? null,
-      recordedBy: data.recordedBy ?? null,
+      recordedBy: recordedById,
     },
   });
 

@@ -66,6 +66,7 @@ export default function WorkersPage() {
   const [selectedLocationId, setSelectedLocationId] = useState<string>("");
   const [isPending, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
   const [resetPwOpen, setResetPwOpen] = useState(false);
   const [resetPwWorkerId, setResetPwWorkerId] = useState<number | null>(null);
   const [resetPwMsg, setResetPwMsg] = useState("");
@@ -167,14 +168,23 @@ export default function WorkersPage() {
   };
 
   const filteredWorkers = useMemo(() => {
-    if (!searchQuery) return workers;
-    const q = searchQuery.toLowerCase();
-    return workers.filter(
-      (w) =>
-        `${w.firstname} ${w.lastname}`.toLowerCase().includes(q) ||
-        w.email.toLowerCase().includes(q)
-    );
-  }, [workers, searchQuery]);
+    let result = workers;
+    if (!showInactive) result = result.filter((w) => w.isActive);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (w) =>
+          `${w.firstname} ${w.lastname}`.toLowerCase().includes(q) ||
+          w.email.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [workers, searchQuery, showInactive]);
+
+  const hiddenInactiveCount = useMemo(
+    () => (showInactive ? 0 : workers.filter((w) => !w.isActive).length),
+    [workers, showInactive]
+  );
 
   const handleToggle = (id: number) => {
     startTransition(async () => {
@@ -191,11 +201,27 @@ export default function WorkersPage() {
         <Button onClick={openCreate}>Add Worker</Button>
       </div>
 
-      <SearchInput
-        placeholder="Search name or email..."
-        onSearch={setSearchQuery}
-        className="w-full sm:w-64"
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <SearchInput
+          placeholder="Search name or email..."
+          onSearch={setSearchQuery}
+          className="w-full sm:w-64"
+        />
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showInactive ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowInactive((v) => !v)}
+          >
+            {showInactive ? "Hide inactive" : "Show inactive"}
+          </Button>
+          {!showInactive && hiddenInactiveCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              + {hiddenInactiveCount} inactive hidden
+            </span>
+          )}
+        </div>
+      </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">

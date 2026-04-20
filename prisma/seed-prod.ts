@@ -3,6 +3,44 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+// Default POS catalog — keep in sync with prisma/seed.ts. Idempotent: re-runs
+// skip products that already exist (matched by name). We do not overwrite
+// price/stock so manual catalog tweaks survive a re-seed.
+const DEFAULT_POS_PRODUCTS: Array<{
+  name: string;
+  price: number;
+  stock: number;
+  category: string;
+}> = [
+  { name: "Whey Protein 1kg", price: 2499, stock: 10, category: "supplement" },
+  { name: "Mass Gainer 1kg", price: 1899, stock: 10, category: "supplement" },
+  { name: "Pre-workout 300g", price: 1799, stock: 10, category: "supplement" },
+  { name: "Protein Bar", price: 120, stock: 50, category: "snack" },
+  { name: "Energy Gel", price: 80, stock: 50, category: "snack" },
+  { name: "Glucose Sachet", price: 20, stock: 100, category: "snack" },
+  { name: "Water Bottle 1L", price: 150, stock: 30, category: "accessory" },
+  { name: "Shaker", price: 250, stock: 20, category: "accessory" },
+  { name: "Hand Towel", price: 350, stock: 20, category: "accessory" },
+  { name: "Wrist Wraps", price: 399, stock: 15, category: "gear" },
+  { name: "Lifting Belt", price: 999, stock: 10, category: "gear" },
+  { name: "Resistance Band", price: 599, stock: 15, category: "gear" },
+];
+
+async function seedPosProducts() {
+  let created = 0;
+  let skipped = 0;
+  for (const p of DEFAULT_POS_PRODUCTS) {
+    const existing = await prisma.product.findFirst({ where: { name: p.name } });
+    if (existing) {
+      skipped++;
+      continue;
+    }
+    await prisma.product.create({ data: p });
+    created++;
+  }
+  console.log(`POS products: ${created} created, ${skipped} already existed`);
+}
+
 async function main() {
   const email = process.env.ADMIN_EMAIL || "admin@gym.com";
   const password = process.env.ADMIN_PASSWORD || "password123";
@@ -56,6 +94,9 @@ async function main() {
       create: s,
     });
   }
+
+  // Default POS catalog so /admin/pos is usable on a fresh instance
+  await seedPosProducts();
 
   console.log("Production seed completed");
 }

@@ -27,6 +27,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { CreditCard, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 type Plan = {
   id: number;
@@ -35,6 +36,8 @@ type Plan = {
   price: number;
   occasions: number | null;
   isActive: boolean;
+  joiningFee: number;
+  joiningFeeAppliesOn: string;
   createdAt: Date;
 };
 
@@ -44,6 +47,15 @@ export default function PlansPage() {
   const [editing, setEditing] = useState<Plan | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
+  const [statusFilter, setStatusFilter] = useState<"active" | "inactive" | "all">("active");
+
+  const filteredPlans = plans.filter((p) => {
+    if (statusFilter === "active") return p.isActive;
+    if (statusFilter === "inactive") return !p.isActive;
+    return true;
+  });
+  const activeCount = plans.filter((p) => p.isActive).length;
+  const inactiveCount = plans.length - activeCount;
 
   const load = () => {
     startTransition(async () => {
@@ -72,6 +84,8 @@ export default function PlansPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const joiningFeeRaw = fd.get("joiningFee") as string;
+    const joiningFeeAppliesOn = (fd.get("joiningFeeAppliesOn") as string) || "first_only";
     const data = {
       name: fd.get("name") as string,
       expireDays: parseInt(fd.get("expireDays") as string, 10) || 0,
@@ -79,6 +93,8 @@ export default function PlansPage() {
       occasions: (fd.get("occasions") as string)
         ? parseInt(fd.get("occasions") as string, 10) || null
         : null,
+      joiningFee: joiningFeeRaw ? parseFloat(joiningFeeRaw) || 0 : 0,
+      joiningFeeAppliesOn: joiningFeeAppliesOn as "first_only" | "every_renewal" | "never",
     };
 
     startTransition(async () => {
@@ -108,6 +124,24 @@ export default function PlansPage() {
         <Button onClick={openCreate}>Add Plan</Button>
       </div>
 
+      <div className="flex flex-wrap gap-1">
+        {[
+          { value: "active" as const, label: "Active", count: activeCount },
+          { value: "inactive" as const, label: "Inactive", count: inactiveCount },
+          { value: "all" as const, label: "All", count: plans.length },
+        ].map((s) => (
+          <Button
+            key={s.value}
+            variant={statusFilter === s.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(s.value)}
+          >
+            {s.label}
+            <Badge variant="secondary" className="ml-1.5">{s.count}</Badge>
+          </Button>
+        ))}
+      </div>
+
       <div className="overflow-x-auto">
       <Table>
         <TableHeader>
@@ -122,10 +156,17 @@ export default function PlansPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {plans.map((plan) => (
+          {filteredPlans.map((plan) => (
             <TableRow key={plan.id}>
               <TableCell className="hidden md:table-cell">{plan.id}</TableCell>
-              <TableCell>{plan.name}</TableCell>
+              <TableCell>
+                <Link
+                  href={`/admin/members?planId=${plan.id}&status=active`}
+                  className="hover:underline"
+                >
+                  {plan.name}
+                </Link>
+              </TableCell>
               <TableCell>{Number(plan.price).toFixed(2)}</TableCell>
               <TableCell className="hidden md:table-cell">{plan.expireDays}</TableCell>
               <TableCell className="hidden md:table-cell">{plan.occasions ?? "-"}</TableCell>
@@ -149,15 +190,21 @@ export default function PlansPage() {
               </TableCell>
             </TableRow>
           ))}
-          {plans.length === 0 && (
+          {filteredPlans.length === 0 && (
             <TableRow>
               <TableCell colSpan={7}>
                 <div className="flex flex-col items-center gap-2 py-8">
                   <CreditCard className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No plans found</p>
-                  <Button variant="outline" size="sm" onClick={openCreate}>
-                    Add Plan
-                  </Button>
+                  <p className="text-sm text-muted-foreground">
+                    {plans.length === 0
+                      ? "No plans found"
+                      : `No ${statusFilter === "all" ? "" : statusFilter} plans`}
+                  </p>
+                  {plans.length === 0 && (
+                    <Button variant="outline" size="sm" onClick={openCreate}>
+                      Add Plan
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>
@@ -223,6 +270,35 @@ export default function PlansPage() {
                 defaultValue={editing?.occasions ?? ""}
                 key={`occ-${editing?.id ?? "new"}`}
               />
+            </div>
+            <div>
+              <Label htmlFor="joiningFee">Joining Fee (Rs.)</Label>
+              <Input
+                id="joiningFee"
+                name="joiningFee"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={editing ? Number(editing.joiningFee) : 0}
+                key={`jf-${editing?.id ?? "new"}`}
+              />
+              {errors.joiningFee && (
+                <p className="text-xs text-destructive mt-1">{errors.joiningFee}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="joiningFeeAppliesOn">Joining Fee Applies</Label>
+              <select
+                id="joiningFeeAppliesOn"
+                name="joiningFeeAppliesOn"
+                defaultValue={editing?.joiningFeeAppliesOn ?? "first_only"}
+                key={`jfa-${editing?.id ?? "new"}`}
+                className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm"
+              >
+                <option value="first_only">First purchase only</option>
+                <option value="every_renewal">Every renewal</option>
+                <option value="never">Never</option>
+              </select>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={isPending}>

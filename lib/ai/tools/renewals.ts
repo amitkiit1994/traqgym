@@ -84,13 +84,19 @@ export const renewalTools = [
 
   tool({
     name: "get_member_report",
-    description: "Get member report filtered by status (active, expired, overdue, etc.)",
+    description: "Get member report filtered by status (active, expired, overdue, etc.). Returns up to 100 rows per page; pass page to paginate.",
     parameters: z.object({
       status: z.string().nullable().describe("Filter: active, expired, overdue, no_plan"),
       locationId: z.number().nullable().describe("Filter by location"),
+      page: z.number().nullable().describe("1-indexed page number (default 1)"),
     }),
     async execute(input) {
-      const report = await getMemberReport(input.status ?? undefined, input.locationId ?? undefined);
+      const report = await getMemberReport(
+        input.status ?? undefined,
+        input.locationId ?? undefined,
+        input.page ?? 1,
+        100
+      );
       return JSON.stringify(report);
     },
   }),

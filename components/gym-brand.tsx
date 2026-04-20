@@ -36,7 +36,7 @@ export function GymBrand({ size = "md", className = "", showName = true }: GymBr
   const logo = brand?.logo || "";
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex items-center gap-2 ${className}`}>
       {logo && (
         <Image
           src={logo}
@@ -55,11 +55,3 @@ export function GymBrand({ size = "md", className = "", showName = true }: GymBr
   );
 }
 
-/** Server-side helper: returns brand data for use in API routes (e.g. invoice PDF) */
-export async function getGymBrand() {
-  // Dynamic import to avoid pulling prisma into client bundle
-  const { getSetting } = await import("@/lib/services/settings");
-  const name = await getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym");
-  const logo = await getSetting("gym_logo", "");
-  return { name, logo };
-}

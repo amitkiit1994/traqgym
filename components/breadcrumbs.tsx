@@ -45,6 +45,24 @@ const labels: Record<string, string> = {
   diet: "Diet Plans",
   "ai-activity": "AI Activity",
   unmatched: "Unmatched",
+  // PR 1–16 additions
+  comps: "Comps",
+  pt: "PT Packages",
+  trainers: "Trainers",
+  refunds: "Refunds",
+  shifts: "Cash Shifts",
+  approvals: "Approvals",
+  "payment-schedules": "Payment Schedules",
+  "multi-location": "Multi-Location",
+  "tally-export": "Tally Export",
+  gstr1: "GSTR-1",
+  "qr-checkin": "QR Check-in",
+  "trainer-ratings": "Trainer Ratings",
+  irregular: "Irregular",
+  "conversion-funnel": "Conversion Funnel",
+  kpi: "KPI",
+  "member-usage": "Member Usage",
+  "ai-conversations": "AI Conversations",
 };
 
 // Map each page segment to its sidebar group
@@ -89,6 +107,14 @@ const sectionGroup: Record<string, string> = {
   activity: "System",
   ai: "Assistant",
   "ai-activity": "Assistant",
+  // PR 1–16 additions — group mapping for new top-level segments
+  comps: "Members",
+  pt: "Members",
+  trainers: "Staff",
+  approvals: "System",
+  shifts: "System",
+  refunds: "Finance",
+  "payment-schedules": "Finance",
 };
 
 export function Breadcrumbs() {

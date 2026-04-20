@@ -209,7 +209,7 @@ export default function BalanceDuePage() {
 
       <Card className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <CardHeader className="flex flex-row items-center gap-2">
-          <IndianRupee className="h-5 w-5 text-red-500" />
+          <IndianRupee className="h-5 w-5 text-destructive" />
           <CardTitle className="text-lg">
             Total Outstanding: Rs {grandTotalDue.toLocaleString("en-IN")}
           </CardTitle>
@@ -270,7 +270,7 @@ export default function BalanceDuePage() {
                       <TableCell className="hidden md:table-cell text-right">
                         {row.amountPaid.toLocaleString("en-IN")}
                       </TableCell>
-                      <TableCell className="text-right font-semibold text-red-600">
+                      <TableCell className="text-right font-semibold text-destructive">
                         {row.balanceDue.toLocaleString("en-IN")}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
@@ -294,7 +294,7 @@ export default function BalanceDuePage() {
                               href={`https://wa.me/${row.phone.replace(/\D/g, "")}?text=${encodeURIComponent("Hi " + row.memberName + ", you have an outstanding balance of Rs." + row.balanceDue.toLocaleString("en-IN") + ". Please visit the gym to make your payment.")}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center justify-center rounded-md p-2 text-green-600 hover:text-green-700 hover:bg-accent"
+                              className="inline-flex items-center justify-center rounded-md p-2 text-status-active hover:text-status-active-foreground hover:bg-accent"
                             >
                               <MessageCircle className="size-3.5" />
                             </a>

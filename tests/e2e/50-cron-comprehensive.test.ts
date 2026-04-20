@@ -1,11 +1,15 @@
 /**
  * E2E: Comprehensive Cron + Biometric Endpoint Tests
  *
- * Covers all cron endpoints for response shape, HTTP status,
- * and documents that they are accessible without authentication.
+ * Covers all cron endpoints for response shape, HTTP status, and idempotency.
+ *
+ * Sprint 8 added requireCronSecret to all cron routes — they now require an
+ * Authorization: Bearer ${CRON_SECRET} header. Anonymous and admin-cookie
+ * requests both get 401 / 503 (depending on whether CRON_SECRET is set).
+ * Tests use CronClient which sources the secret from .env.local.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { TestClient, AnonClient, SEED } from "./helpers";
+import { TestClient, AnonClient, CronClient, SEED } from "./helpers";
 
 /* ------------------------------------------------------------------ */
 /*  Cron endpoint definitions                                         */
@@ -17,6 +21,8 @@ interface CronEndpoint {
   requiredFields: Record<string, "number" | "boolean" | "string" | "any">;
   /** Some endpoints omit `success` (e.g. re-engagement) */
   hasSuccessFlag: boolean;
+  /** Hits @openai/agents directly — 500 when OPENAI_API_KEY is missing. */
+  needsOpenAi?: boolean;
 }
 
 const CRON_ENDPOINTS: CronEndpoint[] = [
@@ -39,11 +45,13 @@ const CRON_ENDPOINTS: CronEndpoint[] = [
     path: "/api/cron/ai-churn-alerts",
     requiredFields: {},
     hasSuccessFlag: true,
+    needsOpenAi: true,
   },
   {
     path: "/api/cron/ai-daily-briefing",
     requiredFields: {},
     hasSuccessFlag: true,
+    needsOpenAi: true,
   },
   {
     path: "/api/cron/ai-lead-followup",
@@ -59,6 +67,7 @@ const CRON_ENDPOINTS: CronEndpoint[] = [
     path: "/api/cron/ai-weekly-summary",
     requiredFields: {},
     hasSuccessFlag: true,
+    needsOpenAi: true, // Monday guard short-circuits in UTC-Mon, falls through to runProactiveAgent
   },
   {
     path: "/api/cron/member-milestones",
@@ -67,23 +76,22 @@ const CRON_ENDPOINTS: CronEndpoint[] = [
   },
 ];
 
+const HAS_OPENAI = Boolean(process.env.OPENAI_API_KEY);
+
 /* ------------------------------------------------------------------ */
 /*  Tests: Unauthenticated (AnonClient)                               */
 /* ------------------------------------------------------------------ */
 
-describe("Cron Endpoints — unauthenticated access (security concern)", () => {
+describe("Cron Endpoints — unauthenticated access is rejected (Sprint 8)", () => {
   const anon = new AnonClient();
 
   for (const ep of CRON_ENDPOINTS) {
-    it(`GET ${ep.path} returns 200 without auth`, async () => {
-      const { status, body } = await anon.get(ep.path);
-
-      // SECURITY NOTE: cron endpoints are publicly accessible.
-      // In production these should be protected by a shared secret
-      // header or IP allowlist, not exposed to the open internet.
-      expect(status).toBe(200);
-      expect(body).toBeDefined();
-      expect(typeof body).toBe("object");
+    it(`GET ${ep.path} rejects anonymous caller`, async () => {
+      const { status } = await anon.get(ep.path);
+      // Sprint 8: requireCronSecret returns 401 (no header) or 503 (no env).
+      // Both are valid — the invariant is "not 200 for anon callers".
+      expect([401, 503]).toContain(status);
+      expect(status).not.toBe(200);
     });
   }
 });
@@ -92,17 +100,14 @@ describe("Cron Endpoints — unauthenticated access (security concern)", () => {
 /*  Tests: Authenticated (admin TestClient)                           */
 /* ------------------------------------------------------------------ */
 
-describe("Cron Endpoints — authenticated admin", () => {
-  const admin = new TestClient();
-
-  beforeAll(async () => {
-    const { ok } = await admin.login(SEED.admin.email, SEED.admin.password);
-    expect(ok).toBe(true);
-  });
+describe("Cron Endpoints — Bearer-secret access (Sprint 8 cron auth)", () => {
+  const cron = new CronClient();
+  const skipAll = !cron.isReady();
 
   for (const ep of CRON_ENDPOINTS) {
-    it(`GET ${ep.path} returns 200 with valid shape`, async () => {
-      const { status, body } = await admin.get(ep.path);
+    const skip = skipAll || (ep.needsOpenAi && !HAS_OPENAI);
+    (skip ? it.skip : it)(`GET ${ep.path} returns 200 with valid shape`, async () => {
+      const { status, body } = await cron.get(ep.path);
       expect(status).toBe(200);
       expect(typeof body).toBe("object");
 
@@ -136,17 +141,19 @@ describe("Cron Endpoints — authenticated admin", () => {
 /* ------------------------------------------------------------------ */
 
 describe("Cron Endpoints — detailed response shapes", () => {
-  const anon = new AnonClient();
+  const cron = new CronClient();
+  const skip = !cron.isReady();
+  const test = skip ? it.skip : it;
 
-  it("auto-checkout: closed count is non-negative", async () => {
-    const { body } = await anon.get("/api/cron/auto-checkout");
+  test("auto-checkout: closed count is non-negative", async () => {
+    const { body } = await cron.get("/api/cron/auto-checkout");
     if (!body.skipped) {
       expect(body.closed).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("renewal-reminders: all count fields are non-negative", async () => {
-    const { body } = await anon.get("/api/cron/renewal-reminders");
+  test("renewal-reminders: all count fields are non-negative", async () => {
+    const { body } = await cron.get("/api/cron/renewal-reminders");
     // body.skipped can be boolean (endpoint skipped) or number (skipped count).
     // Only check count fields when endpoint was NOT skipped (skipped !== true).
     if (body.skipped === true) {
@@ -158,16 +165,18 @@ describe("Cron Endpoints — detailed response shapes", () => {
     }
   });
 
-  it("re-engagement: sent and skipped are non-negative", async () => {
-    const { body } = await anon.get("/api/cron/re-engagement");
+  test("re-engagement: sent and skipped are non-negative", async () => {
+    const { body } = await cron.get("/api/cron/re-engagement");
     if (!body.skipped) {
       expect(body.sent).toBeGreaterThanOrEqual(0);
       expect(body.skipped).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("ai-churn-alerts: returns atRisk count or skipped reason", async () => {
-    const { body } = await anon.get("/api/cron/ai-churn-alerts");
+  const aiTest = skip || !HAS_OPENAI ? it.skip : it;
+
+  aiTest("ai-churn-alerts: returns atRisk count or skipped reason", async () => {
+    const { body } = await cron.get("/api/cron/ai-churn-alerts");
     expect(body.success).toBe(true);
     if (body.skipped) {
       expect(typeof body.reason).toBe("string");
@@ -176,8 +185,8 @@ describe("Cron Endpoints — detailed response shapes", () => {
     }
   });
 
-  it("ai-daily-briefing: returns sent count or skipped reason", async () => {
-    const { body } = await anon.get("/api/cron/ai-daily-briefing");
+  aiTest("ai-daily-briefing: returns sent count or skipped reason", async () => {
+    const { body } = await cron.get("/api/cron/ai-daily-briefing");
     expect(body.success).toBe(true);
     if (body.skipped) {
       expect(typeof body.reason).toBe("string");
@@ -187,8 +196,8 @@ describe("Cron Endpoints — detailed response shapes", () => {
     }
   });
 
-  it("ai-lead-followup: returns processed or skipped reason", async () => {
-    const { body } = await anon.get("/api/cron/ai-lead-followup");
+  test("ai-lead-followup: returns processed or skipped reason", async () => {
+    const { body } = await cron.get("/api/cron/ai-lead-followup");
     expect(body.success).toBe(true);
     if (body.skipped === true) {
       // Endpoint disabled via settings
@@ -203,8 +212,8 @@ describe("Cron Endpoints — detailed response shapes", () => {
     }
   });
 
-  it("ai-member-nudges: returns eligible/sent or skipped reason", async () => {
-    const { body } = await anon.get("/api/cron/ai-member-nudges");
+  test("ai-member-nudges: returns eligible/sent or skipped reason", async () => {
+    const { body } = await cron.get("/api/cron/ai-member-nudges");
     expect(body.success).toBe(true);
     if (body.skipped) {
       expect(typeof body.reason).toBe("string");
@@ -214,8 +223,8 @@ describe("Cron Endpoints — detailed response shapes", () => {
     }
   });
 
-  it("ai-weekly-summary: returns adminsNotified or skipped reason", async () => {
-    const { body } = await anon.get("/api/cron/ai-weekly-summary");
+  aiTest("ai-weekly-summary: returns adminsNotified or skipped reason", async () => {
+    const { body } = await cron.get("/api/cron/ai-weekly-summary");
     expect(body.success).toBe(true);
     if (body.skipped) {
       expect(typeof body.reason).toBe("string");
@@ -224,8 +233,8 @@ describe("Cron Endpoints — detailed response shapes", () => {
     }
   });
 
-  it("member-milestones: returns milestones count or skipped reason", async () => {
-    const { body } = await anon.get("/api/cron/member-milestones");
+  test("member-milestones: returns milestones count or skipped reason", async () => {
+    const { body } = await cron.get("/api/cron/member-milestones");
     expect(body.success).toBe(true);
     if (body.skipped === true) {
       expect(typeof body.reason).toBe("string");
@@ -244,36 +253,38 @@ describe("Cron Endpoints — detailed response shapes", () => {
 /* ------------------------------------------------------------------ */
 
 describe("Cron Endpoints — idempotency", () => {
-  const anon = new AnonClient();
+  const cron = new CronClient();
+  const skip = !cron.isReady();
+  const test = skip ? it.skip : it;
 
-  it("auto-checkout is safe to call twice", async () => {
-    const first = await anon.get("/api/cron/auto-checkout");
-    const second = await anon.get("/api/cron/auto-checkout");
+  test("auto-checkout is safe to call twice", async () => {
+    const first = await cron.get("/api/cron/auto-checkout");
+    const second = await cron.get("/api/cron/auto-checkout");
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
   });
 
-  it("renewal-reminders second run skips already-sent", async () => {
-    const first = await anon.get("/api/cron/renewal-reminders");
-    const second = await anon.get("/api/cron/renewal-reminders");
+  test("renewal-reminders second run skips already-sent", async () => {
+    const first = await cron.get("/api/cron/renewal-reminders");
+    const second = await cron.get("/api/cron/renewal-reminders");
     expect(second.status).toBe(200);
     if (!first.body.skipped && !second.body.skipped) {
       expect(second.body.skipped).toBeGreaterThanOrEqual(first.body.sent);
     }
   });
 
-  it("re-engagement second run skips already-sent", async () => {
-    const first = await anon.get("/api/cron/re-engagement");
-    const second = await anon.get("/api/cron/re-engagement");
+  test("re-engagement second run skips already-sent", async () => {
+    const first = await cron.get("/api/cron/re-engagement");
+    const second = await cron.get("/api/cron/re-engagement");
     expect(second.status).toBe(200);
     if (!first.body.skipped && !second.body.skipped) {
       expect(second.body.skipped).toBeGreaterThanOrEqual(first.body.sent);
     }
   });
 
-  it("member-milestones is safe to call twice", async () => {
-    const first = await anon.get("/api/cron/member-milestones");
-    const second = await anon.get("/api/cron/member-milestones");
+  test("member-milestones is safe to call twice", async () => {
+    const first = await cron.get("/api/cron/member-milestones");
+    const second = await cron.get("/api/cron/member-milestones");
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
   });

@@ -9,6 +9,8 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts"],
+    setupFiles: ["tests/setup.ts"],
+    globalSetup: ["tests/global-setup.ts"],
     testTimeout: 30000, // 30s per test (network calls)
     hookTimeout: 15000, // 15s for beforeAll login
     fileParallelism: false, // integration tests share DB state

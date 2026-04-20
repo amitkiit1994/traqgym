@@ -11,6 +11,7 @@ import {
   Drawer,
   DrawerTrigger,
   DrawerContent,
+  DrawerTitle,
 } from "@/components/ui/drawer";
 import {
   LayoutDashboard,
@@ -21,6 +22,7 @@ import {
   ClipboardCheck,
   CalendarDays,
   CalendarCheck,
+  CalendarClock,
   Fingerprint,
   Bell,
   UserCog,
@@ -39,6 +41,7 @@ import {
   Megaphone,
   Dumbbell,
   Sparkles,
+  Gem,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -55,6 +58,12 @@ import {
   Bot,
   Menu,
   Lock,
+  ShieldCheck,
+  HeartPulse,
+  Undo2,
+  BookOpen,
+  Star,
+  QrCode,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -63,6 +72,9 @@ type SidebarCounts = {
   newEnquiries: number;
   balanceDueCount: number;
   pendingLeaves: number;
+  pendingApprovalsCount: number;
+  pendingRefundsCount: number;
+  openShiftsCount: number;
 };
 
 type NavItem = {
@@ -99,8 +111,10 @@ const navGroups: NavGroup[] = [
       { href: "/admin/members", label: "Members", icon: Users },
       { href: "/admin/enquiries", label: "Enquiries", icon: UserPlus },
       { href: "/admin/renewals", label: "Renewals", icon: RefreshCw },
+      { href: "/admin/comps", label: "Comps", icon: Gem, adminOnly: true },
       { href: "/admin/waivers", label: "Waivers", icon: FileCheck },
       { href: "/admin/family", label: "Family Groups", icon: Users },
+      { href: "/admin/pt", label: "PT Packages", icon: HeartPulse, adminOnly: true },
     ],
   },
   {
@@ -112,14 +126,21 @@ const navGroups: NavGroup[] = [
       { href: "/admin/payroll", label: "Payroll", icon: Wallet, adminOnly: true },
       { href: "/admin/gift-cards", label: "Gift Cards", icon: Gift },
       { href: "/admin/balance-due", label: "Balance Due", icon: IndianRupee },
+      { href: "/admin/payment-schedules", label: "Payment Schedules", icon: CalendarClock },
       { href: "/admin/followups", label: "Followups", icon: AlertCircle },
+      { href: "/admin/refunds", label: "Refunds", icon: Undo2, adminOnly: true },
       { href: "/admin/reports", label: "Reports", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/multi-location", label: "Multi-Location", icon: Building2, adminOnly: true },
+      { href: "/admin/reports/trainer-ratings", label: "Trainer Ratings", icon: Star, adminOnly: true },
+      { href: "/admin/reports/tally-export", label: "Tally Export", icon: FileBarChart, adminOnly: true },
+      { href: "/admin/reports/gstr1", label: "GSTR-1", icon: FileBarChart, adminOnly: true },
     ],
   },
   {
     label: "Staff",
     items: [
       { href: "/admin/workers", label: "Workers", icon: UserCog, adminOnly: true },
+      { href: "/admin/trainers", label: "Trainers", icon: HeartPulse, adminOnly: true },
       { href: "/admin/leaves", label: "Leaves", icon: CalendarOff },
       { href: "/admin/staff-performance", label: "Performance", icon: TrendingUp, adminOnly: true },
       { href: "/admin/staff-calendar", label: "Staff Calendar", icon: CalendarDays },
@@ -137,11 +158,14 @@ const navGroups: NavGroup[] = [
   {
     label: "System",
     items: [
+      { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck, adminOnly: true },
+      { href: "/admin/shifts", label: "Cash Shifts", icon: BookOpen },
       { href: "/admin/in-app-notifications", label: "Alerts", icon: AlertCircle },
       { href: "/admin/locations", label: "Locations", icon: MapPin },
       { href: "/admin/equipment", label: "Equipment", icon: Dumbbell },
       { href: "/admin/lockers", label: "Lockers", icon: Lock, adminOnly: true },
       { href: "/admin/settings", label: "Settings", icon: Settings, adminOnly: true },
+      { href: "/admin/settings/qr-checkin", label: "QR Check-in", icon: QrCode, adminOnly: true },
       { href: "/admin/audit", label: "Audit Log", icon: ScrollText, adminOnly: true },
       { href: "/admin/activity", label: "Activity", icon: Activity },
     ],
@@ -153,6 +177,9 @@ const BADGE_MAP: Record<string, keyof SidebarCounts> = {
   "/admin/enquiries": "newEnquiries",
   "/admin/balance-due": "balanceDueCount",
   "/admin/leaves": "pendingLeaves",
+  "/admin/approvals": "pendingApprovalsCount",
+  "/admin/refunds": "pendingRefundsCount",
+  "/admin/shifts": "openShiftsCount",
 };
 
 export function AdminSidebar({
@@ -198,6 +225,7 @@ export function AdminSidebar({
             onClick={() => setCollapsed(false)}
             className="mx-auto p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             title="Expand sidebar"
+            aria-label="Expand sidebar"
           >
             <PanelLeftOpen className="size-4" />
           </button>
@@ -211,6 +239,7 @@ export function AdminSidebar({
               onClick={() => setCollapsed(true)}
               className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
               title="Collapse sidebar"
+              aria-label="Collapse sidebar"
             >
               <PanelLeftClose className="size-4" />
             </button>
@@ -233,6 +262,7 @@ export function AdminSidebar({
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.label)}
+                  aria-expanded={isOpen}
                   className="flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50 hover:text-sidebar-foreground/80 transition-all duration-200 hover:tracking-widest"
                 >
                   {isOpen ? (
@@ -249,6 +279,8 @@ export function AdminSidebar({
                     const active =
                       item.href === "/admin/dashboard"
                         ? pathname === "/admin/dashboard"
+                        : item.href === "/admin/settings"
+                        ? pathname === "/admin/settings"
                         : pathname.startsWith(item.href);
                     const Icon = item.icon;
 
@@ -361,10 +393,13 @@ export function AdminMobileMenu({
       <DrawerTrigger
         className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors md:hidden"
         aria-label="Open menu"
+        aria-expanded={open}
+        aria-controls="admin-mobile-drawer"
       >
         <Menu className="size-5" />
       </DrawerTrigger>
-      <DrawerContent showCloseButton>
+      <DrawerContent showCloseButton id="admin-mobile-drawer">
+        <DrawerTitle className="sr-only">Navigation menu</DrawerTitle>
         {/* Header */}
         <div className="flex h-14 items-center border-b border-sidebar-border px-4">
           <GymBrand size="sm" className="text-primary" />
@@ -388,6 +423,8 @@ export function AdminMobileMenu({
                     const active =
                       item.href === "/admin/dashboard"
                         ? pathname === "/admin/dashboard"
+                        : item.href === "/admin/settings"
+                        ? pathname === "/admin/settings"
                         : pathname.startsWith(item.href);
                     const Icon = item.icon;
 

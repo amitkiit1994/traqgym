@@ -53,7 +53,7 @@ function DrawerContent({
       <DrawerPrimitive.Popup
         data-slot="drawer-content"
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[min(288px,85vw)] flex-col bg-sidebar/95 backdrop-blur-2xl backdrop-saturate-[1.4] dark:bg-card/95 dark:backdrop-blur-2xl shadow-[4px_0_40px_oklch(0.565_0.20_25_/_8%)] dark:shadow-none text-sm text-sidebar-foreground duration-200 outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(288px,85vw)] flex-col bg-sidebar/95 backdrop-blur-2xl backdrop-saturate-[1.4] dark:bg-card/95 dark:backdrop-blur-2xl shadow-[4px_0_40px_oklch(0.565_0.20_275_/_8%)] dark:shadow-none text-sm text-sidebar-foreground duration-200 outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left",
           className
         )}
         {...props}
@@ -94,7 +94,7 @@ function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="drawer-footer"
       className={cn(
-        "mt-auto border-t border-border/30 bg-muted/30 dark:bg-white/[0.02] p-4",
+        "mt-auto border-t border-border/30 bg-muted/30 dark:bg-muted/20 p-4",
         className
       )}
       {...props}

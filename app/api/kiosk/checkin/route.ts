@@ -3,12 +3,49 @@ import { prisma } from "@/lib/prisma";
 import { checkIn } from "@/lib/services/attendance";
 import { todayIST } from "@/lib/utils/date";
 import { getSetting } from "@/lib/services/settings";
+import { requireWorker } from "@/lib/auth-guard";
 
 // Simple in-memory rate limiter: phone -> last check-in timestamp
 const recentCheckins = new Map<string, number>();
 
 export async function POST(req: NextRequest) {
   try {
+    // Sprint 8 audit fix (CRITICAL): this route was previously fully
+    // unauthenticated — anyone with the URL could mark anyone present.
+    // Kiosks live at the front desk and must be operated by a logged-in
+    // worker; mirror the Origin/Host CSRF guard used by the QR
+    // submit/verify routes (app/api/checkin/qr/submit/route.ts,
+    // app/api/checkin/qr/verify/route.ts) and require a worker session.
+    const originHeader = req.headers.get("origin");
+    const hostHeader = req.headers.get("host") ?? "";
+    if (originHeader) {
+      let originHost = "";
+      try {
+        originHost = new URL(originHeader).host;
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid Origin" },
+          { status: 403 },
+        );
+      }
+      if (originHost !== hostHeader) {
+        return NextResponse.json(
+          { error: "Cross-origin request rejected" },
+          { status: 403 },
+        );
+      }
+    }
+
+    // Auth gate: any worker (admin or staff) can operate the kiosk.
+    try {
+      await requireWorker();
+    } catch {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 },
+      );
+    }
+
     const body = await req.json();
     const { phone, locationId } = body;
 

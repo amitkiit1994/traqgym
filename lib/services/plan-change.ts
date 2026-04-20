@@ -3,6 +3,7 @@ import { todayIST } from "@/lib/utils/date";
 import { recordPayment } from "./payment";
 import { generateInvoice } from "./invoice";
 import { sendPaymentNotification } from "./payment-notification";
+import { computeGstSplitInclusive, getGymGstRate } from "./tax";
 
 export async function upgradePlan(params: {
   userId: number;
@@ -53,7 +54,17 @@ export async function upgradePlan(params: {
   const newExpiryDate = new Date(today);
   newExpiryDate.setDate(newExpiryDate.getDate() + newPlan.expireDays);
 
+  // Resolve GST rate ONCE outside the txn so each call is one extra read,
+  // not one-per-retry. Used to populate the Payment GST split below.
+  const gymGstRate = await getGymGstRate();
+
   const result = await prisma.$transaction(async (tx) => {
+    // Plan-change is treated as a full-payment renewal on the NEW plan: the
+    // member is fully paid up because the prior ticket's prorated credit has
+    // already been deducted from amountDue. totalAmount/amountPaid/balanceDue
+    // must be set so the new ticket is NOT misclassified as repairable by
+    // scripts/audit-amount-paid.ts (Agent 4 fixed the partial-pay path; this
+    // closes the full-pay path here).
     const memberTicket = await tx.memberTicket.create({
       data: {
         userId: params.userId,
@@ -62,6 +73,9 @@ export async function upgradePlan(params: {
         buyDate: new Date(),
         expireDate: newExpiryDate,
         occasions: newPlan.occasions,
+        totalAmount: amountDue,
+        amountPaid: amountDue,
+        balanceDue: 0,
       },
     });
 
@@ -75,6 +89,19 @@ export async function upgradePlan(params: {
       collectedById: params.collectedById,
       oldExpiryDate: currentTicket.expireDate,
       newExpiryDate,
+    });
+
+    // Patch GST split onto the Payment row — recordPayment doesn't take these
+    // fields. Without this, every plan-change Payment row has taxAmount=null
+    // and Tally / GSTR-1 exports would silently emit zero-tax for the cycle.
+    const gstSplit = computeGstSplitInclusive(amountDue, gymGstRate);
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        baseAmount: gstSplit.baseAmount,
+        taxRate: gstSplit.taxRate,
+        taxAmount: gstSplit.taxAmount,
+      },
     });
 
     const invoice = await generateInvoice(tx, {

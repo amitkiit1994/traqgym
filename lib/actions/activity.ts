@@ -27,6 +27,7 @@ export async function getActivityFeed(): Promise<FeedItem[]> {
       take: 20,
     }),
     prisma.payment.findMany({
+      where: { userId: { not: null }, memberTicketId: { not: null } },
       include: {
         user: { select: { firstname: true, lastname: true } },
         memberTicket: { include: { plan: { select: { name: true } } } },
@@ -70,6 +71,7 @@ export async function getActivityFeed(): Promise<FeedItem[]> {
   }
 
   for (const p of payments) {
+    if (!p.user || !p.memberTicket) continue;
     const memberName = `${p.user.firstname} ${p.user.lastname}`;
     const staffName = `${p.collectedBy.firstname} ${p.collectedBy.lastname}`;
     const planName = p.memberTicket.plan.name;

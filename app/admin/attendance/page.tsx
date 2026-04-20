@@ -6,6 +6,7 @@ import {
   getDailyAttendance,
   getAttendanceLocations,
   manualCheckIn,
+  checkOutAttendance,
 } from "@/lib/actions/attendance";
 import { searchMembers } from "@/lib/actions/renewals";
 import {
@@ -43,6 +44,8 @@ type AttendanceRow = {
   checkOut: string | null;
   source: string;
   locationName: string;
+  isLateEntry: boolean;
+  isPeakHours: boolean;
 };
 
 type WorkerAttendanceRow = {
@@ -81,6 +84,8 @@ export default function AttendancePage() {
   });
   const [date, setDate] = useState(() => searchParams.get("date") ?? todayStr());
   const [locationFilter, setLocationFilter] = useState(() => searchParams.get("location") ?? "");
+  const [showLateOnly, setShowLateOnly] = useState(() => searchParams.get("late") === "1");
+  const [showPeakOnly, setShowPeakOnly] = useState(() => searchParams.get("peak") === "1");
 
   const updateUrl = (params: Record<string, string>) => {
     const url = new URL(window.location.href);
@@ -212,6 +217,18 @@ export default function AttendancePage() {
     });
   };
 
+  const handleMemberCheckOut = (attendanceId: number) => {
+    startTransition(async () => {
+      const res = await checkOutAttendance(attendanceId);
+      if (res.success) {
+        setCheckInResult("Check-out recorded");
+        loadMemberAttendance();
+      } else {
+        setCheckInResult("error" in res ? res.error ?? "Error" : "Error");
+      }
+    });
+  };
+
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortField(field); setSortDir("asc"); }
@@ -222,13 +239,22 @@ export default function AttendancePage() {
     else { setStaffSortField(field); setStaffSortDir("asc"); }
   };
 
-  const sortedRows = [...rows].sort((a, b) => {
+  const filteredRows = rows.filter((r) => {
+    if (showLateOnly && !r.isLateEntry) return false;
+    if (showPeakOnly && !r.isPeakHours) return false;
+    return true;
+  });
+
+  const sortedRows = [...filteredRows].sort((a, b) => {
     let cmp = 0;
     if (sortField === "member") cmp = a.memberName.localeCompare(b.memberName);
     else if (sortField === "checkIn") cmp = new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime();
     else if (sortField === "location") cmp = a.locationName.localeCompare(b.locationName);
     return sortDir === "asc" ? cmp : -cmp;
   });
+
+  const lateCount = rows.filter((r) => r.isLateEntry).length;
+  const peakCount = rows.filter((r) => r.isPeakHours).length;
 
   const sortedWorkerRows = [...workerRows].sort((a, b) => {
     let cmp = 0;
@@ -355,6 +381,38 @@ export default function AttendancePage() {
               <span className="text-muted-foreground">Still in gym:</span>
               <span className="font-semibold">{rows.filter(r => !r.checkOut).length}</span>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !showPeakOnly;
+                setShowPeakOnly(next);
+                updateUrl({ tab, date, location: locationFilter, peak: next ? "1" : "", late: showLateOnly ? "1" : "" });
+              }}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                showPeakOnly
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted"
+              }`}
+            >
+              <span>Peak hours:</span>
+              <span className="font-semibold">{peakCount}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !showLateOnly;
+                setShowLateOnly(next);
+                updateUrl({ tab, date, location: locationFilter, late: next ? "1" : "", peak: showPeakOnly ? "1" : "" });
+              }}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                showLateOnly
+                  ? "bg-destructive text-destructive-foreground border-destructive"
+                  : "hover:bg-muted"
+              }`}
+            >
+              <span>Late entry:</span>
+              <span className="font-semibold">{lateCount}</span>
+            </button>
           </div>
           <Table>
             <TableHeader>
@@ -376,23 +434,50 @@ export default function AttendancePage() {
                     Location <SortIcon field="location" current={sortField} dir={sortDir} />
                   </button>
                 </TableHead>
+                <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedRows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{r.memberName}</TableCell>
-                  <TableCell>{formatTime(r.checkIn)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <span>{formatTime(r.checkIn)}</span>
+                      {r.isLateEntry && (
+                        <Badge variant="outline" className="border-destructive/40 text-destructive text-xs">
+                          Late
+                        </Badge>
+                      )}
+                      {r.isPeakHours && (
+                        <Badge variant="outline" className="text-xs">
+                          Peak
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="hidden md:table-cell">{r.checkOut ? formatTime(r.checkOut) : "-"}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     <Badge variant="secondary">{r.source}</Badge>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{r.locationName}</TableCell>
+                  <TableCell>
+                    {!r.checkOut && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleMemberCheckOut(r.id)}
+                        disabled={isPending}
+                      >
+                        Check Out
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <div className="flex flex-col items-center gap-2 py-8">
                       <Calendar className="size-8 text-muted-foreground/50" />
                       <p className="text-sm text-muted-foreground">No attendance records</p>

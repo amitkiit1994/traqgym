@@ -47,7 +47,7 @@ function statusColor(s: string): string {
     case "active":
       return "bg-status-active-bg text-status-active-foreground border-status-active/30";
     case "redeemed":
-      return "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300";
+      return "bg-status-info-bg text-status-info-foreground border-status-info/30";
     case "expired":
       return "bg-status-expired-bg text-status-expired-foreground border-status-expired/30";
     default:
