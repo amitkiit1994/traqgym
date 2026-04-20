@@ -83,10 +83,10 @@ describe("Auth & Security", () => {
   });
 
   // ────────────────────────────────────────────
-  // 2. Cron endpoints — unprotected (security gap documentation)
+  // 2. Cron endpoints — Sprint 8 closed the gap with requireCronSecret
   // ────────────────────────────────────────────
 
-  describe("Cron endpoints are unprotected", () => {
+  describe("Cron endpoints reject anonymous callers (Sprint 8)", () => {
     const cronPaths = [
       "/api/cron/auto-checkout",
       "/api/cron/re-engagement",
@@ -100,10 +100,11 @@ describe("Auth & Security", () => {
     ];
 
     for (const path of cronPaths) {
-      it(`anon can GET ${path} (UNPROTECTED)`, async () => {
+      it(`anon GET ${path} is rejected`, async () => {
         const { status } = await anon.get(path);
-        // These return 200 because there is no auth guard — documenting the gap
-        expect(status).toBe(200);
+        // requireCronSecret returns 401 (missing/invalid header) or 503 (no env).
+        // Both are valid — invariant is "not 200 for anon".
+        expect([401, 503]).toContain(status);
       });
     }
   });

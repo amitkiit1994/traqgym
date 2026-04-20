@@ -160,11 +160,10 @@ describe("API Gaps", () => {
       expect(body.error).toBe("Invalid invoice ID");
     });
 
-    it("invoice PDF is accessible without auth (public link)", async () => {
-      // The route does not check auth — it's a shareable invoice link
+    it("invoice PDF requires auth (Sprint 8 audit)", async () => {
+      // Sprint 8 audit added session check — anonymous access leaked PII via id enumeration.
       const { status } = await anon.get("/api/invoices/99999/pdf");
-      // Should get 404 (not 401) since there's no auth check
-      expect(status).toBe(404);
+      expect(status).toBe(401);
     });
   });
 
