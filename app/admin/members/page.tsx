@@ -4,11 +4,13 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getMembers, createMember, importMembersFromCSV } from "@/lib/actions/members";
 import { getLocations } from "@/lib/actions/locations";
+import { getPlans } from "@/lib/actions/plans";
 import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -44,11 +46,19 @@ type MemberRow = {
   phone: string | null;
   locationName: string;
   status: "active" | "expired" | "no_plan";
+  planId: number | null;
+  planName: string | null;
   riskLevel: "low" | "medium" | "high";
   riskReason: string;
 };
 
 type LocationOption = {
+  id: number;
+  name: string;
+  isActive: boolean;
+};
+
+type PlanOption = {
   id: number;
   name: string;
   isActive: boolean;
@@ -95,6 +105,8 @@ export default function MembersPage() {
     return p ? parseInt(p, 10) : 1;
   });
   const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [planFilter, setPlanFilter] = useState<string>(() => searchParams.get("planId") ?? "all");
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const [isPending, startTransition] = useTransition();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -130,10 +142,12 @@ export default function MembersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const load = (q?: string, p?: number, status?: string, allExpired?: boolean) => {
+  const load = (q?: string, p?: number, status?: string, allExpired?: boolean, plan?: string) => {
     const currentPage = p ?? page;
     const currentStatus = status ?? statusFilter;
     const currentAllExpired = allExpired ?? showAllExpired;
+    const currentPlan = plan ?? planFilter;
+    const planIdNum = currentPlan && currentPlan !== "all" ? Number(currentPlan) : undefined;
     startTransition(async () => {
       const data = await getMembers({
         search: q || undefined,
@@ -144,6 +158,7 @@ export default function MembersPage() {
         sortBy,
         sortOrder,
         showAllExpired: currentStatus === "expired" ? currentAllExpired : undefined,
+        planId: Number.isFinite(planIdNum) ? planIdNum : undefined,
       });
       setMembers(data.members);
       setTotal(data.total);
@@ -153,18 +168,26 @@ export default function MembersPage() {
   useEffect(() => {
     load();
     getLocations().then((locs) => setLocations(locs));
+    getPlans().then((ps) =>
+      setPlans(
+        ps
+          .filter((p) => p.isActive)
+          .map((p) => ({ id: p.id, name: p.name, isActive: p.isActive }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      )
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    load(search, page);
+    load(search, page, statusFilter, undefined, planFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortBy, sortOrder]);
 
   const goToPage = (p: number) => {
     setPage(p);
-    load(search, p, statusFilter);
-    updateUrl({ q: search, status: statusFilter, page: String(p), sort: sortBy, order: sortOrder });
+    load(search, p, statusFilter, undefined, planFilter);
+    updateUrl({ q: search, status: statusFilter, planId: planFilter, page: String(p), sort: sortBy, order: sortOrder });
   };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -207,12 +230,13 @@ export default function MembersPage() {
   };
 
   const handleExport = () => {
-    const headers = ["Name", "Email", "Phone", "Location", "Status"];
+    const headers = ["Name", "Email", "Phone", "Location", "Plan", "Status"];
     const rows = members.map((m) => [
       `${m.firstname} ${m.lastname}`,
       m.email,
       m.phone ?? "",
       m.locationName,
+      m.planName ?? "",
       statusLabel[m.status],
     ]);
     const csv = toCsv(headers, rows);
@@ -238,11 +262,11 @@ export default function MembersPage() {
             if (sortBy === field) {
               const newOrder = sortOrder === "asc" ? "desc" : "asc";
               setSortOrder(newOrder);
-              updateUrl({ q: search, status: statusFilter, page: String(page), sort: field, order: newOrder });
+              updateUrl({ q: search, status: statusFilter, planId: planFilter, page: String(page), sort: field, order: newOrder });
             } else {
               setSortBy(field);
               setSortOrder("asc");
-              updateUrl({ q: search, status: statusFilter, page: String(page), sort: field, order: "asc" });
+              updateUrl({ q: search, status: statusFilter, planId: planFilter, page: String(page), sort: field, order: "asc" });
             }
           }}
         >
@@ -386,12 +410,38 @@ export default function MembersPage() {
           onSearch={(q) => {
             setSearch(q);
             setPage(1);
-            load(q, 1, statusFilter);
-            updateUrl({ q, status: statusFilter, page: "1", sort: sortBy, order: sortOrder });
+            load(q, 1, statusFilter, undefined, planFilter);
+            updateUrl({ q, status: statusFilter, planId: planFilter, page: "1", sort: sortBy, order: sortOrder });
           }}
           isPending={isPending}
           className="w-full sm:w-auto sm:min-w-[250px]"
         />
+        <Select
+          value={planFilter}
+          onValueChange={(v) => {
+            const next = v ?? "all";
+            setPlanFilter(next);
+            setPage(1);
+            load(search, 1, statusFilter, undefined, next);
+            updateUrl({ q: search, status: statusFilter, planId: next, page: "1", sort: sortBy, order: sortOrder });
+          }}
+        >
+          <SelectTrigger className="min-w-[160px]" size="sm">
+            <SelectValue placeholder="All plans">
+              {planFilter === "all"
+                ? "All plans"
+                : plans.find((p) => String(p.id) === planFilter)?.name ?? "All plans"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent align="start" alignItemWithTrigger={false}>
+            <SelectItem value="all">All plans</SelectItem>
+            {plans.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex gap-1">
           {[
             { value: "all", label: "All" },
@@ -408,8 +458,8 @@ export default function MembersPage() {
               onClick={() => {
                 setStatusFilter(s.value);
                 setPage(1);
-                load(search, 1, s.value);
-                updateUrl({ q: search, status: s.value, page: "1", sort: sortBy, order: sortOrder });
+                load(search, 1, s.value, undefined, planFilter);
+                updateUrl({ q: search, status: s.value, planId: planFilter, page: "1", sort: sortBy, order: sortOrder });
               }}
             >
               {s.label}
@@ -435,7 +485,77 @@ export default function MembersPage() {
       </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg ring-1 ring-foreground/5 dark:ring-white/[0.06]">
+      <div className="flex-1 min-h-0 overflow-y-auto sm:rounded-lg sm:ring-1 sm:ring-foreground/5 sm:dark:ring-white/[0.06]">
+      {/* Mobile card view (<sm) */}
+      <div className="sm:hidden space-y-2">
+        {members.map((m) => (
+          <Card key={m.id} size="sm">
+            <CardContent className="space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">
+                    {m.firstname} {m.lastname}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {m.email}
+                  </div>
+                  {m.phone && (
+                    <div className="text-xs text-muted-foreground truncate">
+                      {m.phone}
+                    </div>
+                  )}
+                </div>
+                <Badge variant={statusVariant[m.status]}>
+                  {statusLabel[m.status]}
+                </Badge>
+              </div>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <dt className="text-muted-foreground">Location</dt>
+                <dd className="text-right truncate">{m.locationName}</dd>
+                <dt className="text-muted-foreground">Plan</dt>
+                <dd className="text-right">
+                  <Badge variant="outline">{m.planName ?? "—"}</Badge>
+                </dd>
+                <dt className="text-muted-foreground">Risk</dt>
+                <dd className="text-right">
+                  <Badge variant={riskVariant[m.riskLevel]} title={m.riskReason}>
+                    {riskLabel[m.riskLevel]}
+                  </Badge>
+                </dd>
+              </dl>
+              <Link href={`/admin/members/${m.id}`} className="block">
+                <Button variant="outline" className="w-full min-h-11">
+                  View
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        ))}
+        {members.length === 0 && (
+          <Card size="sm">
+            <CardContent>
+              <div className="flex flex-col items-center gap-2 py-8">
+                <Users className="size-8 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground text-center">
+                  {planFilter !== "all"
+                    ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
+                    : statusFilter !== "all"
+                      ? `No ${statusFilter} members`
+                      : search
+                        ? `No members match "${search}"`
+                        : "No members found"}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+                  Add Member
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Desktop table view (sm+) */}
+      <div className="hidden sm:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -443,6 +563,7 @@ export default function MembersPage() {
             <TableHead className="hidden md:table-cell">Email</TableHead>
             <TableHead className="hidden md:table-cell">Phone</TableHead>
             <SortableHead field="location">Location</SortableHead>
+            <TableHead>Plan</TableHead>
             <SortableHead field="status">Status</SortableHead>
             <TableHead className="hidden sm:table-cell">Risk</TableHead>
             <TableHead>Actions</TableHead>
@@ -457,6 +578,9 @@ export default function MembersPage() {
               <TableCell className="hidden md:table-cell">{m.email}</TableCell>
               <TableCell className="hidden md:table-cell">{m.phone ?? "-"}</TableCell>
               <TableCell>{m.locationName}</TableCell>
+              <TableCell>
+                <Badge variant="outline">{m.planName ?? "—"}</Badge>
+              </TableCell>
               <TableCell>
                 <Badge variant={statusVariant[m.status]}>
                   {statusLabel[m.status]}
@@ -478,10 +602,18 @@ export default function MembersPage() {
           ))}
           {members.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7}>
+              <TableCell colSpan={8}>
                 <div className="flex flex-col items-center gap-2 py-8">
                   <Users className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No members found</p>
+                  <p className="text-sm text-muted-foreground">
+                    {planFilter !== "all"
+                      ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
+                      : statusFilter !== "all"
+                        ? `No ${statusFilter} members`
+                        : search
+                          ? `No members match "${search}"`
+                          : "No members found"}
+                  </p>
                   <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
                     Add Member
                   </Button>
@@ -491,6 +623,7 @@ export default function MembersPage() {
           )}
         </TableBody>
       </Table>
+      </div>
       </div>
 
       {totalPages > 1 && (

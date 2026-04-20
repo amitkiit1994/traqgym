@@ -61,6 +61,8 @@ export default async function MemberDetailPage({
       expireDate: t.expireDate.toISOString(),
       plan: { id: t.plan.id, name: t.plan.name, price: Number(t.plan.price), expireDays: t.plan.expireDays },
       status: t.status,
+      isComplimentary: t.isComplimentary,
+      compReason: t.compReason,
     })),
     attendanceLogs: member.attendanceLogs.map((l) => ({
       id: l.id,
@@ -93,6 +95,10 @@ export default async function MemberDetailPage({
   const activePlans = allPlans
     .filter((p) => p.isActive)
     .map((p) => ({ id: p.id, name: p.name, expireDays: p.expireDays, price: p.price }));
+
+  // TODO(PR 6): integrate <PaymentScheduleSummary memberTicketId={...} memberName={...} />
+  // (from "@/components/admin/payment-schedule-summary") into MemberDetailClient
+  // for each active ticket. Component is ready and self-contained.
 
   return (
     <div className="space-y-4">

@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Link from "next/link";
 import { GymBrand } from "@/components/gym-brand";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Dumbbell, Lock, Mail, ArrowRight, Shield } from "lucide-react";
@@ -160,9 +161,17 @@ export default function LoginPage() {
 
                   {/* Password field */}
                   <div className="space-y-1.5">
-                    <label htmlFor="password" className="block text-sm font-medium text-foreground/80">
-                      Password
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="password" className="block text-sm font-medium text-foreground/80">
+                        Password
+                      </label>
+                      <Link
+                        href="/forgot-password"
+                        className="text-xs font-medium text-primary/90 hover:text-primary hover:underline"
+                      >
+                        Forgot password?
+                      </Link>
+                    </div>
                     <div className={`relative group transition-all duration-200 ${focused === "password" ? "scale-[1.01]" : ""}`}>
                       <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
                         <Lock className={`size-4 transition-colors duration-200 ${focused === "password" ? "text-primary" : "text-muted-foreground/50"}`} />

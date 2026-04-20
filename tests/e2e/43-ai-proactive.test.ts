@@ -6,13 +6,22 @@
  * AI generation requires OPENAI_API_KEY — tests validate structure, not AI output.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { TestClient, AnonClient, SEED } from "./helpers";
+import { TestClient, AnonClient, CronClient, SEED } from "./helpers";
 
 describe("AI Proactive Features", () => {
   const admin = new TestClient();
   const staff = new TestClient();
   const member = new TestClient();
   const anon = new AnonClient();
+  // Sprint 8 added requireCronSecret to all cron routes — admin sessions no
+  // longer get 200 from cron endpoints. Use CronClient with the bearer token
+  // from .env.local. Suite skips cleanly when CRON_SECRET is unset.
+  const cron = new CronClient();
+  const skipCron = !cron.isReady();
+  const cronTest = skipCron ? it.skip : it;
+  // ai-* endpoints that hit runProactiveAgent need OPENAI_API_KEY in addition.
+  const HAS_OPENAI = Boolean(process.env.OPENAI_API_KEY);
+  const aiCronTest = skipCron || !HAS_OPENAI ? it.skip : it;
 
   beforeAll(async () => {
     await admin.login(SEED.admin.email, SEED.admin.password);
@@ -21,14 +30,14 @@ describe("AI Proactive Features", () => {
   });
 
   describe("Daily Briefing Cron", () => {
-    it("returns 200 for admin", async () => {
-      const { status, body } = await admin.get("/api/cron/ai-daily-briefing");
+    aiCronTest("returns 200 for cron caller", async () => {
+      const { status, body } = await cron.get("/api/cron/ai-daily-briefing");
       expect(status).toBe(200);
       expect(body.success).toBe(true);
     });
 
-    it("returns valid response shape", async () => {
-      const { body } = await admin.get("/api/cron/ai-daily-briefing");
+    aiCronTest("returns valid response shape", async () => {
+      const { body } = await cron.get("/api/cron/ai-daily-briefing");
       expect(body).toHaveProperty("success");
       // Either sent + briefingLength or skipped + reason
       if (!body.skipped) {
@@ -38,14 +47,14 @@ describe("AI Proactive Features", () => {
   });
 
   describe("Churn Alerts Cron", () => {
-    it("returns 200 for admin", async () => {
-      const { status, body } = await admin.get("/api/cron/ai-churn-alerts");
+    aiCronTest("returns 200 for cron caller", async () => {
+      const { status, body } = await cron.get("/api/cron/ai-churn-alerts");
       expect(status).toBe(200);
       expect(body.success).toBe(true);
     });
 
-    it("returns valid response shape", async () => {
-      const { body } = await admin.get("/api/cron/ai-churn-alerts");
+    aiCronTest("returns valid response shape", async () => {
+      const { body } = await cron.get("/api/cron/ai-churn-alerts");
       expect(body).toHaveProperty("success");
       if (!body.skipped) {
         expect(body).toHaveProperty("atRisk");
@@ -54,14 +63,14 @@ describe("AI Proactive Features", () => {
   });
 
   describe("Lead Follow-up Cron", () => {
-    it("returns 200 for admin", async () => {
-      const { status, body } = await admin.get("/api/cron/ai-lead-followup");
+    cronTest("returns 200 for cron caller", async () => {
+      const { status, body } = await cron.get("/api/cron/ai-lead-followup");
       expect(status).toBe(200);
       expect(body.success).toBe(true);
     });
 
-    it("returns valid response shape", async () => {
-      const { body } = await admin.get("/api/cron/ai-lead-followup");
+    cronTest("returns valid response shape", async () => {
+      const { body } = await cron.get("/api/cron/ai-lead-followup");
       expect(body).toHaveProperty("success");
       if (!body.skipped) {
         expect(body).toHaveProperty("processed");
@@ -70,8 +79,8 @@ describe("AI Proactive Features", () => {
   });
 
   describe("Weekly Summary Cron", () => {
-    it("returns 200 for admin", async () => {
-      const { status, body } = await admin.get("/api/cron/ai-weekly-summary");
+    aiCronTest("returns 200 for cron caller", async () => {
+      const { status, body } = await cron.get("/api/cron/ai-weekly-summary");
       expect(status).toBe(200);
       expect(body.success).toBe(true);
     });

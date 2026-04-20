@@ -2,7 +2,7 @@
  * Integration tests for renewMembership service.
  * Calls the service directly against a real database using SEED data.
  */
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { renewMembership } from "@/lib/services/renewal";
 import { prisma, disconnectDb } from "@/tests/helpers/db";
 import { SEED } from "@/tests/e2e/helpers";
@@ -14,9 +14,18 @@ const createdInvoiceNumbers: string[] = [];
 const createdUserIds: number[] = [];
 let promoUsageCount = 0;
 
-// Common renewal params using SEED data
-const baseParams = {
-  planId: SEED.plans.monthly.id,
+// Resolved at test-suite startup so tests don't depend on a hardcoded
+// SEED plan id that may map to an inactive imported plan in real DBs.
+let activePlan: { id: number; price: number; days: number };
+
+// Common renewal params using SEED data — planId is patched in beforeAll().
+const baseParams: {
+  planId: number;
+  locationId: number;
+  paymentMode: string;
+  collectedById: number;
+} = {
+  planId: 0,
   locationId: SEED.locations.main.id,
   paymentMode: "cash",
   collectedById: SEED.admin.id,
@@ -107,6 +116,46 @@ async function trackTicketsForUser(userId: number) {
 }
 
 describe("renewMembership", () => {
+  beforeAll(async () => {
+    const plan = await prisma.ticketPlan.findFirst({ where: { isActive: true } });
+    if (!plan) throw new Error("No active TicketPlan in DB — cannot run renewal tests");
+    activePlan = {
+      id: plan.id,
+      price: Number(plan.price),
+      days: plan.expireDays,
+    };
+    baseParams.planId = activePlan.id;
+
+    // Imported FFF/EGYM DBs don't have demo promo codes — upsert the two
+    // codes the suite expects so promo-path tests aren't dataset-coupled.
+    const farFuture = new Date("2099-12-31");
+    const farPast = new Date("2020-01-01");
+    await prisma.promoCode.upsert({
+      where: { code: "WELCOME20" },
+      update: { isActive: true, discountType: "percentage", discountValue: 20 },
+      create: {
+        code: "WELCOME20",
+        isActive: true,
+        discountType: "percentage",
+        discountValue: 20,
+        validFrom: farPast,
+        validTo: farFuture,
+      },
+    });
+    await prisma.promoCode.upsert({
+      where: { code: "SUMMER10" },
+      update: { isActive: false },
+      create: {
+        code: "SUMMER10",
+        isActive: false,
+        discountType: "percentage",
+        discountValue: 10,
+        validFrom: farPast,
+        validTo: farFuture,
+      },
+    });
+  });
+
   it("happy path: creates ticket + payment + invoice", async () => {
     const user = await createTestMember("happy");
 
@@ -130,7 +179,7 @@ describe("renewMembership", () => {
       orderBy: { id: "desc" },
     });
     expect(ticket).not.toBeNull();
-    expect(ticket!.planId).toBe(SEED.plans.monthly.id);
+    expect(ticket!.planId).toBe(activePlan.id);
     expect(ticket!.locationId).toBe(SEED.locations.main.id);
 
     // Verify payment was created
@@ -138,7 +187,7 @@ describe("renewMembership", () => {
       where: { id: result.paymentId },
     });
     expect(payment).not.toBeNull();
-    expect(Number(payment!.amount)).toBe(SEED.plans.monthly.price);
+    expect(Number(payment!.amount)).toBe(activePlan.price);
     expect(payment!.paymentMode).toBe("cash");
 
     // Verify invoice was created
@@ -177,9 +226,9 @@ describe("renewMembership", () => {
 
   it("promo code WELCOME20: applies 20% discount", async () => {
     const user = await createTestMember("promo");
-    const planPrice = SEED.plans.monthly.price; // 1500
-    const expectedDiscount = Math.round(planPrice * 0.2); // 300
-    const expectedAmount = planPrice - expectedDiscount; // 1200
+    const planPrice = activePlan.price;
+    const expectedDiscount = Math.round(planPrice * 0.2);
+    const expectedAmount = planPrice - expectedDiscount;
 
     const result = await renewMembership({
       ...baseParams,
@@ -243,7 +292,7 @@ describe("renewMembership", () => {
     const oldTicket = await prisma.memberTicket.create({
       data: {
         userId: user.id,
-        planId: SEED.plans.monthly.id,
+        planId: activePlan.id,
         locationId: SEED.locations.main.id,
         buyDate: new Date(Date.now() - 33 * 86400000),
         expireDate: expiredDate,
@@ -274,7 +323,7 @@ describe("renewMembership", () => {
 
     // Expiry should be approximately today + plan days
     const expectedExpiry = new Date();
-    expectedExpiry.setDate(expectedExpiry.getDate() + SEED.plans.monthly.days);
+    expectedExpiry.setDate(expectedExpiry.getDate() + activePlan.days);
     const diffMs = Math.abs(
       newTicket!.expireDate.getTime() - expectedExpiry.getTime()
     );

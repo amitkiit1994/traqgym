@@ -8,10 +8,17 @@ import { createWorkerSchema, updateWorkerSchema, zodErrors } from "@/lib/validat
 
 export async function getWorkers() {
   try { await requireWorker(["admin"]); } catch { return []; }
-  return prisma.worker.findMany({
+  const rows = await prisma.worker.findMany({
     include: { location: true },
     orderBy: { id: "asc" },
   });
+  // Decimal fields (PR 5: defaultGymCutPct, ownTrainerCutPct) cannot cross
+  // the server→client boundary in Next 16. Serialize to plain numbers.
+  return rows.map((w) => ({
+    ...w,
+    defaultGymCutPct: Number(w.defaultGymCutPct ?? 0),
+    ownTrainerCutPct: Number(w.ownTrainerCutPct ?? 0),
+  }));
 }
 
 export async function createWorker(data: {

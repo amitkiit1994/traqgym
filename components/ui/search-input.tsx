@@ -47,7 +47,7 @@ function SearchInput({
 
   return (
     <div data-slot="search-input" className={cn("relative", className)}>
-      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground">
+      <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center justify-center text-muted-foreground">
         {isPending ? (
           <Loader2 className="size-4 animate-spin" />
         ) : (
@@ -65,7 +65,8 @@ function SearchInput({
         <button
           type="button"
           onClick={handleClear}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          aria-label="Clear search"
+          className="absolute inset-y-0 right-2.5 flex items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-sm"
         >
           <X className="size-4" />
         </button>

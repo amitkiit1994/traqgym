@@ -116,18 +116,18 @@ export default async function MemberHomePage() {
 
   const statusColor = activeTicket
     ? daysRemaining > 30
-      ? "text-green-600"
+      ? "text-status-active"
       : daysRemaining > 7
-      ? "text-yellow-600"
-      : "text-red-600"
+      ? "text-status-expiring"
+      : "text-status-expired"
     : "text-muted-foreground";
 
   const statusBorderColor = activeTicket
     ? daysRemaining > 30
-      ? "border-green-500/20"
+      ? "border-status-active/20"
       : daysRemaining > 7
-      ? "border-yellow-500/20"
-      : "border-red-500/20"
+      ? "border-status-expiring/20"
+      : "border-status-expired/20"
     : "border-muted";
 
   const inr = new Intl.NumberFormat("en-IN", {
@@ -179,8 +179,8 @@ export default async function MemberHomePage() {
         </div>
       )}
       {activeTicket && daysRemaining > 7 && daysRemaining <= 30 && (
-        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm">
-          <p className="font-semibold text-yellow-600 dark:text-yellow-500">Your membership expires in {daysRemaining} days.</p>
+        <div className="rounded-lg border border-status-expiring/30 bg-status-expiring/5 px-4 py-3 text-sm">
+          <p className="font-semibold text-status-expiring">Your membership expires in {daysRemaining} days.</p>
           <p className="text-muted-foreground mt-1">Consider renewing your plan soon at the front desk.</p>
         </div>
       )}

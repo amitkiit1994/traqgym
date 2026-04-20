@@ -94,7 +94,14 @@ export async function getTrainersAction() {
     return [];
   }
   return prisma.worker.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      OR: [
+        { ptPackagesAsTrainer: { some: {} } },
+        { trainerPayments: { some: {} } },
+        { appointments: { some: {} } },
+      ],
+    },
     select: { id: true, firstname: true, lastname: true, role: true },
     orderBy: { firstname: "asc" },
   });

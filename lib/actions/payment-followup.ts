@@ -43,8 +43,17 @@ export async function getFollowupsAction(filters?: {
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }) {
-  try { await requireWorker(); } catch { return { data: [], total: 0, totalDue: 0 }; }
+  try { await requireWorker(); } catch { return { data: [], total: 0, totalDue: 0, overdueCount: 0 }; }
   const { items, total, totalDue: grandTotalDue } = await getFollowups(filters);
+
+  // Count overdue pending items (independent of current filters) for the page chip
+  const overdueCount = await prisma.paymentFollowup.count({
+    where: {
+      status: "pending",
+      dueDate: { lt: new Date() },
+      amountDue: { gt: 0 },
+    },
+  });
 
   // Batch check active tickets for all users in this page
   const userIds = [...new Set(items.map((f) => f.userId))];
@@ -94,7 +103,7 @@ export async function getFollowupsAction(filters?: {
       suggestion,
     };
   });
-  return { data, total, totalDue: grandTotalDue };
+  return { data, total, totalDue: grandTotalDue, overdueCount };
 }
 
 export async function updateFollowupAction(

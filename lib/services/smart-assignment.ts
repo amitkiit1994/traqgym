@@ -41,7 +41,8 @@ export async function getSmartDailyActions(workerId?: number): Promise<SmartActi
       .map((i) => `- ${i.label}: ${i.count} (priority: ${i.priority})`)
       .join("\n");
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    // IST calendar date for cache key
+    const todayStr = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 
     const prompt = `Today is ${todayStr}. You are helping ${worker.firstname} ${worker.lastname} (role: ${worker.role}).
 

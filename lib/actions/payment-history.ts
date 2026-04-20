@@ -22,7 +22,7 @@ export async function getMemberPayments(
   const pageSize = params?.pageSize ?? 25;
   const skip = (page - 1) * pageSize;
 
-  const where = { userId };
+  const where = { userId, memberTicketId: { not: null } };
 
   const [rows, total] = await Promise.all([
     prisma.payment.findMany({
@@ -48,7 +48,7 @@ export async function getMemberPayments(
   const payments = rows.map((p) => ({
     id: p.id,
     date: p.createdAt.toISOString(),
-    planName: p.memberTicket.plan.name,
+    planName: p.memberTicket?.plan.name ?? "—",
     amount: Number(p.amount),
     paymentMode: p.paymentMode,
     upiReference: p.upiReference,

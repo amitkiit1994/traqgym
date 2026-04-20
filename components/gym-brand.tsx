@@ -55,11 +55,3 @@ export function GymBrand({ size = "md", className = "", showName = true }: GymBr
   );
 }
 
-/** Server-side helper: returns brand data for use in API routes (e.g. invoice PDF) */
-export async function getGymBrand() {
-  // Dynamic import to avoid pulling prisma into client bundle
-  const { getSetting } = await import("@/lib/services/settings");
-  const name = await getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym");
-  const logo = await getSetting("gym_logo", "");
-  return { name, logo };
-}

@@ -64,6 +64,19 @@ export default function SettingsPage() {
   const [autoCheckout, setAutoCheckout] = useState(true);
   const [checkinCooldown, setCheckinCooldown] = useState("60");
 
+  // Operations (PR 12)
+  const [peakHoursStart, setPeakHoursStart] = useState("06:00");
+  const [peakHoursEnd, setPeakHoursEnd] = useState("09:00");
+  const [lateEntryAfter, setLateEntryAfter] = useState("22:00");
+  const [lockerKeyOverdueDays, setLockerKeyOverdueDays] = useState("7");
+  const [trainerRatingThreshold, setTrainerRatingThreshold] = useState("3.5");
+
+  // QR Self-Check-in
+  const [qrCheckinEnabled, setQrCheckinEnabled] = useState(false);
+  const [qrCheckinRateLimitHours, setQrCheckinRateLimitHours] = useState("4");
+  const [qrTokenMaxAgeDays, setQrTokenMaxAgeDays] = useState("365");
+  const [qrCheckinAllowPhoneOnly, setQrCheckinAllowPhoneOnly] = useState(false);
+
   // Communication
   const [welcomeMessage, setWelcomeMessage] = useState(true);
   const [birthdayWish, setBirthdayWish] = useState(true);
@@ -103,12 +116,50 @@ export default function SettingsPage() {
   const [testingBiomax, setTestingBiomax] = useState(false);
   const [biomaxTestResult, setBiomaxTestResult] = useState<string | null>(null);
 
+  // Tax & Accounting (Tally + GSTR-1)
+  const [gymServiceHsn, setGymServiceHsn] = useState("999723");
+  const [gymGstRate, setGymGstRate] = useState("18");
+  const [gymGstScheme, setGymGstScheme] = useState("regular");
+  const [tallySalesLedger, setTallySalesLedger] = useState("Sales");
+  const [tallyCgstLedger, setTallyCgstLedger] = useState("CGST Output");
+  const [tallySgstLedger, setTallySgstLedger] = useState("SGST Output");
+  const [tallyIgstLedger, setTallyIgstLedger] = useState("IGST Output");
+
   // Data Lifecycle
   const [dataCleanupEnabled, setDataCleanupEnabled] = useState(true);
   const [followupArchiveDays, setFollowupArchiveDays] = useState("180");
   const [enquiryCloseDays, setEnquiryCloseDays] = useState("120");
   const [runningCleanup, setRunningCleanup] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
+
+  // PR 8: Manager Briefing
+  const [gymOwnerName, setGymOwnerName] = useState("Owner");
+  const [gymOwnerEmail, setGymOwnerEmail] = useState("");
+  const [gymOwnerLang, setGymOwnerLang] = useState("en");
+  const [managerBriefingEnabled, setManagerBriefingEnabled] = useState(false);
+  const [managerMinSeverity, setManagerMinSeverity] = useState("high");
+  const [managerBriefingTopN, setManagerBriefingTopN] = useState("5");
+  const [managerBriefingTime, setManagerBriefingTime] = useState("07:00");
+  const [sendingTestBriefing, setSendingTestBriefing] = useState(false);
+  const [briefingResult, setBriefingResult] = useState<string | null>(null);
+
+  // PR 16: Manager hardening (K.1, K.3, K.5)
+  const [gymOwnerEmails, setGymOwnerEmails] = useState("");
+  const [gymOwnerTelegramChatIds, setGymOwnerTelegramChatIds] = useState("");
+  const [gymClosedDays, setGymClosedDays] = useState("");
+  const [managerMinRepeatHours, setManagerMinRepeatHours] = useState("48");
+  const [managerLinkTtlDefault, setManagerLinkTtlDefault] = useState("24");
+  const [managerLinkTtlRevoke, setManagerLinkTtlRevoke] = useState("4");
+
+  // PR 9: Telegram
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBotUsername, setTelegramBotUsername] = useState("");
+  const [telegramWebhookSecret, setTelegramWebhookSecret] = useState("");
+  const [telegramPairingCode, setTelegramPairingCode] = useState("");
+  const [telegramWebhookUrl, setTelegramWebhookUrl] = useState("");
+  const [telegramPairedChatId, setTelegramPairedChatId] = useState("");
+  const [telegramBusy, setTelegramBusy] = useState<string | null>(null);
+  const [telegramResult, setTelegramResult] = useState<string | null>(null);
 
   // UI state
   const [isPending, startTransition] = useTransition();
@@ -138,6 +189,10 @@ export default function SettingsPage() {
         setLeavePersonalQuota(data.leave_personal_quota ?? "3");
         setAutoCheckout(data.auto_checkout_enabled === "true");
         setCheckinCooldown(data.checkin_cooldown_seconds ?? "60");
+        setQrCheckinEnabled(data.qr_checkin_enabled === "true");
+        setQrCheckinRateLimitHours(data.qr_checkin_rate_limit_hours ?? "4");
+        setQrTokenMaxAgeDays(data.qr_token_max_age_days ?? "365");
+        setQrCheckinAllowPhoneOnly(data.qr_checkin_allow_phone_only === "true");
         setWelcomeMessage(data.welcome_message_enabled !== "false");
         setBirthdayWish(data.birthday_wish_enabled === "true");
         setRenewalReminder(data.renewal_reminder_enabled !== "false");
@@ -162,8 +217,56 @@ export default function SettingsPage() {
         setDataCleanupEnabled(data.data_cleanup_enabled !== "false");
         setFollowupArchiveDays(data.followup_auto_archive_days ?? "180");
         setEnquiryCloseDays(data.enquiry_auto_close_days ?? "120");
+        setPeakHoursStart(data.peak_hours_start ?? "06:00");
+        setPeakHoursEnd(data.peak_hours_end ?? "09:00");
+        setLateEntryAfter(data.late_entry_after ?? "22:00");
+        setLockerKeyOverdueDays(data.locker_key_overdue_threshold_days ?? "7");
+        setTrainerRatingThreshold(data.trainer_rating_threshold ?? "3.5");
+        // Tax & Accounting
+        setGymServiceHsn(data.gym_service_hsn ?? "999723");
+        setGymGstRate(data.gym_gst_rate ?? data.gst_rate ?? "18");
+        setGymGstScheme(data.gym_gst_scheme ?? "regular");
+        setTallySalesLedger(data.tally_sales_ledger ?? "Sales");
+        setTallyCgstLedger(data.tally_cgst_ledger ?? "CGST Output");
+        setTallySgstLedger(data.tally_sgst_ledger ?? "SGST Output");
+        setTallyIgstLedger(data.tally_igst_ledger ?? "IGST Output");
+        // PR 8: Manager Briefing
+        setGymOwnerName(data.gym_owner_name ?? "Owner");
+        setGymOwnerEmail(data.gym_owner_email ?? "");
+        setGymOwnerLang(data.gym_owner_lang ?? "en");
+        setManagerBriefingEnabled(data.manager_briefing_enabled === "true");
+        setManagerMinSeverity(data.manager_min_severity ?? "high");
+        setManagerBriefingTopN(data.manager_briefing_top_n ?? "5");
+        setManagerBriefingTime(data.manager_briefing_time ?? "07:00");
+        // PR 9: Telegram
+        setTelegramEnabled(data.telegram_enabled === "true");
+        setTelegramBotUsername(data.telegram_bot_username ?? "");
+        setTelegramWebhookSecret(data.telegram_webhook_secret ?? "");
+        setTelegramPairedChatId(data.gym_owner_telegram_chat_id ?? "");
+        // PR 16: Manager hardening
+        setGymOwnerEmails(data.gym_owner_emails ?? "");
+        setGymOwnerTelegramChatIds(data.gym_owner_telegram_chat_ids ?? "");
+        setGymClosedDays(data.gym_closed_days ?? "");
+        setManagerMinRepeatHours(data.manager_min_repeat_hours ?? "48");
+        setManagerLinkTtlDefault(data.manager_link_ttl_default_hours ?? "24");
+        setManagerLinkTtlRevoke(data.manager_link_ttl_revoke_hours ?? "4");
       })
       .catch(() => setError("Failed to load settings"));
+
+    // Pull derived pairing info (today's code, webhook URL).
+    (async () => {
+      try {
+        const { getPairingInfoAction } = await import("@/lib/actions/telegram");
+        const info = await getPairingInfoAction();
+        setTelegramPairingCode(info.pairingCode);
+        setTelegramWebhookUrl(info.webhookUrl);
+        if (!telegramBotUsername) setTelegramBotUsername(info.botUsername);
+        if (!telegramPairedChatId) setTelegramPairedChatId(info.pairedChatId);
+      } catch {
+        /* ignore — admin-only, may fail for non-admins */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const togglePaymentMode = (mode: string) => {
@@ -200,6 +303,10 @@ export default function SettingsPage() {
           leave_personal_quota: leavePersonalQuota,
           auto_checkout_enabled: autoCheckout ? "true" : "false",
           checkin_cooldown_seconds: checkinCooldown,
+          qr_checkin_enabled: qrCheckinEnabled ? "true" : "false",
+          qr_checkin_rate_limit_hours: qrCheckinRateLimitHours,
+          qr_token_max_age_days: qrTokenMaxAgeDays,
+          qr_checkin_allow_phone_only: qrCheckinAllowPhoneOnly ? "true" : "false",
           welcome_message_enabled: welcomeMessage ? "true" : "false",
           birthday_wish_enabled: birthdayWish ? "true" : "false",
           renewal_reminder_enabled: renewalReminder ? "true" : "false",
@@ -224,6 +331,38 @@ export default function SettingsPage() {
           data_cleanup_enabled: dataCleanupEnabled ? "true" : "false",
           followup_auto_archive_days: followupArchiveDays,
           enquiry_auto_close_days: enquiryCloseDays,
+          peak_hours_start: peakHoursStart,
+          peak_hours_end: peakHoursEnd,
+          late_entry_after: lateEntryAfter,
+          locker_key_overdue_threshold_days: lockerKeyOverdueDays,
+          trainer_rating_threshold: trainerRatingThreshold,
+          // Tax & Accounting
+          gym_service_hsn: gymServiceHsn,
+          gym_gst_rate: gymGstRate,
+          gym_gst_scheme: gymGstScheme,
+          tally_sales_ledger: tallySalesLedger,
+          tally_cgst_ledger: tallyCgstLedger,
+          tally_sgst_ledger: tallySgstLedger,
+          tally_igst_ledger: tallyIgstLedger,
+          // PR 8: Manager Briefing
+          gym_owner_name: gymOwnerName,
+          gym_owner_email: gymOwnerEmail,
+          gym_owner_lang: gymOwnerLang,
+          manager_briefing_enabled: managerBriefingEnabled ? "true" : "false",
+          manager_min_severity: managerMinSeverity,
+          manager_briefing_top_n: managerBriefingTopN,
+          manager_briefing_time: managerBriefingTime,
+          // PR 9: Telegram
+          telegram_enabled: telegramEnabled ? "true" : "false",
+          telegram_bot_username: telegramBotUsername,
+          telegram_webhook_secret: telegramWebhookSecret,
+          // PR 16: Manager hardening
+          gym_owner_emails: gymOwnerEmails,
+          gym_owner_telegram_chat_ids: gymOwnerTelegramChatIds,
+          gym_closed_days: gymClosedDays,
+          manager_min_repeat_hours: managerMinRepeatHours,
+          manager_link_ttl_default_hours: managerLinkTtlDefault,
+          manager_link_ttl_revoke_hours: managerLinkTtlRevoke,
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
@@ -576,6 +715,148 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Card: Operations (PR 12) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Operations</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Peak hours, late entry, locker key audit and trainer rating thresholds.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="peak-start">Peak hours start (24h)</Label>
+              <Input
+                id="peak-start"
+                placeholder="06:00"
+                value={peakHoursStart}
+                onChange={(e) => setPeakHoursStart(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="peak-end">Peak hours end (24h)</Label>
+              <Input
+                id="peak-end"
+                placeholder="09:00"
+                value={peakHoursEnd}
+                onChange={(e) => setPeakHoursEnd(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="late-entry">Late entry after (24h)</Label>
+            <Input
+              id="late-entry"
+              placeholder="22:00"
+              value={lateEntryAfter}
+              onChange={(e) => setLateEntryAfter(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Check-ins at or after this time are flagged as late entry.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="locker-overdue">Locker key overdue threshold (days)</Label>
+            <Input
+              id="locker-overdue"
+              type="number"
+              min="1"
+              value={lockerKeyOverdueDays}
+              onChange={(e) => setLockerKeyOverdueDays(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Days past expected return before a key is flagged as overdue.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="trainer-threshold">Trainer rating low threshold</Label>
+            <Input
+              id="trainer-threshold"
+              type="number"
+              min="1"
+              max="5"
+              step="0.1"
+              value={trainerRatingThreshold}
+              onChange={(e) => setTrainerRatingThreshold(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Average rating below this (over 5+ ratings in 30d) raises an admin insight.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 5b: QR Self-Check-in */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>QR Self-Check-in</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Members scan a printed lobby poster with their phone to mark attendance.
+            Manage posters in <a href="/admin/settings/qr-checkin" className="underline">QR Check-in</a>.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable QR Check-in</Label>
+              <p className="text-xs text-muted-foreground">
+                Allows members to check in by scanning the lobby QR.
+              </p>
+            </div>
+            <Switch checked={qrCheckinEnabled} onCheckedChange={setQrCheckinEnabled} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-rate-hours">Rate limit (hours)</Label>
+            <Input
+              id="qr-rate-hours"
+              type="number"
+              min="1"
+              max="24"
+              value={qrCheckinRateLimitHours}
+              onChange={(e) => setQrCheckinRateLimitHours(e.target.value)}
+              className="max-w-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Maximum 1 successful QR check-in per member within this window.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="qr-token-days">Token validity (days)</Label>
+            <Input
+              id="qr-token-days"
+              type="number"
+              min="1"
+              max="3650"
+              value={qrTokenMaxAgeDays}
+              onChange={(e) => setQrTokenMaxAgeDays(e.target.value)}
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Default lifetime baked into newly generated lobby posters.
+              Reprint posters after rotating QR_TOKEN_SECRET.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Allow phone-only check-in</Label>
+              <p className="text-xs text-muted-foreground">
+                Off (recommended): require member sign-in. On: accept just a phone
+                number — no OTP yet, so leave off until OTP infra ships.
+              </p>
+            </div>
+            <Switch checked={qrCheckinAllowPhoneOnly} onCheckedChange={setQrCheckinAllowPhoneOnly} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Card 5: Communication */}
       <Card className="max-w-lg w-full">
         <CardHeader>
@@ -758,6 +1039,60 @@ export default function SettingsPage() {
           {cronResult && (
             <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">{cronResult}</p>
           )}
+
+          {/* Insight Agents — manual run buttons */}
+          <div className="pt-3 border-t">
+            <Label className="text-sm">Insight Agents</Label>
+            <p className="text-xs text-muted-foreground mb-3">
+              Run an agent now to refresh its insight cards on the dashboard. Each agent dedupes — safe to re-run.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "comp-audit", label: "Comp Audit" },
+                { key: "silent-churn", label: "Silent Churn" },
+                { key: "revenue-anomaly-v2", label: "Revenue Anomaly" },
+                { key: "renewal-cliff", label: "Renewal Cliff" },
+                { key: "staff-performance", label: "Staff Performance" },
+                { key: "plan-mix-drift", label: "Plan Mix Drift" },
+                { key: "comp-leakage-investigator", label: "Comp Leakage" },
+                { key: "defaulted-ticket-escalator", label: "Defaulted Tickets" },
+                { key: "installment-reminder", label: "Installment Reminder" },
+                { key: "upgrade-recommender", label: "Upgrade Recommender" },
+                { key: "multi-location-comparator", label: "Multi-Location" },
+                { key: "trainer-rating", label: "Trainer Ratings" },
+                { key: "cash-shift-variance-investigator", label: "Cash Variance" },
+                { key: "overdue-keys", label: "Overdue Keys" },
+              ].map((agent) => (
+                <Button
+                  key={agent.key}
+                  variant="outline"
+                  size="sm"
+                  disabled={triggeringCron !== null}
+                  className="justify-start"
+                  onClick={async () => {
+                    setTriggeringCron(agent.key);
+                    setCronResult(null);
+                    try {
+                      const res = await fetch(`/api/cron/agents/${agent.key}`);
+                      const data = await res.json();
+                      setCronResult(
+                        `${agent.label}: ${
+                          data.insightsCreated !== undefined
+                            ? `${data.insightsCreated} insight(s) created`
+                            : JSON.stringify(data)
+                        }`
+                      );
+                    } catch (e) {
+                      setCronResult(`${agent.label}: failed (${e instanceof Error ? e.message : "unknown"})`);
+                    }
+                    setTriggeringCron(null);
+                  }}
+                >
+                  {triggeringCron === agent.key ? "Running..." : agent.label}
+                </Button>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -1095,6 +1430,551 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">{cleanupResult}</p>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Card: Tax & Accounting (Tally + GSTR-1) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Tax &amp; Accounting</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Used by the Tally Prime XML export and the quarterly GSTR-1 CSV.
+            Gym GSTIN and state are configured under Gym Identity above.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="gym-service-hsn">HSN/SAC Code</Label>
+            <Input
+              id="gym-service-hsn"
+              value={gymServiceHsn}
+              onChange={(e) => setGymServiceHsn(e.target.value)}
+              placeholder="999723"
+            />
+            <p className="text-xs text-muted-foreground">
+              Default for Indian gym/fitness services is 999723.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-gst-rate">GST Rate (%)</Label>
+            <Input
+              id="gym-gst-rate"
+              type="number"
+              min="0"
+              max="28"
+              value={gymGstRate}
+              onChange={(e) => setGymGstRate(e.target.value)}
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used to back-calculate taxable value from GST-inclusive invoice
+              totals in the Tally and GSTR-1 exports.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-gst-scheme">GST Scheme</Label>
+            <select
+              id="gym-gst-scheme"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={gymGstScheme}
+              onChange={(e) => setGymGstScheme(e.target.value)}
+            >
+              <option value="regular">Regular</option>
+              <option value="composition">Composition</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Composition scheme files CMP-08 instead of GSTR-1 — the GSTR-1
+              report will be disabled if this is selected.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-sales-ledger">Tally Sales Ledger</Label>
+            <Input
+              id="tally-sales-ledger"
+              value={tallySalesLedger}
+              onChange={(e) => setTallySalesLedger(e.target.value)}
+              placeholder="Sales"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-cgst-ledger">Tally CGST Ledger</Label>
+            <Input
+              id="tally-cgst-ledger"
+              value={tallyCgstLedger}
+              onChange={(e) => setTallyCgstLedger(e.target.value)}
+              placeholder="CGST Output"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-sgst-ledger">Tally SGST Ledger</Label>
+            <Input
+              id="tally-sgst-ledger"
+              value={tallySgstLedger}
+              onChange={(e) => setTallySgstLedger(e.target.value)}
+              placeholder="SGST Output"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tally-igst-ledger">Tally IGST Ledger</Label>
+            <Input
+              id="tally-igst-ledger"
+              value={tallyIgstLedger}
+              onChange={(e) => setTallyIgstLedger(e.target.value)}
+              placeholder="IGST Output"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card: Manager Briefing (PR 8) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Manager Briefing</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Email the gym owner a daily morning briefing of top insights with
+            one-click action links. Schedule is configured in <code>vercel.json</code>.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable Manager Briefing</Label>
+              <p className="text-xs text-muted-foreground">
+                Send a daily summary email to the gym owner
+              </p>
+            </div>
+            <Switch
+              checked={managerBriefingEnabled}
+              onCheckedChange={setManagerBriefingEnabled}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-name">Owner Name</Label>
+            <Input
+              id="gym-owner-name"
+              value={gymOwnerName}
+              onChange={(e) => setGymOwnerName(e.target.value)}
+              placeholder="Owner"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-email">Owner Email</Label>
+            <Input
+              id="gym-owner-email"
+              type="email"
+              value={gymOwnerEmail}
+              onChange={(e) => setGymOwnerEmail(e.target.value)}
+              placeholder="owner@gym.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              Briefings will be sent here. Requires SMTP configured above.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-lang">Language</Label>
+            <select
+              id="gym-owner-lang"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={gymOwnerLang}
+              onChange={(e) => setGymOwnerLang(e.target.value)}
+            >
+              <option value="auto">Auto-detect (from your last Telegram message)</option>
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="hinglish">Hinglish</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              &quot;Auto&quot; uses the language detected from your latest
+              Telegram chat. Defaults to English if no chat exists yet.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="manager-min-severity">Minimum Severity</Label>
+            <select
+              id="manager-min-severity"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={managerMinSeverity}
+              onChange={(e) => setManagerMinSeverity(e.target.value)}
+            >
+              <option value="critical">Critical only</option>
+              <option value="high">High and above</option>
+              <option value="medium">Medium and above</option>
+              <option value="low">All severities</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Only insights at or above this severity are included
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="manager-top-n">Top N Insights</Label>
+            <Input
+              id="manager-top-n"
+              type="number"
+              min="1"
+              max="20"
+              value={managerBriefingTopN}
+              onChange={(e) => setManagerBriefingTopN(e.target.value)}
+              className="max-w-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Maximum number of insights per briefing email
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="manager-time">Briefing Time</Label>
+            <Input
+              id="manager-time"
+              value={managerBriefingTime}
+              onChange={(e) => setManagerBriefingTime(e.target.value)}
+              placeholder="07:00"
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Display only — actual schedule is configured in <code>vercel.json</code> (default 07:00 IST)
+            </p>
+          </div>
+
+          {/* PR 16 K.5 — co-owner emails */}
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-emails">Additional Owner Emails (comma-separated)</Label>
+            <Input
+              id="gym-owner-emails"
+              value={gymOwnerEmails}
+              onChange={(e) => setGymOwnerEmails(e.target.value)}
+              placeholder="cofounder@gym.com, finance@gym.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              Briefings fan out to these in addition to Owner Email above. Empty = single recipient.
+            </p>
+          </div>
+
+          {/* PR 16 K.5 — co-owner Telegram chat ids */}
+          <div className="space-y-2">
+            <Label htmlFor="gym-owner-tg-chat-ids">Additional Telegram Chat IDs (comma-separated)</Label>
+            <Input
+              id="gym-owner-tg-chat-ids"
+              value={gymOwnerTelegramChatIds}
+              onChange={(e) => setGymOwnerTelegramChatIds(e.target.value)}
+              placeholder="123456789, 987654321"
+            />
+            <p className="text-xs text-muted-foreground">
+              Co-owners pair via /pair too — get their chat IDs and paste here.
+            </p>
+          </div>
+
+          {/* PR 16 K.1 — closed days */}
+          <div className="space-y-2">
+            <Label htmlFor="gym-closed-days">Closed Days (comma-separated weekday names)</Label>
+            <Input
+              id="gym-closed-days"
+              value={gymClosedDays}
+              onChange={(e) => setGymClosedDays(e.target.value)}
+              placeholder="sunday"
+            />
+            <p className="text-xs text-muted-foreground">
+              On these days the briefing collapses to a single short Telegram
+              line. Email is skipped. Empty = always send. Accepts:
+              sunday, monday, tuesday, wednesday, thursday, friday, saturday.
+            </p>
+          </div>
+
+          {/* PR 16 K.1 — fatigue dedup window */}
+          <div className="space-y-2">
+            <Label htmlFor="manager-min-repeat">Insight Re-Notify Window (hours)</Label>
+            <Input
+              id="manager-min-repeat"
+              type="number"
+              min="0"
+              max="720"
+              value={managerMinRepeatHours}
+              onChange={(e) => setManagerMinRepeatHours(e.target.value)}
+              className="max-w-[120px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Don&apos;t re-include an insight in subsequent briefings until
+              this many hours have passed. Default 48.
+            </p>
+          </div>
+
+          {/* PR 16 K.3 — link TTL config */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="link-ttl-default">Magic-Link TTL — Default (h)</Label>
+              <Input
+                id="link-ttl-default"
+                type="number"
+                min="1"
+                max="168"
+                value={managerLinkTtlDefault}
+                onChange={(e) => setManagerLinkTtlDefault(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="link-ttl-revoke">Magic-Link TTL — Revoke/Destructive (h)</Label>
+              <Input
+                id="link-ttl-revoke"
+                type="number"
+                min="1"
+                max="168"
+                value={managerLinkTtlRevoke}
+                onChange={(e) => setManagerLinkTtlRevoke(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Destructive actions (revoke comp, refund reject, write-off) get a
+            shorter window. Defaults: 24h / 4h.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={sendingTestBriefing}
+              onClick={async () => {
+                setSendingTestBriefing(true);
+                setBriefingResult(null);
+                try {
+                  const { sendTestBriefingAction } = await import(
+                    "@/lib/actions/manager"
+                  );
+                  const result = await sendTestBriefingAction();
+                  if (result.success) {
+                    if (result.skipped) {
+                      setBriefingResult(`Skipped: ${result.reason ?? "see settings"}`);
+                    } else {
+                      setBriefingResult(
+                        `Sent ${result.sent} email${result.sent === 1 ? "" : "s"} (${result.insightCount} insight${result.insightCount === 1 ? "" : "s"}${result.mode ? `, ${result.mode}` : ""})`
+                      );
+                    }
+                  } else {
+                    setBriefingResult(`Failed: ${result.error}`);
+                  }
+                } catch (err) {
+                  setBriefingResult(
+                    `Failed: ${err instanceof Error ? err.message : "unknown"}`
+                  );
+                } finally {
+                  setSendingTestBriefing(false);
+                }
+              }}
+            >
+              {sendingTestBriefing ? "Sending..." : "Send test briefing now"}
+            </Button>
+            {briefingResult && (
+              <p className="text-sm text-muted-foreground">{briefingResult}</p>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Save settings first, then test. Test respects all settings
+            (including the enable flag).
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Card: Telegram (PR 9) */}
+      <Card className="max-w-lg w-full">
+        <CardHeader>
+          <CardTitle>Telegram</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="text-xs text-muted-foreground">
+            Pair the gym owner&apos;s Telegram with this gym to receive the
+            morning briefing as a chat message with one-tap action buttons,
+            and to chat with the AI from your phone (text + voice notes).
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable Telegram delivery</Label>
+              <p className="text-xs text-muted-foreground">
+                Also deliver the morning briefing via Telegram (in addition to email)
+              </p>
+            </div>
+            <Switch
+              checked={telegramEnabled}
+              onCheckedChange={setTelegramEnabled}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tg-bot-username">Bot Username</Label>
+            <Input
+              id="tg-bot-username"
+              value={telegramBotUsername}
+              onChange={(e) => setTelegramBotUsername(e.target.value)}
+              placeholder="TraqGymBot"
+            />
+            <p className="text-xs text-muted-foreground">
+              Without the @. Defaults from <code>TELEGRAM_BOT_USERNAME</code> env.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tg-webhook-secret">Webhook Secret Token</Label>
+            <Input
+              id="tg-webhook-secret"
+              type="password"
+              value={telegramWebhookSecret}
+              onChange={(e) => setTelegramWebhookSecret(e.target.value)}
+              placeholder="any random string (e.g. openssl rand -hex 32)"
+            />
+            <p className="text-xs text-muted-foreground">
+              Sent by Telegram in the <code>X-Telegram-Bot-Api-Secret-Token</code> header.
+              Falls back to <code>TELEGRAM_WEBHOOK_SECRET</code> env if blank.
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-sm font-semibold">Pairing</p>
+            {telegramPairedChatId ? (
+              <p className="text-sm text-status-active">
+                Connected · chatId <code>{telegramPairedChatId}</code>
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Not connected</p>
+            )}
+            <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+              <li>
+                Open Telegram and search for{" "}
+                <strong>@{telegramBotUsername || "YourBot"}</strong>.
+              </li>
+              <li>
+                Send <code>/start</code> to the bot.
+              </li>
+              <li>
+                Then send <code>/pair {telegramPairingCode || "<code>"}</code>.
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground">
+              Today&apos;s pairing code:{" "}
+              <code className="text-foreground">
+                {telegramPairingCode || "(loading)"}
+              </code>{" "}
+              — rotates daily. Save settings first if you change the bot username.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={telegramBusy !== null || !telegramPairedChatId}
+                onClick={async () => {
+                  setTelegramBusy("test");
+                  setTelegramResult(null);
+                  try {
+                    const { sendTestTelegramAction } = await import(
+                      "@/lib/actions/telegram"
+                    );
+                    const r = await sendTestTelegramAction();
+                    setTelegramResult(
+                      r.success
+                        ? `Sent test message (${r.mode})`
+                        : `Failed: ${r.error}`
+                    );
+                  } catch (err) {
+                    setTelegramResult(
+                      `Failed: ${err instanceof Error ? err.message : "unknown"}`
+                    );
+                  } finally {
+                    setTelegramBusy(null);
+                  }
+                }}
+              >
+                {telegramBusy === "test" ? "Sending..." : "Send test message"}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={telegramBusy !== null || !telegramPairedChatId}
+                onClick={async () => {
+                  if (!confirm("Disconnect this Telegram chat?")) return;
+                  setTelegramBusy("disconnect");
+                  setTelegramResult(null);
+                  try {
+                    const { disconnectTelegramAction } = await import(
+                      "@/lib/actions/telegram"
+                    );
+                    const r = await disconnectTelegramAction();
+                    if (r.success) {
+                      setTelegramPairedChatId("");
+                      setTelegramResult("Disconnected");
+                    } else {
+                      setTelegramResult(`Failed: ${r.error}`);
+                    }
+                  } finally {
+                    setTelegramBusy(null);
+                  }
+                }}
+              >
+                {telegramBusy === "disconnect" ? "..." : "Disconnect"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Webhook URL</Label>
+            <Input value={telegramWebhookUrl} readOnly />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={telegramBusy !== null}
+                onClick={async () => {
+                  setTelegramBusy("register");
+                  setTelegramResult(null);
+                  try {
+                    const { registerWebhookAction } = await import(
+                      "@/lib/actions/telegram"
+                    );
+                    const r = await registerWebhookAction();
+                    setTelegramResult(
+                      r.success
+                        ? `Webhook registered: ${r.url}`
+                        : `Failed: ${r.error}`
+                    );
+                  } catch (err) {
+                    setTelegramResult(
+                      `Failed: ${err instanceof Error ? err.message : "unknown"}`
+                    );
+                  } finally {
+                    setTelegramBusy(null);
+                  }
+                }}
+              >
+                {telegramBusy === "register" ? "Registering..." : "Register webhook"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Tells Telegram to POST updates here. Run once per deployment.
+              </p>
+            </div>
+          </div>
+
+          {telegramResult && (
+            <p className="text-sm border rounded-md px-3 py-2 text-muted-foreground">
+              {telegramResult}
+            </p>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Required env: <code>TELEGRAM_BOT_TOKEN</code>,{" "}
+            <code>TELEGRAM_WEBHOOK_SECRET</code> (or override above),{" "}
+            <code>TELEGRAM_BOT_USERNAME</code>. Voice notes also need{" "}
+            <code>WHISPER_API_KEY</code> (or reuse <code>OPENAI_API_KEY</code>).
+          </p>
         </CardContent>
       </Card>
 

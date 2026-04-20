@@ -391,6 +391,16 @@ describe("Unicode handling", () => {
 // 6. Null/optional handling for renewal
 // ---------------------------------------------------------------------------
 describe("Null/optional handling - renewMembership", () => {
+  // Resolve an active plan dynamically — local DBs may have SEED.plans.monthly.id (1)
+  // mapped to an inactive imported plan (FFF/EGYM datasets), which would mask the
+  // "no promoCode succeeds" assertion behind a "Plan is not active" error.
+  let activePlanId: number;
+  beforeAll(async () => {
+    const plan = await prisma.ticketPlan.findFirst({ where: { isActive: true } });
+    if (!plan) throw new Error("No active TicketPlan in DB — cannot run renewal boundary tests");
+    activePlanId = plan.id;
+  });
+
   it("renewal with no promoCode succeeds", async () => {
     const user = await prisma.user.create({
       data: {
@@ -405,7 +415,7 @@ describe("Null/optional handling - renewMembership", () => {
 
     const result = await renewMembership({
       userId: user.id,
-      planId: SEED.plans.monthly.id,
+      planId: activePlanId,
       locationId: SEED.locations.main.id,
       paymentMode: "cash",
       collectedById: SEED.admin.id,
@@ -438,7 +448,7 @@ describe("Null/optional handling - renewMembership", () => {
     // so it should either succeed (treating empty as "no promo") or fail gracefully
     const result = await renewMembership({
       userId: user.id,
-      planId: SEED.plans.monthly.id,
+      planId: activePlanId,
       locationId: SEED.locations.main.id,
       paymentMode: "cash",
       collectedById: SEED.admin.id,

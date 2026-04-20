@@ -15,6 +15,23 @@
     { "path": "/api/cron/ai-winback", "schedule": "0 12 * * 1" },
     { "path": "/api/cron/ai-onboarding", "schedule": "0 9 * * *" },
     { "path": "/api/cron/ai-revenue-anomaly", "schedule": "0 21 * * *" },
-    { "path": "/api/cron/data-cleanup", "schedule": "0 2 * * *" }
+    { "path": "/api/cron/data-cleanup", "schedule": "0 2 * * *" },
+    { "path": "/api/cron/agents/comp-audit", "schedule": "0 1 * * *" },
+    { "path": "/api/cron/agents/silent-churn", "schedule": "30 1 * * *" },
+    { "path": "/api/cron/agents/revenue-anomaly-v2", "schedule": "30 15 * * *" },
+    { "path": "/api/cron/agents/renewal-cliff", "schedule": "35 1 * * *" },
+    { "path": "/api/cron/agents/staff-performance", "schedule": "30 2 * * 1" },
+    { "path": "/api/cron/agents/plan-mix-drift", "schedule": "35 2 * * 1" },
+    { "path": "/api/cron/agents/comp-leakage-investigator", "schedule": "0 2 * * *" },
+    { "path": "/api/cron/agents/defaulted-ticket-escalator", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/agents/installment-reminder", "schedule": "40 2 * * *" },
+    { "path": "/api/cron/agents/upgrade-recommender", "schedule": "30 3 * * 1" },
+    { "path": "/api/cron/agents/cash-shift-variance-investigator", "schedule": "0 17 * * *" },
+    { "path": "/api/cron/agents/multi-location-comparator", "schedule": "40 3 * * 1" },
+    { "path": "/api/cron/agents/overdue-keys", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/agents/trainer-rating", "schedule": "0 8 * * 1" },
+    { "path": "/api/cron/trainer-payout-monthly", "schedule": "30 21 1 * *" },
+    { "path": "/api/cron/manager-morning-briefing", "schedule": "30 1 * * *" },
+    { "path": "/api/cron/manager-investigate", "schedule": "*/15 * * * *" }
   ]
 }

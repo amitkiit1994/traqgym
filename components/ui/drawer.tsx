@@ -94,7 +94,7 @@ function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="drawer-footer"
       className={cn(
-        "mt-auto border-t border-border/30 bg-muted/30 dark:bg-white/[0.02] p-4",
+        "mt-auto border-t border-border/30 bg-muted/30 dark:bg-muted/20 p-4",
         className
       )}
       {...props}

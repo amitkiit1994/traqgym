@@ -34,6 +34,18 @@ export const authOptions: NextAuthOptions = {
             } catch {
               // fire-and-forget: don't break login if audit fails
             }
+            // A worker is treated as a "trainer" if their role is explicitly
+            // 'trainer' OR they currently have at least one active PtPackage
+            // assigned. We precompute this at signin so middleware (Edge
+            // runtime, no Prisma) can route trainers away from /admin/*.
+            let isTrainer = worker.role === "trainer";
+            if (!isTrainer) {
+              const pkg = await prisma.ptPackage.findFirst({
+                where: { trainerId: worker.id, status: "active" },
+                select: { id: true },
+              });
+              isTrainer = !!pkg;
+            }
             return {
               id: String(worker.id),
               email: worker.email,
@@ -41,7 +53,8 @@ export const authOptions: NextAuthOptions = {
               actorType: "worker" as const,
               role: worker.role,
               locationId: worker.locationId,
-            };
+              isTrainer,
+            } as any;
           }
         }
 
@@ -87,6 +100,7 @@ export const authOptions: NextAuthOptions = {
         token.actorType = (user as any).actorType;
         token.role = (user as any).role;
         token.locationId = (user as any).locationId;
+        (token as any).isTrainer = (user as any).isTrainer === true;
       }
       return token;
     },
@@ -96,9 +110,13 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).actorType = token.actorType;
         (session.user as any).role = token.role;
         (session.user as any).locationId = token.locationId;
+        (session.user as any).isTrainer = (token as any).isTrainer === true;
       }
       return session;
     },
+    // No `redirect` callback: post-login routing is handled by the login
+    // page (client-side router.push) and enforced by middleware, which
+    // bounces trainers off /admin/* to /trainer/dashboard.
   },
   pages: {
     signIn: "/login",

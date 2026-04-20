@@ -135,10 +135,10 @@ describe("Renewal & Payment Flows", () => {
       expect(status).toBe(404);
     });
 
-    it("unauthenticated can access invoice PDF (public endpoint)", async () => {
+    it("unauthenticated rejected from invoice PDF (Sprint 8 audit)", async () => {
       const { status } = await anon.get("/api/invoices/22/pdf");
-      // Invoice PDF is a public endpoint (shareable link)
-      expect([200, 404]).toContain(status);
+      // Sprint 8 audit added auth — anonymous access leaked PII via id enumeration.
+      expect(status).toBe(401);
     });
   });
 

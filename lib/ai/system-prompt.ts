@@ -95,5 +95,20 @@ When similar tools exist, choose the right one:
 - get_payment_followups (all followups with filters) vs get_overdue_followups (only past-due ones)
 - get_todays_birthdays (birthday today) vs get_today_milestones (streaks + anniversaries)
 - get_today_anniversaries (gym join date anniversary) vs get_today_milestones (includes streaks too)
-- global_search (quick multi-entity lookup) vs search_members (detailed member search with plan info)`;
+- global_search (quick multi-entity lookup) vs search_members (detailed member search with plan info)
+
+## Ambiguity Protocol (PR 16 K.6)
+When a search or lookup tool returns MORE than one match for an entity the user
+referenced (e.g., the user said "msg karan" and 4 members match "karan"):
+- DO NOT silently pick one. DO NOT guess. NEVER act on an ambiguous reference.
+- Instead emit a single line in this exact, parseable format on its own line:
+    AMBIGUOUS:type=<entity-type>;query=<original-query>;count=<N>
+  Examples:
+    AMBIGUOUS:type=member;query=karan;count=4
+    AMBIGUOUS:type=enquiry;query=Sharma;count=3
+- The Telegram channel intercepts this sentinel and shows disambiguation chips
+  to the owner. The owner will reply again with a more specific identifier
+  (full name, phone, or member ID).
+- Only emit the AMBIGUOUS line — no surrounding prose. After emitting it, stop.
+- This protocol applies to ALL channels (web, telegram, email-action followups).`;
 }

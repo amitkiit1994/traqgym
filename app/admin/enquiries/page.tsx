@@ -8,6 +8,7 @@ import {
   updateEnquiry,
   convertEnquiry,
 } from "@/lib/actions/enquiries";
+import { getFollowupHistory } from "@/lib/actions/enquiry-followup";
 import { getActiveLocations } from "@/lib/actions/renewals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,12 +85,13 @@ export default function EnquiriesPage() {
   const searchParams = useSearchParams();
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [total, setTotal] = useState(0);
+  const [hiddenClosedCount, setHiddenClosedCount] = useState(0);
   const [page, setPage] = useState(1);
   const [locations, setLocations] = useState<Location[]>([]);
   const [filter, setFilter] = useState(() => {
     const urlStatus = searchParams.get("status");
     if (urlStatus && statusOptions.includes(urlStatus)) return urlStatus;
-    return "all";
+    return "new";
   });
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") || "");
   const [showArchived, setShowArchived] = useState(() => searchParams.get("showArchived") === "true");
@@ -114,6 +116,23 @@ export default function EnquiriesPage() {
   const [editStatus, setEditStatus] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editFollowUp, setEditFollowUp] = useState("");
+  // H8 fix: capture follow-up note + next-action so updateEnquiry
+  // can atomically create an EnquiryFollowup row.
+  const [editFollowupNote, setEditFollowupNote] = useState("");
+  const [editFollowupAction, setEditFollowupAction] = useState("call");
+  const [editFollowupOutcome, setEditFollowupOutcome] = useState("");
+  const [editNextFollowup, setEditNextFollowup] = useState("");
+  const [editAssignedTo, setEditAssignedTo] = useState("");
+  type FollowupRow = {
+    id: number;
+    action: string;
+    outcome: string;
+    notes: string | null;
+    workerName: string;
+    nextFollowupAt: string | null;
+    createdAt: string;
+  };
+  const [editFollowups, setEditFollowups] = useState<FollowupRow[]>([]);
 
   const router = useRouter();
 
@@ -140,6 +159,7 @@ export default function EnquiriesPage() {
       ]);
       setEnquiries(result.data);
       setTotal(result.total);
+      setHiddenClosedCount(result.hiddenClosedCount ?? 0);
       setLocations(locs);
     });
   };
@@ -187,7 +207,20 @@ export default function EnquiriesPage() {
     setEditStatus(e.status);
     setEditNotes(e.notes || "");
     setEditFollowUp(e.followUpDate ? e.followUpDate.split("T")[0] : "");
+    setEditFollowupNote("");
+    setEditFollowupAction("call");
+    setEditFollowupOutcome("");
+    setEditNextFollowup("");
+    setEditAssignedTo(e.assignedTo ? String(e.assignedTo) : "");
+    setEditFollowups([]);
     setEditOpen(true);
+    // Load follow-up history for the timeline.
+    startTransition(async () => {
+      const res = await getFollowupHistory(e.id);
+      if (res.success && "followups" in res && res.followups) {
+        setEditFollowups(res.followups);
+      }
+    });
   };
 
   const handleUpdate = () => {
@@ -197,6 +230,11 @@ export default function EnquiriesPage() {
         status: editStatus,
         notes: editNotes,
         followUpDate: editFollowUp || null,
+        assignedTo: editAssignedTo ? parseInt(editAssignedTo, 10) : null,
+        followupNote: editFollowupNote || undefined,
+        followupAction: editFollowupAction || undefined,
+        followupOutcome: editFollowupOutcome || undefined,
+        nextFollowupAt: editNextFollowup || null,
       });
       setEditOpen(false);
       load();
@@ -257,6 +295,16 @@ export default function EnquiriesPage() {
           >
             {showArchived ? "Showing archived" : "Show archived"}
           </Button>
+          {filter === "all" && !showArchived && hiddenClosedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowArchived(true)}
+              className="text-xs text-muted-foreground self-center underline-offset-2 hover:underline"
+              title="Show converted and lost enquiries"
+            >
+              +{hiddenClosedCount} closed hidden
+            </button>
+          )}
         </div>
 
         <SearchInput
@@ -432,7 +480,7 @@ export default function EnquiriesPage() {
           <DialogHeader>
             <DialogTitle>Edit Enquiry - {editEnquiry?.name}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
             <div>
               <Label>Status</Label>
               <select
@@ -448,17 +496,125 @@ export default function EnquiriesPage() {
               </select>
             </div>
             <div>
-              <Label>Follow-up Date</Label>
+              <Label>Follow-up Date (on enquiry)</Label>
               <Input type="date" value={editFollowUp} onChange={(e) => setEditFollowUp(e.target.value)} />
             </div>
             <div>
-              <Label>Notes</Label>
+              <Label>Notes (on enquiry)</Label>
               <textarea
-                className="flex w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm min-h-[80px]"
+                className="flex w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm min-h-[60px]"
                 value={editNotes}
                 onChange={(e) => setEditNotes(e.target.value)}
               />
             </div>
+
+            {/* H8: record a follow-up action atomically with the status update. */}
+            <div className="rounded-lg border border-border/60 p-3 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Record Follow-up
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Fill any of note / next date / outcome to log a new follow-up entry.
+                Leave all blank for a status-only edit.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Action</Label>
+                  <select
+                    value={editFollowupAction}
+                    onChange={(e) => setEditFollowupAction(e.target.value)}
+                    className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm"
+                  >
+                    <option value="call">Call</option>
+                    <option value="visit">Visit</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="email">Email</option>
+                    <option value="sms">SMS</option>
+                    <option value="demo">Demo</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Outcome</Label>
+                  <select
+                    value={editFollowupOutcome}
+                    onChange={(e) => setEditFollowupOutcome(e.target.value)}
+                    className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm"
+                  >
+                    <option value="">(infer from status)</option>
+                    <option value="interested">Interested</option>
+                    <option value="not_interested">Not interested</option>
+                    <option value="no_answer">No answer</option>
+                    <option value="callback">Callback</option>
+                    <option value="visited">Visited</option>
+                    <option value="converted">Converted</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <Label>Next follow-up date</Label>
+                <Input
+                  type="date"
+                  value={editNextFollowup}
+                  onChange={(e) => setEditNextFollowup(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Note for this follow-up</Label>
+                <textarea
+                  className="flex w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm min-h-[60px]"
+                  placeholder="What did the conversation cover?"
+                  value={editFollowupNote}
+                  onChange={(e) => setEditFollowupNote(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Assigned staff</Label>
+                <select
+                  value={editAssignedTo}
+                  onChange={(e) => setEditAssignedTo(e.target.value)}
+                  className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm"
+                >
+                  <option value="">Unassigned</option>
+                  {editEnquiry?.assignedTo ? (
+                    <option value={String(editEnquiry.assignedTo)}>
+                      Currently assigned (worker #{editEnquiry.assignedTo})
+                    </option>
+                  ) : null}
+                </select>
+              </div>
+            </div>
+
+            {/* Follow-up timeline */}
+            {editFollowups.length > 0 && (
+              <div className="rounded-lg border border-border/60 p-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Follow-up history
+                </p>
+                <ul className="space-y-2">
+                  {editFollowups.map((f) => (
+                    <li key={f.id} className="text-xs border-l-2 border-primary/40 pl-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">
+                          {f.action} - {f.outcome}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {new Date(f.createdAt).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                      {f.notes && (
+                        <p className="text-muted-foreground mt-0.5">{f.notes}</p>
+                      )}
+                      <p className="text-muted-foreground/80 mt-0.5">
+                        by {f.workerName}
+                        {f.nextFollowupAt
+                          ? ` - next ${new Date(f.nextFollowupAt).toLocaleDateString("en-IN")}`
+                          : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button onClick={handleUpdate} disabled={isPending}>

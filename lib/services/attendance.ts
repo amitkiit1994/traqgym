@@ -1,5 +1,67 @@
 import { prisma } from "@/lib/prisma";
 import { todayIST } from "@/lib/utils/date";
+import { istDayBoundsUtc } from "@/lib/utils/date-ist";
+
+/** Parses an "HH:MM" 24h time string into total minutes from midnight. Returns null on invalid. */
+function parseHHMM(value: string | undefined | null): number | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * Computes IST minutes-since-midnight from a given Date.
+ *
+ * PR 12 audit fix (HIGH): the previous implementation mixed
+ * `getTimezoneOffset()` (which reflects the *server* TZ, not IST) with a
+ * fixed +5:30 shift and then called `getHours()` (which returns LOCAL
+ * hours). This worked by coincidence on UTC and IST hosts but produced
+ * wrong peak/late flags on any other server timezone (e.g. preview
+ * deployments in non-UTC regions, or local dev on an EU laptop).
+ *
+ * Use Intl.DateTimeFormat with timeZone: "Asia/Kolkata" — the standard
+ * library way to render a Date in a specific zone regardless of host TZ.
+ */
+const istHmFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Kolkata",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function istMinutes(d: Date): number {
+  const parts = istHmFormatter.formatToParts(d);
+  const h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  // Intl renders 24:xx as 00:xx for some locales; clamp defensively.
+  const hour = h === 24 ? 0 : h;
+  return hour * 60 + m;
+}
+
+async function computeTimeFlags(now: Date): Promise<{
+  isPeakHours: boolean;
+  isLateEntry: boolean;
+}> {
+  const [peakStart, peakEnd, lateAfter] = await Promise.all([
+    prisma.gymSettings.findUnique({ where: { key: "peak_hours_start" } }),
+    prisma.gymSettings.findUnique({ where: { key: "peak_hours_end" } }),
+    prisma.gymSettings.findUnique({ where: { key: "late_entry_after" } }),
+  ]);
+
+  const minutes = istMinutes(now);
+  const peakStartMin = parseHHMM(peakStart?.value) ?? parseHHMM("06:00")!;
+  const peakEndMin = parseHHMM(peakEnd?.value) ?? parseHHMM("09:00")!;
+  const lateAfterMin = parseHHMM(lateAfter?.value) ?? parseHHMM("22:00")!;
+
+  const isPeakHours = minutes >= peakStartMin && minutes < peakEndMin;
+  const isLateEntry = minutes >= lateAfterMin;
+
+  return { isPeakHours, isLateEntry };
+}
 
 export async function checkIn(params: {
   userId?: number;
@@ -58,18 +120,29 @@ export async function checkIn(params: {
     return { success: true as const, id: existing.id, existing: true };
   }
 
+  const now = new Date();
+  const flags = await computeTimeFlags(now);
+
   const log = await prisma.attendanceLog.create({
     data: {
       userId: params.userId ?? null,
       workerId: params.workerId ?? null,
       locationId: params.locationId,
       attendanceDate: today,
-      checkIn: new Date(),
+      checkIn: now,
       source: params.source ?? "manual",
+      isPeakHours: flags.isPeakHours,
+      isLateEntry: flags.isLateEntry,
     },
   });
 
-  return { success: true as const, id: log.id, existing: false };
+  return {
+    success: true as const,
+    id: log.id,
+    existing: false,
+    isPeakHours: flags.isPeakHours,
+    isLateEntry: flags.isLateEntry,
+  };
 }
 
 export async function checkOut(params: {
@@ -104,11 +177,14 @@ export async function getDaily(params: {
   date: Date;
   locationId?: number;
 }) {
-  const startOfDay = new Date(params.date.getFullYear(), params.date.getMonth(), params.date.getDate());
+  // attendanceDate is stored as the IST midnight Date (via todayIST), which
+  // serializes to a UTC instant of the prior calendar day at 18:30 UTC.
+  // Build IST-aware UTC bounds so we match exactly that instant range.
+  const { startUtc, endUtc } = istDayBoundsUtc(params.date);
 
   return prisma.attendanceLog.findMany({
     where: {
-      attendanceDate: startOfDay,
+      attendanceDate: { gte: startUtc, lt: endUtc },
       ...(params.locationId ? { locationId: params.locationId } : {}),
     },
     include: {

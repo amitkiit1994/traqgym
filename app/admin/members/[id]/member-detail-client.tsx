@@ -49,7 +49,11 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
-import { AlertTriangle, ClipboardCheck, MessageCircle } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, MessageCircle, FileText } from "lucide-react";
+import { RefundTriggerButton } from "@/components/admin/refund-trigger-button";
+import { UpgradePlanButton } from "@/components/admin/upgrade-plan-dialog";
+import { PaymentScheduleSummary } from "@/components/admin/payment-schedule-summary";
+import { CreatePaymentScheduleDialog } from "@/components/admin/create-payment-schedule-dialog";
 
 type LocationOption = {
   id: number;
@@ -81,6 +85,7 @@ type PaymentData = {
   amount: number;
   paymentMode: string;
   upiReference: string | null;
+  invoiceId: number | null;
   invoiceNumber: string | null;
   collectedBy: string;
 };
@@ -129,6 +134,8 @@ type MemberData = {
     expireDate: string;
     plan: { id: number; name: string; price: number; expireDays: number };
     status: string;
+    isComplimentary: boolean;
+    compReason: string | null;
   }[];
   attendanceLogs: {
     id: number;
@@ -228,6 +235,7 @@ export function MemberDetailClient({
   const [selectedNewPlanId, setSelectedNewPlanId] = useState("");
   const [checkedIn, setCheckedIn] = useState(false);
   const [checkInError, setCheckInError] = useState("");
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -572,6 +580,33 @@ export function MemberDetailClient({
         <Link href={`/admin/renewals?userId=${member.id}`}>
           <Button size="sm">Renew Plan</Button>
         </Link>
+        {activeTicket && currentPlan && (
+          <UpgradePlanButton
+            memberTicketId={activeTicket.id}
+            currentPlanId={currentPlan.id}
+            label="Upgrade Plan"
+            variant="outline"
+            size="sm"
+            onSuccess={() => router.refresh()}
+          />
+        )}
+        {activeTicket && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setScheduleDialogOpen(true)}
+          >
+            Installment Plan
+          </Button>
+        )}
+        {activeTicket && (
+          <CreatePaymentScheduleDialog
+            open={scheduleDialogOpen}
+            onOpenChange={setScheduleDialogOpen}
+            defaultTicketId={activeTicket.id}
+            onCreated={() => router.refresh()}
+          />
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -904,7 +939,19 @@ export function MemberDetailClient({
                   const isLatestActive = idx === 0 && !expired && !cancelled;
                   return (
                     <TableRow key={ticket.id}>
-                      <TableCell>{ticket.plan.name}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{ticket.plan.name}</span>
+                          {ticket.isComplimentary && (
+                            <Badge
+                              variant="info"
+                              title={ticket.compReason ?? "Complimentary"}
+                            >
+                              Comp
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="hidden sm:table-cell">{fmt(ticket.buyDate)}</TableCell>
                       <TableCell>{fmt(ticket.expireDate)}</TableCell>
                       <TableCell>
@@ -960,6 +1007,14 @@ export function MemberDetailClient({
         </Card>
       )}
 
+      {/* Installment Plan (renders only if active ticket has a schedule) */}
+      {activeTicket && (
+        <PaymentScheduleSummary
+          memberTicketId={activeTicket.id}
+          memberName={`${member.firstname} ${member.lastname}`}
+        />
+      )}
+
       {/* Payment History */}
       <Card>
         <CardHeader>
@@ -977,8 +1032,9 @@ export function MemberDetailClient({
                   <TableHead>Amount</TableHead>
                   <TableHead className="hidden sm:table-cell">Mode</TableHead>
                   <TableHead className="hidden md:table-cell">UPI Ref</TableHead>
-                  <TableHead className="hidden md:table-cell">Invoice #</TableHead>
+                  <TableHead className="hidden md:table-cell">Invoice</TableHead>
                   <TableHead className="hidden lg:table-cell">Collected By</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -989,8 +1045,33 @@ export function MemberDetailClient({
                     <TableCell>{inr.format(p.amount)}</TableCell>
                     <TableCell className="hidden sm:table-cell">{p.paymentMode}</TableCell>
                     <TableCell className="hidden md:table-cell">{p.upiReference ?? "-"}</TableCell>
-                    <TableCell className="hidden md:table-cell">{p.invoiceNumber ?? "-"}</TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {p.invoiceId ? (
+                        <Link
+                          href={`/api/invoices/${p.invoiceId}/pdf`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <FileText className="h-3 w-3" />
+                          {p.invoiceNumber ?? "View"}
+                        </Link>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                     <TableCell className="hidden lg:table-cell">{p.collectedBy}</TableCell>
+                    <TableCell className="text-right">
+                      {p.amount > 0 && (
+                        <RefundTriggerButton
+                          paymentId={p.id}
+                          maxAmount={p.amount}
+                          variant="ghost"
+                          size="sm"
+                          showIcon
+                        />
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

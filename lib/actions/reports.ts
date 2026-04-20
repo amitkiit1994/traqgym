@@ -14,6 +14,8 @@ export async function getCollectionReport(date: string, locationId?: number) {
 
   const where: Record<string, unknown> = {
     createdAt: { gte: dayStart, lte: dayEnd },
+    userId: { not: null },
+    memberTicketId: { not: null },
   };
   if (locationId) where.locationId = locationId;
 
@@ -29,8 +31,8 @@ export async function getCollectionReport(date: string, locationId?: number) {
 
   return payments.map((p) => ({
     id: p.id,
-    memberName: `${p.user.firstname} ${p.user.lastname}`,
-    planName: p.memberTicket.plan.name,
+    memberName: p.user ? `${p.user.firstname} ${p.user.lastname}` : "—",
+    planName: p.memberTicket?.plan.name ?? "—",
     amount: Number(p.amount),
     paymentMode: p.paymentMode,
     upiReference: p.upiReference,
@@ -39,28 +41,95 @@ export async function getCollectionReport(date: string, locationId?: number) {
   }));
 }
 
+export type MemberReportRow = {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  location: string;
+  plan: string;
+  status: "active" | "expired" | "no_plan";
+  expiry: string;
+};
+
+export type MemberReportResult = {
+  rows: MemberReportRow[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
+
+const MEMBER_REPORT_DEFAULT_PAGE_SIZE = 100;
+const MEMBER_REPORT_MAX_PAGE_SIZE = 500;
+
 export async function getMemberReport(
   status?: string,
-  locationId?: number
-) {
-  try { await requireWorker(["admin"]); } catch { return []; }
-  const users = await prisma.user.findMany({
-    where: locationId ? { locationId } : {},
-    include: {
-      location: true,
-      memberTickets: {
-        orderBy: { expireDate: "desc" },
-        take: 1,
-        include: { plan: true },
-      },
-    },
-    orderBy: { id: "asc" },
-  });
+  locationId?: number,
+  page: number = 1,
+  pageSize: number = MEMBER_REPORT_DEFAULT_PAGE_SIZE
+): Promise<MemberReportResult> {
+  try {
+    await requireWorker(["admin"]);
+  } catch {
+    return { rows: [], totalCount: 0, page: 1, pageSize: MEMBER_REPORT_DEFAULT_PAGE_SIZE };
+  }
+
+  const safePage = Math.max(1, Math.floor(page) || 1);
+  const safePageSize = Math.min(
+    MEMBER_REPORT_MAX_PAGE_SIZE,
+    Math.max(1, Math.floor(pageSize) || MEMBER_REPORT_DEFAULT_PAGE_SIZE)
+  );
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const rows = users.map((u) => {
+  // Push status filter into SQL when possible so we don't scan all users
+  // and discard most of them in JS.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = {};
+  if (locationId) where.locationId = locationId;
+
+  if (status === "active") {
+    where.memberTickets = {
+      some: { expireDate: { gte: today }, status: "active" },
+    };
+  } else if (status === "expired") {
+    where.memberTickets = { some: { expireDate: { lt: today } } };
+    where.NOT = {
+      memberTickets: { some: { expireDate: { gte: today }, status: "active" } },
+    };
+  } else if (status === "no_plan") {
+    where.memberTickets = { none: {} };
+  }
+
+  const [users, totalCount] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      // Narrow the select to only the fields the report renders.
+      select: {
+        id: true,
+        firstname: true,
+        lastname: true,
+        email: true,
+        phone: true,
+        location: { select: { name: true } },
+        memberTickets: {
+          orderBy: { expireDate: "desc" },
+          take: 1,
+          select: {
+            expireDate: true,
+            plan: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { id: "asc" },
+      skip: (safePage - 1) * safePageSize,
+      take: safePageSize,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  const rows: MemberReportRow[] = users.map((u) => {
     let memberStatus: "active" | "expired" | "no_plan" = "no_plan";
     let planName = "-";
     let expiry = "-";
@@ -82,10 +151,7 @@ export async function getMemberReport(
     };
   });
 
-  if (status && status !== "all") {
-    return rows.filter((r) => r.status === status);
-  }
-  return rows;
+  return { rows, totalCount, page: safePage, pageSize: safePageSize };
 }
 
 export async function getLoginHistory(fromDate: string, toDate: string) {

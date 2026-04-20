@@ -3,6 +3,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Plus, Trash2, MessageSquare, Sparkles, Loader2, PanelRightClose, PanelRightOpen, Copy, Check, RefreshCw, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Message = {
   role: "user" | "assistant";
@@ -40,18 +50,40 @@ export function AiChat({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const userScrolledUpRef = useRef(false);
 
-  // Auto-scroll: observe DOM mutations in the scroll container
+  // Track whether the user has scrolled away from the bottom; pauses autoscroll.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const scroll = () => { container.scrollTop = container.scrollHeight; };
+    const onScroll = () => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      userScrolledUpRef.current = distanceFromBottom > 100;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Auto-scroll: observe DOM mutations in the scroll container, but only when
+  // the user hasn't scrolled up to read older content.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const scroll = () => {
+      if (userScrolledUpRef.current) return;
+      container.scrollTop = container.scrollHeight;
+    };
     const observer = new MutationObserver(scroll);
     observer.observe(container, { childList: true, subtree: true, characterData: true });
-    scroll();
+    // Reset on convo change — jump to bottom for the freshly-loaded thread.
+    userScrolledUpRef.current = false;
+    container.scrollTop = container.scrollHeight;
     return () => observer.disconnect();
   }, [activeConvoId]);
 
@@ -104,8 +136,7 @@ export function AiChat({
     }
   }
 
-  async function deleteAllConversations() {
-    if (!confirm("Delete all chat threads?")) return;
+  async function confirmDeleteAllConversations() {
     try {
       await Promise.all(conversations.map((c) => fetch(`/api/admin/ai/conversations/${c.id}`, { method: "DELETE" })));
       setConversations([]);
@@ -113,6 +144,9 @@ export function AiChat({
       setMessages([]);
     } catch {
       // silent
+    } finally {
+      setDeleteAllOpen(false);
+      setDeleteAllConfirm("");
     }
   }
 
@@ -269,6 +303,7 @@ export function AiChat({
                 onClick={() => setSidebarOpen(true)}
                 className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                 title="Show threads"
+                aria-label="Open chat history"
               >
                 <PanelRightOpen className="h-4 w-4" />
               </button>
@@ -367,6 +402,7 @@ export function AiChat({
                             onClick={() => copyMessage(i)}
                             className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                             title="Copy"
+                            aria-label="Copy message"
                           >
                             {copiedIndex === i ? (
                               <Check className="h-3.5 w-3.5 text-green-500" />
@@ -379,6 +415,7 @@ export function AiChat({
                               onClick={() => startEdit(i)}
                               className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                               title="Edit & resend"
+                              aria-label="Edit message"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
@@ -388,6 +425,7 @@ export function AiChat({
                               onClick={regenerate}
                               className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                               title="Regenerate"
+                              aria-label="Regenerate response"
                             >
                               <RefreshCw className="h-3.5 w-3.5" />
                             </button>
@@ -424,11 +462,13 @@ export function AiChat({
               rows={1}
               className="flex-1 resize-none rounded-xl border border-border/50 bg-muted/50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 placeholder:text-muted-foreground/60"
               disabled={isStreaming}
+              aria-label="Type your message to the AI assistant"
             />
             <button
               onClick={() => sendMessage()}
               disabled={!input.trim() || isStreaming}
               className="shrink-0 h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              aria-label="Send message"
             >
               {isStreaming ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -451,6 +491,7 @@ export function AiChat({
             onClick={() => setSidebarOpen(false)}
             className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             title="Close threads"
+            aria-label="Close chat history"
           >
             <PanelRightClose className="h-4 w-4" />
           </button>
@@ -463,9 +504,13 @@ export function AiChat({
           </button>
           {conversations.length > 0 && (
             <button
-              onClick={deleteAllConversations}
+              onClick={() => {
+                setDeleteAllConfirm("");
+                setDeleteAllOpen(true);
+              }}
               className="p-1.5 rounded-md hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
               title="Delete all threads"
+              aria-label="Delete all chat threads"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -499,6 +544,62 @@ export function AiChat({
           ))}
         </div>
       </div>
+
+      {/* Delete-all confirmation dialog (typed-confirm pattern) */}
+      <Dialog
+        open={deleteAllOpen}
+        onOpenChange={(open) => {
+          setDeleteAllOpen(open);
+          if (!open) setDeleteAllConfirm("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete all chat threads?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete{" "}
+              <strong>
+                {conversations.length}{" "}
+                {conversations.length === 1 ? "thread" : "threads"}
+              </strong>{" "}
+              and all associated messages. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label
+              htmlFor="delete-all-confirm"
+              className="text-sm text-muted-foreground"
+            >
+              Type <span className="font-mono font-semibold">DELETE</span> to confirm.
+            </label>
+            <Input
+              id="delete-all-confirm"
+              value={deleteAllConfirm}
+              onChange={(e) => setDeleteAllConfirm(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteAllOpen(false);
+                setDeleteAllConfirm("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteAllConfirm !== "DELETE"}
+              onClick={confirmDeleteAllConversations}
+            >
+              Delete all threads
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

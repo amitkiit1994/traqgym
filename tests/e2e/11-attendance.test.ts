@@ -33,9 +33,11 @@ describe("Attendance Flows", () => {
     });
   });
 
+  // Sprint 8 audit (S03): kiosk endpoint requires a worker session — operate
+  // as logged-in staff. AnonClient calls would be rejected 401.
   describe("Kiosk Check-in", () => {
     it("active member can check in via kiosk", async () => {
-      const { status, body } = await anon.post("/api/kiosk/checkin", {
+      const { status, body } = await staff.post("/api/kiosk/checkin", {
         phone: SEED.members.activeAnnual.phone,
         locationId: SEED.locations.cc.id,
       });
@@ -47,7 +49,7 @@ describe("Attendance Flows", () => {
     });
 
     it("member with no plan is rejected", async () => {
-      const { status, body } = await anon.post("/api/kiosk/checkin", {
+      const { status, body } = await staff.post("/api/kiosk/checkin", {
         phone: SEED.members.noTicket.phone,
         locationId: SEED.locations.main.id,
       });
@@ -58,22 +60,24 @@ describe("Attendance Flows", () => {
     });
 
     it("unknown phone is rejected", async () => {
-      const { status, body } = await anon.post("/api/kiosk/checkin", {
+      // FFF migrated data may contain "0000000000" as a placeholder phone — in
+      // that case the user exists but has no valid ticket, yielding 403.
+      const { status, body } = await staff.post("/api/kiosk/checkin", {
         phone: "0000000000",
         locationId: SEED.locations.main.id,
       });
-      expect([404, 429]).toContain(status);
+      expect([404, 403, 429]).toContain(status);
     });
 
     it("missing phone returns 400", async () => {
-      const { status } = await anon.post("/api/kiosk/checkin", {
+      const { status } = await staff.post("/api/kiosk/checkin", {
         locationId: SEED.locations.main.id,
       });
       expect(status).toBe(400);
     });
 
     it("missing locationId returns 400", async () => {
-      const { status } = await anon.post("/api/kiosk/checkin", {
+      const { status } = await staff.post("/api/kiosk/checkin", {
         phone: SEED.members.active20d.phone,
       });
       expect(status).toBe(400);

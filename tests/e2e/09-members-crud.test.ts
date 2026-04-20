@@ -50,9 +50,15 @@ describe("Members CRUD", () => {
     expect(status).toBe(200);
   });
 
-  it("non-existent member returns 404", async () => {
-    const { status } = await admin.getPage("/admin/members/99999");
-    expect([404, 302]).toContain(status);
+  it("non-existent member renders not-found page", async () => {
+    // Next.js 16 streams the not-found.tsx page with HTTP 200 (headers ship
+    // before notFound() throws on a dynamic route). Verify the body shows
+    // the 404 chrome rather than a real member detail page.
+    const { status, html } = await admin.getPage("/admin/members/99999");
+    expect([404, 302, 200]).toContain(status);
+    if (status === 200) {
+      expect(html).toMatch(/404|not found/i);
+    }
   });
 
   // ---- UPI QR ----

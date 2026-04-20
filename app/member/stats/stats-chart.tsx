@@ -27,8 +27,8 @@ export function StatsChart({ data }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-48 sm:h-64">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="w-full h-48 sm:h-64 min-h-0 min-w-0">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <BarChart data={data}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis

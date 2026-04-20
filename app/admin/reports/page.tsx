@@ -177,7 +177,8 @@ function CollectionReport({ locations }: { locations: LocationOption[] }) {
 
 // --- Member Report ---
 
-type MemberRow = Awaited<ReturnType<typeof getMemberReport>>[number];
+type MemberReportData = Awaited<ReturnType<typeof getMemberReport>>;
+type MemberRow = MemberReportData["rows"][number];
 
 const statusVariant: Record<string, "default" | "destructive" | "secondary"> = {
   active: "default",
@@ -185,23 +186,33 @@ const statusVariant: Record<string, "default" | "destructive" | "secondary"> = {
   no_plan: "secondary",
 };
 
+const MEMBER_REPORT_PAGE_SIZE = 100;
+
 function MemberReport({ locations }: { locations: LocationOption[] }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [locationId, setLocationId] = useState(() => locations.length === 1 ? String(locations[0].id) : "");
   const [rows, setRows] = useState<MemberRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [isPending, startTransition] = useTransition();
 
-  const load = () => {
+  const load = (nextPage: number = page) => {
     startTransition(async () => {
       const data = await getMemberReport(
         statusFilter,
-        locationId ? parseInt(locationId, 10) : undefined
+        locationId ? parseInt(locationId, 10) : undefined,
+        nextPage,
+        MEMBER_REPORT_PAGE_SIZE
       );
-      setRows(data);
+      setRows(data.rows);
+      setTotalCount(data.totalCount);
+      setPage(data.page);
     });
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { load(1); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / MEMBER_REPORT_PAGE_SIZE));
 
   const exportCsv = () => {
     downloadCsv(
@@ -249,7 +260,7 @@ function MemberReport({ locations }: { locations: LocationOption[] }) {
             <span className="flex h-9 items-center text-sm text-muted-foreground">{locations[0].name}</span>
           </div>
         ) : null}
-        <Button onClick={load} disabled={isPending}>Load</Button>
+        <Button onClick={() => load(1)} disabled={isPending}>Load</Button>
         <Button variant="outline" onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
       </div>
       <Table>
@@ -285,6 +296,31 @@ function MemberReport({ locations }: { locations: LocationOption[] }) {
           )}
         </TableBody>
       </Table>
+      {totalCount > 0 && (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            Page {page} of {totalPages} • {totalCount} members
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => load(page - 1)}
+              disabled={isPending || page <= 1}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => load(page + 1)}
+              disabled={isPending || page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

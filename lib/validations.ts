@@ -30,6 +30,8 @@ export const planSchema = z.object({
   expireDays: z.number().int().positive("Expire days must be positive"),
   price: z.number().positive("Price must be greater than 0"),
   occasions: z.number().int().positive().nullable().optional(),
+  joiningFee: z.number().min(0, "Joining fee cannot be negative").optional(),
+  joiningFeeAppliesOn: z.enum(["first_only", "every_renewal", "never"]).optional(),
 });
 
 // ── Workers ────────────────────────────────────────────────────────

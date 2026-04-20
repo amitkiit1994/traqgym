@@ -103,22 +103,26 @@ export function AiActivityClient() {
           <Bot className="size-6 text-primary" />
           AI Activity
         </h1>
-        <div className="flex gap-2">
+        <div className="inline-flex items-center rounded-md border bg-muted/40 p-1">
           <Button
-            variant={tab === "activity" ? "default" : "outline"}
+            variant={tab === "activity" ? "default" : "ghost"}
             size="sm"
             onClick={() => setTab("activity")}
+            className="h-8"
+            aria-pressed={tab === "activity"}
           >
             <Zap className="size-4 mr-1" />
             Activity
           </Button>
           <Button
-            variant={tab === "settings" ? "default" : "outline"}
+            variant={tab === "settings" ? "default" : "ghost"}
             size="sm"
             onClick={() => setTab("settings")}
+            className="h-8"
+            aria-pressed={tab === "settings"}
           >
             <Settings className="size-4 mr-1" />
-            Settings
+            AI Settings
           </Button>
         </div>
       </div>

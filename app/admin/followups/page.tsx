@@ -83,6 +83,7 @@ export default function FollowupsPage() {
   const [data, setData] = useState<Followup[]>([]);
   const [total, setTotal] = useState(0);
   const [grandTotalDue, setGrandTotalDue] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     const urlStatus = searchParams.get("status");
@@ -114,9 +115,24 @@ export default function FollowupsPage() {
         sortBy,
         sortOrder,
       });
-      setData(result.data);
+      // For pending status with default dueDate sort, show overdue (most-overdue first) above future items.
+      const shouldReorder =
+        statusFilter === "pending" && sortBy === "dueDate" && sortOrder === "asc";
+      let items = result.data;
+      if (shouldReorder) {
+        const nowMs = Date.now();
+        const overdue = items
+          .filter((f) => new Date(f.dueDate).getTime() < nowMs)
+          .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+        const future = items
+          .filter((f) => new Date(f.dueDate).getTime() >= nowMs)
+          .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+        items = [...overdue, ...future];
+      }
+      setData(items);
       setTotal(result.total);
       setGrandTotalDue(result.totalDue);
+      setOverdueCount(result.overdueCount ?? 0);
     });
   };
 
@@ -168,7 +184,12 @@ export default function FollowupsPage() {
     <div className="h-full flex flex-col gap-3 overflow-hidden">
       <div className="shrink-0 space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-xl md:text-2xl font-bold">Payment Followups</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-bold">Payment Followups</h1>
+            {overdueCount > 0 && (
+              <Badge variant="destructive">{overdueCount} overdue</Badge>
+            )}
+          </div>
           <div className="flex gap-2 flex-wrap">
             {["all", ...STATUS_OPTIONS].map((s) => (
               <Button

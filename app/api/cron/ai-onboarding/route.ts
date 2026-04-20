@@ -1,7 +1,9 @@
+import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
 import { runProactiveAgent } from "@/lib/ai/proactive-runner";
 import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
+import { requireCronSecret } from "@/lib/auth-cron";
 
 const STEPS = [
   {
@@ -30,11 +32,9 @@ const STEPS = [
   },
 ] as const;
 
-export async function GET(request: Request) {
-  const secret = request.headers.get("x-cron-secret") || new URL(request.url).searchParams.get("secret");
-  if (secret !== process.env.CRON_SECRET && process.env.CRON_SECRET) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const guard = requireCronSecret(req);
+  if (guard) return guard;
 
   const enabled = await getSetting("ai_onboarding_enabled", "false");
   if (enabled !== "true") {

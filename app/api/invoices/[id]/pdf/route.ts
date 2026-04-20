@@ -1,5 +1,22 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
+import { escapeHtml } from "@/lib/utils/html";
+
+/**
+ * Validate a logo URL for safe inclusion in an <img src="..."> attribute.
+ * Allow only http(s) absolute URLs or relative paths starting with "/".
+ * Reject javascript:, data:, and any other scheme to prevent XSS.
+ */
+function safeLogoUrl(raw: unknown): string {
+  if (raw === null || raw === undefined) return "";
+  const s = typeof raw === "string" ? raw : String(raw);
+  if (s.length === 0) return "";
+  if (s.startsWith("/") && !s.startsWith("//")) return s;
+  if (/^https?:\/\//i.test(s)) return s;
+  return "";
+}
 
 export async function GET(
   _request: Request,
@@ -12,6 +29,12 @@ export async function GET(
     return Response.json({ error: "Invalid invoice ID" }, { status: 400 });
   }
 
+  // AuthN: require a session. Anonymous access leaks PII via id enumeration.
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const invoice = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     include: {
@@ -19,6 +42,9 @@ export async function GET(
       payment: {
         select: {
           amount: true,
+          baseAmount: true,
+          taxRate: true,
+          taxAmount: true,
           paymentMode: true,
           upiReference: true,
           oldExpiryDate: true,
@@ -26,6 +52,7 @@ export async function GET(
           createdAt: true,
           memberTicket: {
             select: {
+              joiningFeeCharged: true,
               plan: { select: { name: true, expireDays: true } },
             },
           },
@@ -38,22 +65,76 @@ export async function GET(
     return Response.json({ error: "Invoice not found" }, { status: 404 });
   }
 
-  const gymName = await getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym");
-  const gymLogo = await getSetting("gym_logo", "");
-  const gymGstin = await getSetting("gym_gstin", process.env.GYM_GSTIN || "");
-  const gymAddress = await getSetting("gym_address", process.env.GYM_ADDRESS || "");
-  const gymState = await getSetting("gym_state", process.env.GYM_STATE || "Maharashtra");
-  const gymPhone = await getSetting("gym_phone", process.env.GYM_PHONE || "");
-  const gymEmail = await getSetting("gym_email", process.env.GYM_EMAIL || "");
-  const isTaxInvoice = gymGstin.length > 0;
+  // AuthZ: members may only access their own invoices. Workers may access any.
+  if (session.user.actorType === "member") {
+    const sessionUserId = Number(session.user.id);
+    if (!Number.isFinite(sessionUserId) || sessionUserId !== invoice.userId) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
-  const memberName = `${invoice.user.firstname} ${invoice.user.lastname}`;
-  const planName = invoice.payment.memberTicket.plan.name;
-  const durationDays = invoice.payment.memberTicket.plan.expireDays;
+  // Sprint 3 perf: parallel-fetch all 7 settings (was 7 sequential round-trips
+  // = ~5× DB latency on every invoice download). Each setting is a separate
+  // KV row in GymSettings, so they're independent.
+  const [
+    gymName,
+    gymLogoRaw,
+    gymGstin,
+    gymAddress,
+    gymState,
+    gymPhone,
+    gymEmail,
+  ] = await Promise.all([
+    getSetting("gym_name", process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym"),
+    getSetting("gym_logo", ""),
+    getSetting("gym_gstin", process.env.GYM_GSTIN || ""),
+    getSetting("gym_address", process.env.GYM_ADDRESS || ""),
+    getSetting("gym_state", process.env.GYM_STATE || "Maharashtra"),
+    getSetting("gym_phone", process.env.GYM_PHONE || ""),
+    getSetting("gym_email", process.env.GYM_EMAIL || ""),
+  ]);
+  const gymLogo = safeLogoUrl(gymLogoRaw);
+
+  // POS sales now share the Payment table with member renewals (H6 schema
+  // change), so memberTicket can be null. Fall back gracefully — POS invoices
+  // get a generic "POS Sale" plan label and zero joining fee.
+  const memberTicket = invoice.payment.memberTicket;
+  const memberName = invoice.user
+    ? `${invoice.user.firstname} ${invoice.user.lastname}`
+    : "Walk-in Customer";
+  const planName = memberTicket?.plan.name ?? "POS Sale";
+  const durationDays = memberTicket?.plan.expireDays ?? 0;
   const totalAmount = Number(invoice.payment.amount);
-  const baseAmount = isTaxInvoice ? Math.round((totalAmount / 1.18) * 100) / 100 : totalAmount;
-  const cgst = isTaxInvoice ? Math.round(((totalAmount - baseAmount) / 2) * 100) / 100 : 0;
-  const sgst = cgst;
+  const joiningFee = Number(memberTicket?.joiningFeeCharged ?? 0);
+  // Plan portion = total - joining fee (joining fee not GST-applicable in this simple model)
+  const planPortion = Math.max(totalAmount - joiningFee, 0);
+
+  // Surface GST line items if EITHER the gym is GST-registered OR the payment
+  // row carries a real taxAmount (e.g. invoice was raised under GST and gym
+  // GSTIN was later removed, or per-payment tax overrides). Prefer real values
+  // from Payment.baseAmount / Payment.taxAmount when present; fall back to
+  // assuming the plan portion is GST-inclusive at 18%.
+  const recordedTax = Number(invoice.payment.taxAmount ?? 0);
+  const recordedBase = Number(invoice.payment.baseAmount ?? 0);
+  const isTaxInvoice = gymGstin.length > 0 || recordedTax > 0;
+  let baseAmount: number;
+  let cgst: number;
+  let sgst: number;
+  if (isTaxInvoice) {
+    if (recordedTax > 0 && recordedBase > 0) {
+      baseAmount = Math.round(recordedBase * 100) / 100;
+      cgst = Math.round((recordedTax / 2) * 100) / 100;
+      sgst = Math.round((recordedTax / 2) * 100) / 100;
+    } else {
+      baseAmount = Math.round((planPortion / 1.18) * 100) / 100;
+      cgst = Math.round(((planPortion - baseAmount) / 2) * 100) / 100;
+      sgst = cgst;
+    }
+  } else {
+    baseAmount = planPortion;
+    cgst = 0;
+    sgst = 0;
+  }
   const paymentMode = invoice.payment.paymentMode.toUpperCase();
   const upiRef = invoice.payment.upiReference ?? "N/A";
   const invoiceDate = new Date(invoice.createdAt).toLocaleDateString("en-IN", {
@@ -79,7 +160,7 @@ export async function GET(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${isTaxInvoice ? "Tax Invoice" : "Invoice"} ${invoice.invoiceNumber}</title>
+  <title>${isTaxInvoice ? "Tax Invoice" : "Invoice"} ${escapeHtml(invoice.invoiceNumber)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -161,7 +242,10 @@ export async function GET(
       text-align: center;
       font-size: 11px;
       color: #9ca3af;
+      line-height: 1.6;
     }
+    .footer .powered-by { margin-top: 4px; font-size: 10px; opacity: 0.85; }
+    .footer .powered-by strong { color: #6b7280; font-weight: 700; }
     .print-btn {
       display: block;
       margin: 20px auto;
@@ -189,15 +273,15 @@ export async function GET(
   <div class="invoice-container">
     <div class="header">
       <div>
-        ${gymLogo ? `<img src="${gymLogo}" alt="${gymName}" style="height:36px;margin-bottom:4px" />` : ""}
-        <h1>${gymName}</h1>
-        ${gymAddress ? `<div style="font-size:12px;opacity:0.8;margin-top:4px">${gymAddress}</div>` : ""}
-        ${gymPhone || gymEmail ? `<div style="font-size:12px;opacity:0.7;margin-top:2px">${[gymPhone, gymEmail].filter(Boolean).join(" | ")}</div>` : ""}
-        ${gymGstin ? `<div style="font-size:12px;opacity:0.8;margin-top:2px">GSTIN: ${gymGstin}</div>` : ""}
+        ${gymLogo ? `<img src="${escapeHtml(gymLogo)}" alt="${escapeHtml(gymName)}" style="height:36px;margin-bottom:4px" />` : ""}
+        <h1>${escapeHtml(gymName)}</h1>
+        ${gymAddress ? `<div style="font-size:12px;opacity:0.8;margin-top:4px">${escapeHtml(gymAddress)}</div>` : ""}
+        ${gymPhone || gymEmail ? `<div style="font-size:12px;opacity:0.7;margin-top:2px">${[gymPhone, gymEmail].filter(Boolean).map(escapeHtml).join(" | ")}</div>` : ""}
+        ${gymGstin ? `<div style="font-size:12px;opacity:0.8;margin-top:2px">GSTIN: ${escapeHtml(gymGstin)}</div>` : ""}
       </div>
       <div class="invoice-meta">
         <div class="inv-type">${isTaxInvoice ? "Tax Invoice" : "Invoice"}</div>
-        <div class="inv-number">${invoice.invoiceNumber}</div>
+        <div class="inv-number">${escapeHtml(invoice.invoiceNumber)}</div>
         <div>${invoiceDate}</div>
       </div>
     </div>
@@ -209,7 +293,7 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Place of Supply</span>
-            <span class="info-value">${gymState}</span>
+            <span class="info-value">${escapeHtml(gymState)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">SAC Code</span>
@@ -224,15 +308,15 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Name</span>
-            <span class="info-value">${memberName}</span>
+            <span class="info-value">${escapeHtml(memberName)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Email</span>
-            <span class="info-value">${invoice.user.email}</span>
+            <span class="info-value">${escapeHtml(invoice.user?.email ?? "N/A")}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Phone</span>
-            <span class="info-value">${invoice.user.phone ?? "N/A"}</span>
+            <span class="info-value">${escapeHtml(invoice.user?.phone ?? "N/A")}</span>
           </div>
         </div>
       </div>
@@ -242,7 +326,7 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Plan</span>
-            <span class="info-value">${planName}</span>
+            <span class="info-value">${escapeHtml(planName)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Duration</span>
@@ -264,9 +348,9 @@ export async function GET(
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Mode</span>
-            <span class="info-value">${paymentMode}</span>
+            <span class="info-value">${escapeHtml(paymentMode)}</span>
           </div>
-          ${paymentMode === "UPI" ? `<div class="info-row"><span class="info-label">UPI Ref</span><span class="info-value">${upiRef}</span></div>` : ""}
+          ${paymentMode === "UPI" ? `<div class="info-row"><span class="info-label">UPI Ref</span><span class="info-value">${escapeHtml(upiRef)}</span></div>` : ""}
         </div>
       </div>
 
@@ -283,7 +367,7 @@ export async function GET(
           </thead>
           <tbody>
             <tr>
-              <td>Health and fitness services - ${planName}</td>
+              <td>Health and fitness services - ${escapeHtml(planName)}</td>
               <td>99722</td>
               <td class="right">${fmtCurrency(baseAmount)}</td>
             </tr>
@@ -297,6 +381,11 @@ export async function GET(
               <td></td>
               <td class="right">${fmtCurrency(sgst)}</td>
             </tr>
+            ${joiningFee > 0 ? `<tr>
+              <td>Joining Fee</td>
+              <td></td>
+              <td class="right">${fmtCurrency(joiningFee)}</td>
+            </tr>` : ""}
             <tr class="total-row">
               <td colspan="2">Total</td>
               <td class="right">Rs. ${fmtCurrency(totalAmount)}</td>
@@ -305,6 +394,33 @@ export async function GET(
         </table>
       </div>
       ` : `
+      ${joiningFee > 0 ? `
+      <div class="section">
+        <div class="section-title">Charges</div>
+        <table class="tax-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="right">Amount (Rs.)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${escapeHtml(planName)}</td>
+              <td class="right">${fmtCurrency(planPortion)}</td>
+            </tr>
+            <tr>
+              <td>Joining Fee</td>
+              <td class="right">${fmtCurrency(joiningFee)}</td>
+            </tr>
+            <tr class="total-row">
+              <td>Total</td>
+              <td class="right">Rs. ${fmtCurrency(totalAmount)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      ` : ""}
       <div class="amount-section">
         <div>
           <div class="amount-label">Amount Paid</div>
@@ -326,7 +442,8 @@ export async function GET(
     </div>
 
     <div class="footer">
-      This is a computer-generated ${isTaxInvoice ? "tax invoice" : "invoice"} and does not require a signature.
+      <div>This is a computer-generated ${isTaxInvoice ? "tax invoice" : "invoice"} and does not require a signature.</div>
+      <div class="powered-by">Powered by <strong>TraqGym</strong> &middot; powered.by/traqgym</div>
     </div>
   </div>
 
