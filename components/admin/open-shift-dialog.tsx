@@ -91,7 +91,18 @@ export function OpenShiftDialog({
               onValueChange={(v) => setLocationId(v ?? "")}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select location" />
+                {/*
+                 * Bug #4 fix — Base UI's <Select.Value> renders the raw item
+                 * `value` (the FK id, e.g. "292") by default. Use the render
+                 * prop to map the selected id back to the location name so
+                 * users see "Mumbai HQ" instead of "292".
+                 */}
+                <SelectValue placeholder="Select location">
+                  {(value: string) =>
+                    locations.find((l) => String(l.id) === value)?.name ??
+                    "Select location"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {locations.map((l) => (

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -149,86 +150,168 @@ export function PtPageClient({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Member</TableHead>
-              <TableHead>Trainer</TableHead>
-              <TableHead>Sessions</TableHead>
-              <TableHead className="hidden md:table-cell">Price</TableHead>
-              <TableHead className="hidden lg:table-cell">Started</TableHead>
-              <TableHead className="hidden lg:table-cell">Expires</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visible.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell>
-                  <div className="font-medium">{p.userName}</div>
-                  {p.userPhone && (
-                    <div className="text-xs text-muted-foreground">{p.userPhone}</div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    href={`/admin/trainers/${p.trainerId}`}
-                    className="hover:underline"
-                  >
-                    {p.trainerName}
-                  </Link>
-                </TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {p.sessionsUsed} / {p.sessionsTotal}
-                  <div className="text-xs text-muted-foreground">
-                    {p.sessionsTotal - p.sessionsUsed} left
+        {/* Mobile card view (<sm) */}
+        <div className="sm:hidden space-y-2">
+          {visible.length === 0 ? (
+            <Card size="sm">
+              <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                No PT packages found
+              </CardContent>
+            </Card>
+          ) : (
+            visible.map((p) => (
+              <Card key={p.id} size="sm">
+                <CardContent className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{p.userName}</div>
+                      {p.userPhone && (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {p.userPhone}
+                        </div>
+                      )}
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={statusBadgeClass(p.status)}
+                    >
+                      {p.status}
+                    </Badge>
                   </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell whitespace-nowrap">
-                  ₹{p.totalPrice.toLocaleString("en-IN")}
-                  <div className="text-xs text-muted-foreground">
-                    ₹{p.pricePerSession.toLocaleString("en-IN")}/sess
-                  </div>
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  {p.startedAt.split("T")[0]}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  {p.expiresAt ? p.expiresAt.split("T")[0] : "—"}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={statusBadgeClass(p.status)}>
-                    {p.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    {p.status === "active" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setRecordPackageId(p.id);
-                          setRecordOpen(true);
-                        }}
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                    <dt className="text-muted-foreground">Trainer</dt>
+                    <dd className="text-right">
+                      <Link
+                        href={`/admin/trainers/${p.trainerId}`}
+                        className="hover:underline"
                       >
-                        Record Session
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {visible.length === 0 && (
+                        {p.trainerName}
+                      </Link>
+                    </dd>
+                    <dt className="text-muted-foreground">Sessions</dt>
+                    <dd className="text-right">
+                      {p.sessionsUsed} / {p.sessionsTotal}
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({p.sessionsTotal - p.sessionsUsed} left)
+                      </span>
+                    </dd>
+                    <dt className="text-muted-foreground">Price</dt>
+                    <dd className="text-right">
+                      ₹{p.totalPrice.toLocaleString("en-IN")}
+                      <span className="text-muted-foreground">
+                        {" "}
+                        (₹{p.pricePerSession.toLocaleString("en-IN")}/sess)
+                      </span>
+                    </dd>
+                    <dt className="text-muted-foreground">Started</dt>
+                    <dd className="text-right">{p.startedAt.split("T")[0]}</dd>
+                    <dt className="text-muted-foreground">Expires</dt>
+                    <dd className="text-right">
+                      {p.expiresAt ? p.expiresAt.split("T")[0] : "—"}
+                    </dd>
+                  </dl>
+                  {p.status === "active" && (
+                    <Button
+                      variant="outline"
+                      className="w-full min-h-11"
+                      onClick={() => {
+                        setRecordPackageId(p.id);
+                        setRecordOpen(true);
+                      }}
+                    >
+                      Record Session
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+
+        {/* Desktop table view (sm+) */}
+        <div className="hidden sm:block">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  No PT packages found
-                </TableCell>
+                <TableHead>Member</TableHead>
+                <TableHead>Trainer</TableHead>
+                <TableHead>Sessions</TableHead>
+                <TableHead className="hidden md:table-cell">Price</TableHead>
+                <TableHead className="hidden lg:table-cell">Started</TableHead>
+                <TableHead className="hidden lg:table-cell">Expires</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {visible.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>
+                    <div className="font-medium">{p.userName}</div>
+                    {p.userPhone && (
+                      <div className="text-xs text-muted-foreground">{p.userPhone}</div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/admin/trainers/${p.trainerId}`}
+                      className="hover:underline"
+                    >
+                      {p.trainerName}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {p.sessionsUsed} / {p.sessionsTotal}
+                    <div className="text-xs text-muted-foreground">
+                      {p.sessionsTotal - p.sessionsUsed} left
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell whitespace-nowrap">
+                    ₹{p.totalPrice.toLocaleString("en-IN")}
+                    <div className="text-xs text-muted-foreground">
+                      ₹{p.pricePerSession.toLocaleString("en-IN")}/sess
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                    {p.startedAt.split("T")[0]}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                    {p.expiresAt ? p.expiresAt.split("T")[0] : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={statusBadgeClass(p.status)}>
+                      {p.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      {p.status === "active" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setRecordPackageId(p.id);
+                            setRecordOpen(true);
+                          }}
+                        >
+                          Record Session
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {visible.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    No PT packages found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       <SellPtPackageDialog

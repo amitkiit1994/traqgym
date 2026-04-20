@@ -14,6 +14,8 @@ export async function getCollectionReport(date: string, locationId?: number) {
 
   const where: Record<string, unknown> = {
     createdAt: { gte: dayStart, lte: dayEnd },
+    userId: { not: null },
+    memberTicketId: { not: null },
   };
   if (locationId) where.locationId = locationId;
 
@@ -29,8 +31,8 @@ export async function getCollectionReport(date: string, locationId?: number) {
 
   return payments.map((p) => ({
     id: p.id,
-    memberName: `${p.user.firstname} ${p.user.lastname}`,
-    planName: p.memberTicket.plan.name,
+    memberName: p.user ? `${p.user.firstname} ${p.user.lastname}` : "—",
+    planName: p.memberTicket?.plan.name ?? "—",
     amount: Number(p.amount),
     paymentMode: p.paymentMode,
     upiReference: p.upiReference,

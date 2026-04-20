@@ -9,6 +9,7 @@
  * Expiry: invalid/expired tokens show "expired" with a dashboard link.
  */
 
+import { redirect } from "next/navigation";
 import { verifyMagicLink, type MagicPayload } from "@/lib/ai/manager";
 import { prisma } from "@/lib/prisma";
 
@@ -180,6 +181,18 @@ export default async function MagicLinkPage({
       body: "The action referenced by this link is no longer available on this insight.",
       cta: { label: "Open dashboard", href: "/admin" },
     });
+  }
+
+  // Pure-navigation actions: skip the confirm screen and redirect straight
+  // to the target href. No side-effect, no dismissal — just a deep link.
+  if (chosen.action === "navigate") {
+    const rawHref =
+      typeof chosen.args?.href === "string" ? chosen.args.href : "/admin/dashboard";
+    const safeHref =
+      rawHref.startsWith("/") && !rawHref.startsWith("//")
+        ? rawHref
+        : "/admin/dashboard";
+    redirect(safeHref);
   }
 
   const expiresLabel = new Date(verified.expiresAt).toLocaleString("en-IN", {

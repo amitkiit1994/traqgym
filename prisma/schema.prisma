@@ -198,34 +198,38 @@ model MemberTicket {
 }
 
 model Payment {
-  id                Int          @id @default(autoincrement())
-  userId            Int
-  user              User         @relation(fields: [userId], references: [id], onDelete: Restrict)
-  memberTicketId    Int
-  memberTicket      MemberTicket @relation(fields: [memberTicketId], references: [id], onDelete: Restrict)
+  id                Int           @id @default(autoincrement())
+  // userId/memberTicketId are nullable so POS sales (walk-ins, no member
+  // ticket) can also be expressed as Payment rows for cashflow + drawer
+  // reconciliation. Member-bound payments (renewals, PT, freezes, etc.)
+  // continue to set both fields.
+  userId            Int?
+  user              User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  memberTicketId    Int?
+  memberTicket      MemberTicket? @relation(fields: [memberTicketId], references: [id], onDelete: Restrict)
   locationId        Int?
-  location          Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  amount            Decimal      @db.Decimal(10, 2)
+  location          Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  amount            Decimal       @db.Decimal(10, 2)
   paymentMode       String
   upiReference      String?
   paymentNote       String?
   collectedById     Int
-  collectedBy       Worker       @relation(fields: [collectedById], references: [id], onDelete: Restrict)
+  collectedBy       Worker        @relation(fields: [collectedById], references: [id], onDelete: Restrict)
   oldExpiryDate     DateTime?
   newExpiryDate     DateTime?
-  baseAmount        Decimal?     @db.Decimal(10, 2)
-  taxRate           Decimal?     @db.Decimal(5, 2)
-  taxAmount         Decimal?     @db.Decimal(10, 2)
-  paymentStatus     String       @default("full") // full, partial, advance
+  baseAmount        Decimal?      @db.Decimal(10, 2)
+  taxRate           Decimal?      @db.Decimal(5, 2)
+  taxAmount         Decimal?      @db.Decimal(10, 2)
+  paymentStatus     String        @default("full") // full, partial, advance
   chequeNumber      String?
   chequeDate        DateTime?
   chequeStatus      String? // pending, cleared, bounced
   bankName          String?
   razorpayOrderId   String?
   razorpayPaymentId String?
-  discount          Decimal?     @db.Decimal(10, 2)
+  discount          Decimal?      @db.Decimal(10, 2)
   paymentFor        String?
-  createdAt         DateTime     @default(now())
+  createdAt         DateTime      @default(now())
 
   trainerId Int?
   trainer   Worker?    @relation("PaymentTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
@@ -236,6 +240,7 @@ model Payment {
   ptPackages          PtPackage[]
   installmentPayments PaymentInstallment[]
   refunds             Refund[]
+  sale                Sale?
 
   @@index([createdAt])
   @@index([locationId, createdAt])
@@ -760,17 +765,28 @@ model Product {
 }
 
 model Sale {
-  id          Int      @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   productId   Int
-  product     Product  @relation(fields: [productId], references: [id])
+  product     Product    @relation(fields: [productId], references: [id])
   quantity    Int
-  unitPrice   Decimal  @db.Decimal(10, 2)
-  totalAmount Decimal  @db.Decimal(10, 2)
+  unitPrice   Decimal    @db.Decimal(10, 2)
+  totalAmount Decimal    @db.Decimal(10, 2)
   userId      Int?
-  paymentMode String   @default("cash")
+  paymentMode String     @default("cash")
   locationId  Int?
   soldById    Int?
-  createdAt   DateTime @default(now())
+  // H6 — link to the universal Payment ledger so cashflow + reports include
+  // POS sales. 1:1 because each Sale produces exactly one Payment row.
+  paymentId   Int?       @unique
+  payment     Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  // H7 — tag to the open CashShift at the seller's location so cash sales
+  // reconcile against the drawer in closeShift().
+  shiftId     Int?
+  shift       CashShift? @relation("ShiftSale", fields: [shiftId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+
+  @@index([shiftId])
+  @@index([locationId, createdAt])
 }
 
 model InventoryLog {
@@ -1122,6 +1138,7 @@ model CashShift {
   notes           String?
 
   payments  Payment[]           @relation("ShiftPayment")
+  sales     Sale[]              @relation("ShiftSale")
   movements CashShiftMovement[]
 
   @@index([locationId, status])

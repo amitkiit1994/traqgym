@@ -6,6 +6,7 @@ import {
   getDailyAttendance,
   getAttendanceLocations,
   manualCheckIn,
+  checkOutAttendance,
 } from "@/lib/actions/attendance";
 import { searchMembers } from "@/lib/actions/renewals";
 import {
@@ -210,6 +211,18 @@ export default function AttendancePage() {
       if (res.success) {
         setCheckInResult("Check-out recorded");
         loadWorkerAttendance();
+      } else {
+        setCheckInResult("error" in res ? res.error ?? "Error" : "Error");
+      }
+    });
+  };
+
+  const handleMemberCheckOut = (attendanceId: number) => {
+    startTransition(async () => {
+      const res = await checkOutAttendance(attendanceId);
+      if (res.success) {
+        setCheckInResult("Check-out recorded");
+        loadMemberAttendance();
       } else {
         setCheckInResult("error" in res ? res.error ?? "Error" : "Error");
       }
@@ -421,6 +434,7 @@ export default function AttendancePage() {
                     Location <SortIcon field="location" current={sortField} dir={sortDir} />
                   </button>
                 </TableHead>
+                <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -447,11 +461,23 @@ export default function AttendancePage() {
                     <Badge variant="secondary">{r.source}</Badge>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{r.locationName}</TableCell>
+                  <TableCell>
+                    {!r.checkOut && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleMemberCheckOut(r.id)}
+                        disabled={isPending}
+                      >
+                        Check Out
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <div className="flex flex-col items-center gap-2 py-8">
                       <Calendar className="size-8 text-muted-foreground/50" />
                       <p className="text-sm text-muted-foreground">No attendance records</p>

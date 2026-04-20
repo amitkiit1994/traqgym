@@ -56,6 +56,8 @@ export async function getMyDashboard(workerId: number, locationId?: number) {
   const recentPayments = await prisma.payment.findMany({
     where: {
       collectedById: workerId,
+      userId: { not: null },
+      memberTicketId: { not: null },
       ...(locationId ? { locationId } : {}),
     },
     include: {
@@ -70,8 +72,8 @@ export async function getMyDashboard(workerId: number, locationId?: number) {
 
   const recentCollections = recentPayments.map((p) => ({
     id: p.id,
-    memberName: `${p.user.firstname} ${p.user.lastname}`,
-    planName: p.memberTicket.plan.name,
+    memberName: p.user ? `${p.user.firstname} ${p.user.lastname}` : "—",
+    planName: p.memberTicket?.plan.name ?? "—",
     amount: Number(p.amount),
     paymentMode: p.paymentMode,
     date: p.createdAt.toISOString(),

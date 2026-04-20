@@ -1,15 +1,27 @@
+import { redirect } from "next/navigation";
 import { requireWorker } from "@/lib/auth-guard";
 import { listPtPackages } from "@/lib/services/pt";
 import { prisma } from "@/lib/prisma";
 import { PtPageClient } from "./pt-page-client";
 
 export default async function PtPage() {
-  await requireWorker(["admin"]);
+  try {
+    await requireWorker(["admin"]);
+  } catch {
+    redirect("/admin/dashboard");
+  }
 
   const [packages, trainers] = await Promise.all([
     listPtPackages({ status: "active" }),
     prisma.worker.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        OR: [
+          { ptPackagesAsTrainer: { some: {} } },
+          { trainerPayments: { some: {} } },
+          { isExternal: true },
+        ],
+      },
       select: {
         id: true,
         firstname: true,

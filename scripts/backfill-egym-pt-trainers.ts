@@ -243,6 +243,10 @@ async function main() {
       continue;
     }
 
+    // PtPackage.userId is required; Payment.userId became nullable for POS
+     // sales. PT-tagged payments are always member-bound, but skip defensively.
+    if (payment.userId === null) continue;
+
     const sessionsTotal = meta.sessions > 0 ? meta.sessions : 12;
     const totalPrice = Number(payment.amount);
     const pricePerSession =

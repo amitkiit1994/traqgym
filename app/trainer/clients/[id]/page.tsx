@@ -65,6 +65,13 @@ export default async function TrainerClientDetailPage({
         new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
     );
 
+  // Last completed session (if any) for the "Last session" callout near the top.
+  const lastCompletedSession =
+    allSessions.find((s) => s.status === "completed") ?? null;
+
+  // Cap session history to 25 most recent entries to keep the page fast.
+  const sessionHistory = allSessions.slice(0, 25);
+
   const latestMeasurement = detail.recentMeasurements[0] ?? null;
 
   return (
@@ -77,11 +84,22 @@ export default async function TrainerClientDetailPage({
           <ArrowLeft className="size-3.5" /> Back to clients
         </Link>
         <h1 className="text-2xl font-bold mt-2">{detail.userName}</h1>
-        {detail.userPhone && (
-          <p className="text-sm text-muted-foreground flex items-center gap-1">
-            <Phone className="size-3.5" /> {detail.userPhone}
-          </p>
-        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          {detail.userPhone && (
+            <span className="flex items-center gap-1">
+              <Phone className="size-3.5" /> {detail.userPhone}
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <NotebookPen className="size-3.5" />
+            Last session:{" "}
+            <span className="text-foreground font-medium">
+              {lastCompletedSession
+                ? formatDate(lastCompletedSession.scheduledAt)
+                : "None yet"}
+            </span>
+          </span>
+        </div>
       </div>
 
       {/* Packages */}
@@ -188,47 +206,76 @@ export default async function TrainerClientDetailPage({
         </Card>
       )}
 
-      {/* Sessions history */}
+      {/* Session history */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
-            <NotebookPen className="size-4" /> Sessions
+            <NotebookPen className="size-4" /> Session History
           </CardTitle>
+          {allSessions.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              Showing {sessionHistory.length} of {allSessions.length}
+            </span>
+          )}
         </CardHeader>
         <CardContent>
-          {allSessions.length === 0 ? (
+          {sessionHistory.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No sessions recorded yet.
             </p>
           ) : (
-            <ul className="divide-y divide-border/50">
-              {allSessions.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex items-start justify-between gap-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
-                      {formatDateTime(s.scheduledAt)}
-                    </p>
-                    {s.notes && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {s.notes}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-start gap-2 shrink-0">
-                    <Badge variant="outline" className={statusClass(s.status)}>
-                      {s.status}
-                    </Badge>
-                    {s.status === "scheduled" &&
-                      s.packageStatus === "active" && (
-                        <CompleteSessionButton sessionId={s.id} />
-                      )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase text-muted-foreground border-b border-border/50">
+                    <th className="font-medium py-2 pr-3">Date</th>
+                    <th className="font-medium py-2 pr-3">Status</th>
+                    <th className="font-medium py-2 pr-3">Notes</th>
+                    <th className="font-medium py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionHistory.map((s) => (
+                    <tr
+                      key={s.id}
+                      className="border-b border-border/30 last:border-0 align-top"
+                    >
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {formatDateTime(s.scheduledAt)}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <Badge
+                          variant="outline"
+                          className={statusClass(s.status)}
+                        >
+                          {s.status}
+                        </Badge>
+                      </td>
+                      <td className="py-2 pr-3 max-w-[280px]">
+                        {s.notes ? (
+                          <p
+                            className="text-xs text-muted-foreground line-clamp-2"
+                            title={s.notes}
+                          >
+                            {s.notes}
+                          </p>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60">
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right">
+                        {s.status === "scheduled" &&
+                        s.packageStatus === "active" ? (
+                          <CompleteSessionButton sessionId={s.id} />
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

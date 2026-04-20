@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -484,7 +485,77 @@ export default function MembersPage() {
       </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg ring-1 ring-foreground/5 dark:ring-white/[0.06]">
+      <div className="flex-1 min-h-0 overflow-y-auto sm:rounded-lg sm:ring-1 sm:ring-foreground/5 sm:dark:ring-white/[0.06]">
+      {/* Mobile card view (<sm) */}
+      <div className="sm:hidden space-y-2">
+        {members.map((m) => (
+          <Card key={m.id} size="sm">
+            <CardContent className="space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">
+                    {m.firstname} {m.lastname}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {m.email}
+                  </div>
+                  {m.phone && (
+                    <div className="text-xs text-muted-foreground truncate">
+                      {m.phone}
+                    </div>
+                  )}
+                </div>
+                <Badge variant={statusVariant[m.status]}>
+                  {statusLabel[m.status]}
+                </Badge>
+              </div>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <dt className="text-muted-foreground">Location</dt>
+                <dd className="text-right truncate">{m.locationName}</dd>
+                <dt className="text-muted-foreground">Plan</dt>
+                <dd className="text-right">
+                  <Badge variant="outline">{m.planName ?? "—"}</Badge>
+                </dd>
+                <dt className="text-muted-foreground">Risk</dt>
+                <dd className="text-right">
+                  <Badge variant={riskVariant[m.riskLevel]} title={m.riskReason}>
+                    {riskLabel[m.riskLevel]}
+                  </Badge>
+                </dd>
+              </dl>
+              <Link href={`/admin/members/${m.id}`} className="block">
+                <Button variant="outline" className="w-full min-h-11">
+                  View
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        ))}
+        {members.length === 0 && (
+          <Card size="sm">
+            <CardContent>
+              <div className="flex flex-col items-center gap-2 py-8">
+                <Users className="size-8 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground text-center">
+                  {planFilter !== "all"
+                    ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
+                    : statusFilter !== "all"
+                      ? `No ${statusFilter} members`
+                      : search
+                        ? `No members match "${search}"`
+                        : "No members found"}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+                  Add Member
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Desktop table view (sm+) */}
+      <div className="hidden sm:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -552,6 +623,7 @@ export default function MembersPage() {
           )}
         </TableBody>
       </Table>
+      </div>
       </div>
 
       {totalPages > 1 && (

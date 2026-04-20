@@ -72,6 +72,7 @@ export default function RenewalsPage() {
   const [locationId, setLocationId] = useState("");
   const [paymentMode, setPaymentMode] = useState("cash");
   const [upiReference, setUpiReference] = useState("");
+  const [amountPaid, setAmountPaid] = useState("");
   const [promoCode, setPromoCode] = useState("");
   const [promoResult, setPromoResult] = useState<{
     valid: boolean;
@@ -170,9 +171,28 @@ export default function RenewalsPage() {
     }
   };
 
+  const getEffectiveTotal = (): number => {
+    if (promoResult?.valid && typeof promoResult.finalPrice === "number") {
+      return promoResult.finalPrice;
+    }
+    return getSelectedPlanPrice();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMember || !planId || !locationId) return;
+
+    const total = getEffectiveTotal();
+    const trimmed = amountPaid.trim();
+    const parsedAmountPaid = trimmed === "" ? undefined : Number(trimmed);
+    if (parsedAmountPaid !== undefined && (!Number.isFinite(parsedAmountPaid) || parsedAmountPaid < 0)) {
+      setResult({ error: "Amount paid must be a non-negative number" });
+      return;
+    }
+    if (parsedAmountPaid !== undefined && parsedAmountPaid > total) {
+      setResult({ error: `Amount paid cannot exceed total (${total})` });
+      return;
+    }
 
     startTransition(async () => {
       const res = await submitRenewal({
@@ -182,6 +202,7 @@ export default function RenewalsPage() {
         paymentMode,
         upiReference: paymentMode === "upi" ? upiReference : undefined,
         promoCode: promoResult?.valid ? promoCode : undefined,
+        amountPaid: parsedAmountPaid,
       });
       setResult(res);
     });
@@ -322,6 +343,28 @@ export default function RenewalsPage() {
                     <p className="text-destructive">{promoResult.error}</p>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* Amount Paid (partial-pay support) */}
+            <div className="space-y-2">
+              <Label htmlFor="amountPaid">
+                Amount Paid <span className="text-muted-foreground text-xs">(default = full plan price)</span>
+              </Label>
+              <Input
+                id="amountPaid"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                placeholder={String(getEffectiveTotal() || "0")}
+                value={amountPaid}
+                onChange={(e) => setAmountPaid(e.target.value)}
+              />
+              {amountPaid.trim() !== "" && Number(amountPaid) >= 0 && Number(amountPaid) < getEffectiveTotal() && (
+                <p className="text-xs text-muted-foreground">
+                  Balance due: Rs.{(getEffectiveTotal() - Number(amountPaid)).toFixed(2)} — member access stays active.
+                </p>
               )}
             </div>
 

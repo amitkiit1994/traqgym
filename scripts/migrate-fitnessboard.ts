@@ -321,7 +321,10 @@ async function main() {
 
   for (const row of allPeople) {
     const phone = cleanPhone(row["Contact No."]);
-    if (!phone || phone.length < 10) continue;
+    // Relaxed from `< 10` so legacy short phones (e.g. Nitin's 9-digit
+    // 554490110) survive instead of dropping the user + every payment that
+    // joins on phone. Numbers with < 7 digits are still treated as junk.
+    if (!phone || phone.length < 7) continue;
     if (phoneToUserId.has(phone)) {
       // Deduplicate by phone
       fbIdToUserId.set(row["Prospect Id"], phoneToUserId.get(phone)!);
@@ -355,6 +358,11 @@ async function main() {
     // Skip sentinel DOB "01-01-1900"
     const birthdate = dob && dob.getFullYear() > 1900 ? dob : null;
 
+    // Preserve historical signup date so cohort/MoM reports aren't all
+    // collapsed onto the import date. Falls back to undefined => Prisma
+    // default of now() for rows without "Created On".
+    const createdAtRaw = parseDate(row["Created On"] || "");
+
     const existing = await prisma.user.findUnique({ where: { email } });
     let userId: number;
     if (existing) {
@@ -376,6 +384,7 @@ async function main() {
           occupation: (occupation && occupation !== "N/a" && occupation !== "") ? occupation : null,
           anniversaryDate,
           govtId: govtIdFinal,
+          createdAt: createdAtRaw || undefined,
         },
       });
       userId = user.id;
@@ -477,11 +486,16 @@ async function main() {
     if (!userId) continue;
 
     const amount = parseDecimal(row["Paid Amount"]);
-    if (amount <= 0) continue;
+    // Don't drop zero-amount rows — they represent comp passes / waived
+    // joining fees that owner needs to see in the comp ledger. Negative
+    // amounts (rare; refunds in source) are still skipped.
+    if (amount < 0) continue;
 
     const paymentDate = parseDate(row["Payment Date"]) || parseDate(row["Created On"]);
     const invoiceNo = row["InvoiceNo"]?.trim();
-    const paymentMode = mapPaymentMode(row["Payment Mode"]);
+    // Zero-amount rows are comps — overwrite mode so the dashboard cash/UPI
+    // filters and the comp-auditor agent both classify them correctly.
+    const paymentMode = amount === 0 ? "complimentary" : mapPaymentMode(row["Payment Mode"]);
     const discount = parseDecimal(row["Discount"]);
     const paymentFor = row["Payment For"]?.trim() || null;
     const remarks = row["Remarks"]?.trim() || null;

@@ -1,12 +1,13 @@
 "use client";
 
 import { Fragment, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   processRefundAction,
   rejectRefundAction,
 } from "@/lib/actions/refund";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -162,11 +163,24 @@ export function RefundsClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold">Refunds</h1>
-        <p className="text-sm text-muted-foreground">
-          {initialRows.length} {activeStatus === "all" ? "" : activeStatus} refund
-          {initialRows.length === 1 ? "" : "s"}
-        </p>
+        <div>
+          <h1 className="text-xl font-semibold">Refunds</h1>
+          <p className="text-sm text-muted-foreground">
+            {initialRows.length} {activeStatus === "all" ? "" : activeStatus} refund
+            {initialRows.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        {/* Refund requests are tied to a Payment row, so they must originate
+            from a member's detail page. The CTA links to the members index
+            with intent=refund so /admin/members can highlight the action.
+            We compose buttonVariants on a Link instead of <Button asChild> —
+            the local Button (Base UI primitive) does not accept asChild. */}
+        <Link
+          href="/admin/members?intent=refund"
+          className={buttonVariants({ size: "sm" })}
+        >
+          Request Refund
+        </Link>
       </div>
 
       <div className="flex gap-1 border-b flex-nowrap overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">

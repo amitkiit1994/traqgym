@@ -38,12 +38,24 @@ export async function getStats(locationId?: number) {
     planDistRaw
   ] = await Promise.all([
     // Active members
+    // C4: only count currently-usable tickets — exclude cancelled, expired, upgraded, renewed.
+    // Also exclude members whose ticket is currently frozen (freeze does not flip ticket.status).
     prisma.user.count({
       where: {
         ...where,
         memberTickets: {
           some: {
+            status: "active",
             expireDate: { gte: now },
+          },
+        },
+        NOT: {
+          freezes: {
+            some: {
+              status: "active",
+              freezeStart: { lte: now },
+              freezeEnd: { gte: now },
+            },
           },
         },
       },
@@ -111,21 +123,21 @@ export async function getStats(locationId?: number) {
         },
       },
     }),
-    // Cash this month (case-insensitive: "Cash" or "cash")
+    // Cash this month — M6: canonical lowercase + case-insensitive match
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: { in: ["Cash", "cash"] },
+        paymentMode: { equals: "cash", mode: "insensitive" },
       },
       _sum: { amount: true },
     }),
-    // UPI this month (case-insensitive: "UPI" or "upi")
+    // UPI this month — M6: canonical lowercase + case-insensitive match
     prisma.payment.aggregate({
       where: {
         ...where,
         createdAt: { gte: monthStart, lt: monthEnd },
-        paymentMode: { in: ["UPI", "upi"] },
+        paymentMode: { equals: "upi", mode: "insensitive" },
       },
       _sum: { amount: true },
     }),
@@ -141,36 +153,32 @@ export async function getStats(locationId?: number) {
         user: { select: { firstname: true, lastname: true } },
       },
     }),
-    // Overdue members — scoped to last 90 days (not all-time)
-    (() => {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      return prisma.user.findMany({
-        where: {
-          ...where,
+    // Overdue members — surface ALL expired members (M4: removed 90-day floor)
+    prisma.user.findMany({
+      where: {
+        ...where,
+        memberTickets: {
+          some: {
+            expireDate: { lt: sevenDaysAgoDate },
+          },
+        },
+        NOT: {
           memberTickets: {
             some: {
-              expireDate: { gte: ninetyDaysAgo, lt: sevenDaysAgoDate },
-            },
-          },
-          NOT: {
-            memberTickets: {
-              some: {
-                expireDate: { gte: sevenDaysAgoDate },
-              },
+              expireDate: { gte: sevenDaysAgoDate },
             },
           },
         },
-        include: {
-          memberTickets: {
-            orderBy: { expireDate: "desc" },
-            take: 1,
-            include: { plan: { select: { id: true, name: true } } },
-          },
+      },
+      include: {
+        memberTickets: {
+          orderBy: { expireDate: "desc" },
+          take: 1,
+          include: { plan: { select: { id: true, name: true } } },
         },
-        take: 50,
-      });
-    })(),
+      },
+      take: 50,
+    }),
     // Plan distribution
     prisma.memberTicket.groupBy({
       by: ["planId"],
@@ -400,6 +408,8 @@ export async function getDailyCollection(locationId?: number) {
 
   const where: Record<string, unknown> = {
     createdAt: { gte: todayStart, lt: todayEnd },
+    // C1: exclude complimentary payments from daily collection totals + staff breakdown
+    paymentMode: { not: { equals: "complimentary", mode: "insensitive" } },
   };
   if (locationId) where.locationId = locationId;
 
@@ -434,8 +444,11 @@ export async function getDailyCollection(locationId?: number) {
     if (existing) {
       existing.total += amt;
     } else {
+      // M7: defensive null-coalesce — POS sale paths recently became more permissive
+      const firstname = p.collectedBy?.firstname ?? "Unknown";
+      const lastname = p.collectedBy?.lastname ?? "";
       staffMap.set(p.collectedById, {
-        name: `${p.collectedBy.firstname} ${p.collectedBy.lastname}`,
+        name: `${firstname} ${lastname}`.trim(),
         total: amt,
       });
     }
@@ -448,7 +461,7 @@ export async function getDailyCollection(locationId?: number) {
 }
 
 export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
-  const [workers, paymentsByWorker, attendance] = await Promise.all([
+  const [workers, paymentsByWorker, distinctTicketRows, attendance] = await Promise.all([
     prisma.worker.findMany({
       where: { isActive: true },
       select: { id: true, firstname: true, lastname: true, role: true },
@@ -457,8 +470,17 @@ export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
       by: ["collectedById", "paymentMode"],
       where: { createdAt: { gte: monthStart, lt: monthEnd } },
       _sum: { amount: true },
-      _count: { id: true },
     }),
+    // M2: renewal count must be DISTINCT memberTicketId per worker — partial
+    // payments share a memberTicketId so raw payment-row counts double-count.
+    prisma.$queryRaw<Array<{ collectedById: number; cnt: bigint }>>(Prisma.sql`
+      SELECT "collectedById", COUNT(DISTINCT "memberTicketId")::bigint AS cnt
+      FROM "Payment"
+      WHERE "createdAt" >= ${monthStart}
+        AND "createdAt" < ${monthEnd}
+        AND "memberTicketId" IS NOT NULL
+      GROUP BY "collectedById"
+    `),
     prisma.attendanceLog.findMany({
       where: {
         attendanceDate: { gte: monthStart, lt: monthEnd },
@@ -473,11 +495,17 @@ export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
   const workerStatsMap = new Map<number, { cash: number; upi: number; count: number }>();
   for (const row of paymentsByWorker) {
     const existing = workerStatsMap.get(row.collectedById) || { cash: 0, upi: 0, count: 0 };
-    const amt = Number(row._sum.amount || 0);
+    // M5: use Prisma.Decimal.toNumber() for the conventional precision-aware path
+    const amt = (row._sum.amount ?? new Prisma.Decimal(0)).toNumber();
     const mode = row.paymentMode.toLowerCase();
     if (mode === "cash") existing.cash += amt;
     else if (mode === "upi") existing.upi += amt;
-    existing.count += row._count.id;
+    workerStatsMap.set(row.collectedById, existing);
+  }
+  // Apply distinct-ticket counts (M2)
+  for (const row of distinctTicketRows) {
+    const existing = workerStatsMap.get(row.collectedById) || { cash: 0, upi: 0, count: 0 };
+    existing.count = Number(row.cnt);
     workerStatsMap.set(row.collectedById, existing);
   }
 
@@ -589,27 +617,27 @@ export async function getDailyPOSCollection(locationId?: number) {
 export async function getTodayCounts(locationId?: number) {
   const now = todayIST();
   const todayStart = new Date(now);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  // M1: use exclusive end (start + 24h) for clean half-open interval semantics
+  const todayEndExclusive = new Date(todayStart.getTime() + 86400000);
 
   const [prospects, followups, renewals, newMembers] = await Promise.all([
     prisma.enquiry.count({
       where: {
-        createdAt: { gte: todayStart, lte: todayEnd },
+        createdAt: { gte: todayStart, lt: todayEndExclusive },
         ...(locationId ? { locationId } : {}),
       },
     }),
     prisma.enquiryFollowup.count({
-      where: { createdAt: { gte: todayStart, lte: todayEnd } },
+      where: { createdAt: { gte: todayStart, lt: todayEndExclusive } },
     }),
     prisma.memberTicket.count({
       where: {
-        buyDate: { gte: todayStart, lte: todayEnd },
+        buyDate: { gte: todayStart, lt: todayEndExclusive },
         ...(locationId ? { locationId } : {}),
       },
     }),
     prisma.user.count({
-      where: { createdAt: { gte: todayStart, lte: todayEnd } },
+      where: { createdAt: { gte: todayStart, lt: todayEndExclusive } },
     }),
   ]);
 
@@ -620,7 +648,8 @@ export async function getFinancialSplit(locationId?: number) {
   const locFilter = locationId ? { locationId } : {};
 
   const all = await prisma.memberTicket.aggregate({
-    where: { status: { not: "cancelled" }, ...locFilter },
+    // C3: exclude complimentary tickets from billed/received/due totals
+    where: { status: { not: "cancelled" }, isComplimentary: false, ...locFilter },
     _sum: { totalAmount: true, amountPaid: true },
   });
 

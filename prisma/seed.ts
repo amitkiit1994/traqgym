@@ -19,6 +19,55 @@ function todayDate(): Date {
   return d;
 }
 
+// Default POS catalog for a fresh gym instance. Idempotent — re-running the
+// seed will not create duplicates because we look up by name first. We do not
+// reset stock/price on re-seed so manual catalog tweaks survive.
+//
+// NOTE: Product.name is not @unique in the schema, so we cannot use upsert()
+// against name. We use findFirst + create instead.
+const DEFAULT_POS_PRODUCTS: Array<{
+  name: string;
+  price: number;
+  stock: number;
+  category: string;
+}> = [
+  // Supplements
+  { name: "Whey Protein 1kg", price: 2499, stock: 10, category: "supplement" },
+  { name: "Mass Gainer 1kg", price: 1899, stock: 10, category: "supplement" },
+  { name: "Pre-workout 300g", price: 1799, stock: 10, category: "supplement" },
+  // Snacks / quick energy
+  { name: "Protein Bar", price: 120, stock: 50, category: "snack" },
+  { name: "Energy Gel", price: 80, stock: 50, category: "snack" },
+  { name: "Glucose Sachet", price: 20, stock: 100, category: "snack" },
+  // Hydration / accessories
+  { name: "Water Bottle 1L", price: 150, stock: 30, category: "accessory" },
+  { name: "Shaker", price: 250, stock: 20, category: "accessory" },
+  { name: "Hand Towel", price: 350, stock: 20, category: "accessory" },
+  // Gym gear
+  { name: "Wrist Wraps", price: 399, stock: 15, category: "gear" },
+  { name: "Lifting Belt", price: 999, stock: 10, category: "gear" },
+  { name: "Resistance Band", price: 599, stock: 15, category: "gear" },
+];
+
+export async function seedPosProducts(): Promise<{
+  created: number;
+  skipped: number;
+}> {
+  let created = 0;
+  let skipped = 0;
+  for (const p of DEFAULT_POS_PRODUCTS) {
+    const existing = await prisma.product.findFirst({ where: { name: p.name } });
+    if (existing) {
+      skipped++;
+      continue;
+    }
+    await prisma.product.create({ data: p });
+    created++;
+  }
+  console.log(`POS products: ${created} created, ${skipped} already existed`);
+  return { created, skipped };
+}
+
 async function main() {
   // Clear existing data
   await prisma.userDietPlan.deleteMany();
@@ -970,6 +1019,13 @@ async function main() {
     console.log("New model seed data created successfully");
   } catch (err) {
     console.error("Warning: Failed to seed new models (non-blocking):", err);
+  }
+
+  // ── Default POS catalog (idempotent, makes /admin/pos usable on a fresh DB) ──
+  try {
+    await seedPosProducts();
+  } catch (err) {
+    console.error("Warning: Failed to seed POS products (non-blocking):", err);
   }
 
   // ── In-App Notifications ──

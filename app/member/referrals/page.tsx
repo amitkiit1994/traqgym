@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Gift } from "lucide-react";
+import { ReferralForm } from "@/components/member/referral-form";
 
 export default async function MemberReferralsPage() {
   const session = await getServerSession(authOptions);
@@ -38,6 +39,8 @@ export default async function MemberReferralsPage() {
   return (
     <div className="space-y-4 md:space-y-6 p-3 md:p-6">
       <h1 className="text-2xl font-bold">My Referrals</h1>
+
+      <ReferralForm />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>

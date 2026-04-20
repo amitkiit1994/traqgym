@@ -482,6 +482,57 @@ function templateBody(insight: Insight): string {
   return insight.body.trim();
 }
 
+// ─── Localized subject (deterministic, no LLM) ─────────────────────────────
+
+/**
+ * Render a localized email/Telegram subject. Hardcoded per-language templates
+ * — no LLM call so subjects are stable, instant, and never block delivery.
+ *
+ * Style cues come from lib/ai/prompts/manager-{en,hi,hinglish}.txt.
+ */
+function renderSubject(args: {
+  lang: Lang;
+  gymName: string;
+  counts: { critical: number; high: number; medium: number; low: number };
+  totalImpact: number;
+}): string {
+  const { lang, gymName, counts, totalImpact } = args;
+  const impactStr = totalImpact > 0 ? formatRupees(totalImpact) : "";
+
+  if (lang === "hi") {
+    const parts: string[] = [];
+    if (counts.critical > 0) parts.push(`${counts.critical} critical`);
+    if (counts.high > 0) parts.push(`${counts.high} high`);
+    if (parts.length === 0 && counts.medium > 0)
+      parts.push(`${counts.medium} medium`);
+    const summary = parts.length > 0 ? parts.join(", ") : "कोई critical नहीं";
+    return impactStr
+      ? `[${gymName}] सुबह की रिपोर्ट — ${summary} (${impactStr} असर)`
+      : `[${gymName}] सुबह की रिपोर्ट — ${summary}`;
+  }
+  if (lang === "hinglish") {
+    const parts: string[] = [];
+    if (counts.critical > 0) parts.push(`${counts.critical} critical`);
+    if (counts.high > 0) parts.push(`${counts.high} high`);
+    if (parts.length === 0 && counts.medium > 0)
+      parts.push(`${counts.medium} medium`);
+    const summary = parts.length > 0 ? parts.join(", ") : "koi critical nahi";
+    return impactStr
+      ? `[${gymName}] Subah ki briefing — ${summary} (${impactStr} impact)`
+      : `[${gymName}] Subah ki briefing — ${summary}`;
+  }
+  // Default: English
+  const parts: string[] = [];
+  if (counts.critical > 0) parts.push(`${counts.critical} critical`);
+  if (counts.high > 0) parts.push(`${counts.high} high`);
+  if (parts.length === 0 && counts.medium > 0)
+    parts.push(`${counts.medium} medium`);
+  const summary = parts.length > 0 ? parts.join(", ") : "no critical items";
+  return impactStr
+    ? `[${gymName}] Morning briefing — ${summary} (${impactStr} impact)`
+    : `[${gymName}] Morning briefing — ${summary}`;
+}
+
 // ─── composeBriefing ───────────────────────────────────────────────────────
 
 export async function composeBriefing(args: {
@@ -581,16 +632,14 @@ export async function composeBriefing(args: {
     };
   });
 
-  // Subject: "[Gym] Morning briefing — 3 critical, 2 high (₹52k impact)"
-  const parts: string[] = [];
-  if (counts.critical > 0) parts.push(`${counts.critical} critical`);
-  if (counts.high > 0) parts.push(`${counts.high} high`);
-  if (parts.length === 0 && counts.medium > 0) parts.push(`${counts.medium} medium`);
-  const summary = parts.length > 0 ? parts.join(", ") : "no critical items";
-  const subject =
-    totalImpact > 0
-      ? `[${args.gymName}] Morning briefing — ${summary} (${formatRupees(totalImpact)} impact)`
-      : `[${args.gymName}] Morning briefing — ${summary}`;
+  // Subject: localized per `args.lang`. Hardcoded templates (no LLM) so the
+  // subject is deterministic across runs and never blocked on an OpenAI call.
+  const subject = renderSubject({
+    lang: args.lang,
+    gymName: args.gymName,
+    counts,
+    totalImpact,
+  });
 
   return {
     subject,

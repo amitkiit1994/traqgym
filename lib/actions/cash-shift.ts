@@ -73,19 +73,26 @@ export async function closeShiftAction(params: {
   }
   const closedById = parseInt(session.user.id, 10);
 
-  // Authz: a staff worker may only close shifts at their own location. Admins
-  // may close any shift. Reason: prevents Location-A staff from closing
-  // Location-B's shift (drawer counts and variance approvals must stay with
-  // the staff who actually held the cash).
+  // Authz: a staff worker may close shifts they opened OR shifts at their
+  // own location. Admins may close any shift.
+  //
+  // H5 fix — the previous rule rejected the OPENER if their `locationId`
+  // didn't match (e.g. multi-location workers, staff with `locationId=null`,
+  // or staff whose locationId changed mid-shift). Drawer ownership belongs
+  // to whoever opened the drawer, so let the opener close it unconditionally.
+  // Cross-location strangers are still rejected.
   const role = session.user.role;
   if (role !== "admin") {
     const shift = await prisma.cashShift.findUnique({
       where: { id: params.shiftId },
-      select: { locationId: true },
+      select: { locationId: true, openedById: true },
     });
     if (!shift) return { success: false, error: "Shift not found" };
     const callerLocationId = session.user.locationId;
-    if (callerLocationId == null || callerLocationId !== shift.locationId) {
+    const isOpener = shift.openedById === closedById;
+    const isSameLocation =
+      callerLocationId != null && callerLocationId === shift.locationId;
+    if (!isOpener && !isSameLocation) {
       return { success: false, error: "Forbidden: not your shift's location" };
     }
   }

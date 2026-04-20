@@ -23,9 +23,19 @@ export async function sellProductAction(params: {
   locationId?: number;
   soldById?: number;
 }) {
-  try { await requireWorker(); } catch { return { success: false, error: "Unauthorized" }; }
+  let session;
+  try { session = await requireWorker(); } catch { return { success: false, error: "Unauthorized" }; }
+  // Default soldById/locationId from the session so the Payment ledger row
+  // (H6) and shift attribution (H7) work even if the UI omits them.
+  const sessionWorkerId = parseInt(session.user.id, 10);
+  const sessionLocationId = session.user.locationId ?? undefined;
+  const merged = {
+    ...params,
+    soldById: params.soldById ?? (Number.isFinite(sessionWorkerId) ? sessionWorkerId : undefined),
+    locationId: params.locationId ?? sessionLocationId,
+  };
   try {
-    return await sellProduct(params);
+    return await sellProduct(merged);
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
   }

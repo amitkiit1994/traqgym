@@ -125,6 +125,13 @@ async function resolveOwnerLang(opts: {
 export async function runManagerBriefing(opts?: {
   /** Override which channels to deliver on. Defaults to enabled-by-settings. */
   channels?: BriefingChannel[];
+  /**
+   * When true, skip the per-insight fatigue dedup window so the briefing fires
+   * even if every insight was delivered within `manager_min_repeat_hours`.
+   * Used by the cron route when `?force=1` is passed alongside the Bearer
+   * secret — handy for ops smoke-tests and manual re-runs.
+   */
+  force?: boolean;
 }): Promise<Response> {
   // Telegram /snooze command writes `briefing_quiet_until` (ISO datetime) to
   // silence the next briefing. Honour it before any other work.
@@ -251,12 +258,32 @@ export async function runManagerBriefing(opts?: {
     limit: 50,
   });
 
-  // PR 16 K.1 — drop insights surfaced too recently.
+  // PR 16 K.1 — drop insights surfaced too recently. When `opts.force` is set
+  // (e.g. cron called with `?force=1`) bypass the dedup window entirely so an
+  // operator can re-trigger the briefing for testing.
   const now = Date.now();
-  const insights = allInsights.filter((ins) => {
-    if (!ins.lastNotifiedAt) return true;
-    return now - ins.lastNotifiedAt.getTime() >= minRepeatMs;
-  });
+  const insights = opts?.force
+    ? allInsights
+    : allInsights.filter((ins) => {
+        if (!ins.lastNotifiedAt) return true;
+        return now - ins.lastNotifiedAt.getTime() >= minRepeatMs;
+      });
+
+  // Log fatigue state clearly so ops can see why a run was suppressed.
+  if (allInsights.length > 0) {
+    const fatigueRows = allInsights.map((ins) => ({
+      insightId: ins.id,
+      severity: ins.severity,
+      lastNotifiedAt: ins.lastNotifiedAt?.toISOString() ?? null,
+      withinFatigueWindow: ins.lastNotifiedAt
+        ? now - ins.lastNotifiedAt.getTime() < minRepeatMs
+        : false,
+    }));
+    console.log(
+      `[manager-runner] fatigue check (force=${!!opts?.force}, minRepeatHours=${minRepeatHours}):`,
+      JSON.stringify(fatigueRows)
+    );
+  }
 
   // PR 16 K.1 — skip-day rules. On a closed day we send only a single
   // abbreviated Telegram line with the count, and skip the long email entirely.

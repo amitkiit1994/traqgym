@@ -154,11 +154,28 @@ export async function updateEnquiry(
     followUpDate?: string | null;
     interest?: string;
     source?: string;
+    assignedTo?: number | null;
+    // Follow-up fields (H8 fix): when provided, atomically create
+    // an EnquiryFollowup row alongside the status update so admin
+    // staff can record next-action / outcome / note from the edit dialog.
+    followupNote?: string;
+    followupAction?: string;
+    followupOutcome?: string;
+    nextFollowupAt?: string | null;
   }
 ) {
-  try { await requireWorker(); } catch { return { error: "Unauthorized" }; }
+  let session;
+  try {
+    session = await requireWorker();
+  } catch {
+    return { error: "Unauthorized" };
+  }
+  // Validate the subset of fields the existing schema knows about.
+  // Extra fields (followupNote, nextFollowupAt, etc.) are ignored by
+  // safeParse so they pass through untouched.
   const parsed = updateEnquirySchema.safeParse(data);
   if (!parsed.success) return { error: Object.values(zodErrors(parsed.error))[0] };
+
   const updateData: Record<string, unknown> = {};
   if (data.status !== undefined) updateData.status = data.status;
   if (data.notes !== undefined) updateData.notes = data.notes || null;
@@ -166,11 +183,83 @@ export async function updateEnquiry(
     updateData.followUpDate = data.followUpDate ? new Date(data.followUpDate) : null;
   if (data.interest !== undefined) updateData.interest = data.interest || null;
   if (data.source !== undefined) updateData.source = data.source;
+  if (data.assignedTo !== undefined) updateData.assignedTo = data.assignedTo;
 
-  await prisma.enquiry.update({ where: { id }, data: updateData });
+  // Decide whether the staff is recording a follow-up. We only create
+  // an EnquiryFollowup row when at least one of: a non-empty note,
+  // a next-action date, or an explicit outcome is supplied. Status-only
+  // edits must not create empty followup rows.
+  const trimmedNote = (data.followupNote ?? "").trim();
+  const hasNextDate = !!data.nextFollowupAt;
+  const hasOutcome = !!data.followupOutcome;
+  const shouldCreateFollowup = trimmedNote.length > 0 || hasNextDate || hasOutcome;
+
+  const workerIdRaw = session?.user?.id ? parseInt(session.user.id, 10) : NaN;
+  const hasWorker = Number.isFinite(workerIdRaw);
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(updateData).length > 0) {
+      await tx.enquiry.update({ where: { id }, data: updateData });
+    }
+
+    if (shouldCreateFollowup && hasWorker) {
+      // Resolve the action/outcome with sensible defaults so the row
+      // satisfies the schema's NOT NULL constraints. The caller may
+      // override either via followupAction / followupOutcome.
+      const action = (data.followupAction || "call").trim();
+      const outcome = (data.followupOutcome || inferOutcomeFromStatus(data.status)).trim();
+
+      await tx.enquiryFollowup.create({
+        data: {
+          enquiryId: id,
+          workerId: workerIdRaw,
+          action,
+          outcome,
+          notes: trimmedNote || null,
+          nextFollowupAt: data.nextFollowupAt ? new Date(data.nextFollowupAt) : null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: "enquiry_followup_added",
+          status: "success",
+          actorId: workerIdRaw,
+          actorType: "worker",
+          details: JSON.stringify({
+            enquiryId: id,
+            outcome,
+            followAction: action,
+            hasNote: trimmedNote.length > 0,
+            nextFollowupAt: data.nextFollowupAt ?? null,
+          }),
+        },
+      });
+    }
+  });
+
   revalidatePath("/admin/enquiries");
   revalidateTag("sidebar-counts", "max");
   return { success: true };
+}
+
+// Map an Enquiry.status into a sensible EnquiryFollowup.outcome when the
+// dialog does not pass one explicitly. Mirrors the values used by
+// lib/services/enquiry-followup.ts (call/visit/whatsapp + interested/
+// not_interested/no_answer/callback/visited/converted).
+function inferOutcomeFromStatus(status?: string): string {
+  switch (status) {
+    case "converted":
+      return "converted";
+    case "lost":
+      return "not_interested";
+    case "contacted":
+      return "interested";
+    case "follow_up":
+      return "callback";
+    default:
+      return "interested";
+  }
 }
 
 export async function convertEnquiry(enquiryId: number) {

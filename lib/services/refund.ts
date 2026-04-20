@@ -639,9 +639,11 @@ export async function getRefundDetail(id: number): Promise<RefundRow | null> {
 type RefundQueryRow = Refund & {
   requestedBy: { id: number; firstname: string; lastname: string };
   approvedBy: { id: number; firstname: string; lastname: string } | null;
+  // Payment.user/userId are nullable (POS sales have no member); the refund
+  // mapper handles null via optional-chain on `r.payment?.user`.
   payment: {
-    userId: number;
-    user: { firstname: string; lastname: string };
+    userId: number | null;
+    user: { firstname: string; lastname: string } | null;
   };
 };
 

@@ -42,6 +42,7 @@ export async function getOnlinePayments(locationId?: number) {
   try {
     const where: Record<string, unknown> = {
       razorpayPaymentId: { not: null },
+      userId: { not: null },
     };
     if (locationId) where.locationId = locationId;
 
@@ -53,16 +54,18 @@ export async function getOnlinePayments(locationId?: number) {
       orderBy: { createdAt: "desc" },
     });
 
-    return payments.map((p) => ({
-      id: p.id,
-      userId: p.userId,
-      memberName: `${p.user.firstname} ${p.user.lastname}`,
-      amount: Number(p.amount),
-      razorpayOrderId: p.razorpayOrderId,
-      razorpayPaymentId: p.razorpayPaymentId,
-      paymentMode: p.paymentMode,
-      createdAt: p.createdAt.toISOString(),
-    }));
+    return payments
+      .filter((p) => p.user !== null)
+      .map((p) => ({
+        id: p.id,
+        userId: p.userId,
+        memberName: `${p.user!.firstname} ${p.user!.lastname}`,
+        amount: Number(p.amount),
+        razorpayOrderId: p.razorpayOrderId,
+        razorpayPaymentId: p.razorpayPaymentId,
+        paymentMode: p.paymentMode,
+        createdAt: p.createdAt.toISOString(),
+      }));
   } catch {
     return [];
   }

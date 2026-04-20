@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { getOpenShiftFor } from "@/lib/services/cash-shift";
+import { computeGstSplitInclusive, getGymGstRate } from "@/lib/services/tax";
 
 export async function getProducts(category?: string) {
   return prisma.product.findMany({
@@ -18,6 +20,26 @@ export async function sellProduct(params: {
   locationId?: number;
   soldById?: number;
 }) {
+  // H7 — pre-resolve open shift at the seller's location so cash sales tag
+  // automatically. Lookup outside the txn is safe: closeShift is idempotent
+  // and tolerates a payment posting one slot late; we still re-check status
+  // inside the txn to avoid tagging a shift that just closed.
+  let resolvedShiftId: number | null = null;
+  if (params.locationId != null) {
+    const open = await getOpenShiftFor(params.locationId);
+    if (open) resolvedShiftId = open.id;
+    else {
+      // Don't block sale; just log so ops can spot drawer-untagged cash.
+      console.warn(
+        `[pos.sellProduct] No open shift at location ${params.locationId}; sale will not be drawer-attributed.`
+      );
+    }
+  }
+
+  // GST rate read once outside the txn — POS prices are tax-inclusive, so the
+  // Payment row must carry the split for Tally / GSTR-1.
+  const gymGstRate = await getGymGstRate();
+
   return prisma.$transaction(async (tx) => {
     const product = await tx.product.findUnique({
       where: { id: params.productId },
@@ -37,6 +59,41 @@ export async function sellProduct(params: {
 
     const totalAmount = Number(product.price) * params.quantity;
 
+    // Re-check the open shift inside the txn so we never tag a shift that
+    // closed between our pre-lookup and the insert.
+    let shiftIdToUse: number | null = null;
+    if (resolvedShiftId != null) {
+      const stillOpen = await tx.cashShift.findFirst({
+        where: { id: resolvedShiftId, status: "open" },
+        select: { id: true },
+      });
+      shiftIdToUse = stillOpen ? resolvedShiftId : null;
+    }
+
+    // H6 — record the corresponding Payment row so cashflow + reports
+    // include POS revenue. soldById is the worker; required by Payment.
+    let paymentIdToUse: number | null = null;
+    if (params.soldById != null) {
+      const gstSplit = computeGstSplitInclusive(totalAmount, gymGstRate);
+      const payment = await tx.payment.create({
+        data: {
+          userId: params.userId ?? null,
+          memberTicketId: null,
+          locationId: params.locationId ?? null,
+          amount: totalAmount,
+          paymentMode: params.paymentMode,
+          collectedById: params.soldById,
+          paymentStatus: "full",
+          paymentFor: "pos_sale",
+          shiftId: params.paymentMode === "cash" ? shiftIdToUse : null,
+          baseAmount: gstSplit.baseAmount,
+          taxRate: gstSplit.taxRate,
+          taxAmount: gstSplit.taxAmount,
+        },
+      });
+      paymentIdToUse = payment.id;
+    }
+
     const sale = await tx.sale.create({
       data: {
         productId: params.productId,
@@ -47,6 +104,8 @@ export async function sellProduct(params: {
         paymentMode: params.paymentMode,
         locationId: params.locationId ?? null,
         soldById: params.soldById ?? null,
+        shiftId: shiftIdToUse,
+        paymentId: paymentIdToUse,
       },
     });
 

@@ -1,11 +1,16 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireWorker } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default async function TrainersIndexPage() {
-  await requireWorker(["admin"]);
+  try {
+    await requireWorker(["admin"]);
+  } catch {
+    redirect("/admin/dashboard");
+  }
 
   const trainers = await prisma.worker.findMany({
     where: {

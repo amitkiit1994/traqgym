@@ -28,6 +28,11 @@ export async function GET(req: NextRequest) {
   const guard = requireCronSecret(req);
   if (guard) return guard;
 
+  // `?force=1` (only honoured because the Bearer secret already matched)
+  // bypasses the per-insight 48h fatigue window — handy for ops smoke tests.
+  const url = new URL(req.url);
+  const force = url.searchParams.get("force") === "1";
+
   // Channels are picked automatically from settings.
-  return runManagerBriefing();
+  return runManagerBriefing({ force });
 }

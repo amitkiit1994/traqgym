@@ -8,6 +8,7 @@ import {
 } from "@/lib/actions/approvals";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -206,7 +207,123 @@ export function ApprovalsClient({
         <p className="text-sm text-muted-foreground">{feedback}</p>
       )}
 
-      <div className="overflow-x-auto">
+      {/* Mobile card view (<sm) */}
+      <div className="sm:hidden space-y-2">
+        {rows.length === 0 ? (
+          <Card size="sm">
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">
+              No {activeStatus} approvals
+            </CardContent>
+          </Card>
+        ) : (
+          rows.map((r) => {
+            const editing = editingId === r.id;
+            return (
+              <Card key={r.id} size="sm">
+                <CardContent className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-mono text-xs text-muted-foreground">
+                        #{r.id}
+                      </div>
+                      <div className="font-medium capitalize truncate">
+                        {r.type.replace(/_/g, " ")}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {r.entityType}
+                        {r.entityId != null ? ` #${r.entityId}` : ""}
+                      </div>
+                    </div>
+                    <Badge
+                      variant={statusVariant(r.status)}
+                      className="capitalize shrink-0"
+                    >
+                      {r.status}
+                    </Badge>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+                    <dt className="text-muted-foreground">Requested by</dt>
+                    <dd className="text-right truncate">{r.requestedByName}</dd>
+                    <dt className="text-muted-foreground">Requested</dt>
+                    <dd className="text-right text-muted-foreground">
+                      {formatDateTime(r.createdAt)}
+                    </dd>
+                  </dl>
+                  <div className="text-xs">
+                    <div className="text-muted-foreground mb-1">Payload</div>
+                    <code className="block text-[11px] text-muted-foreground break-all bg-muted/40 rounded px-2 py-1.5">
+                      {payloadPreview(r.payloadJson)}
+                    </code>
+                  </div>
+                  {r.decisionNote && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Note: {r.decisionNote}
+                    </p>
+                  )}
+                  {r.status === "pending" && isAdmin ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-h-11"
+                        disabled={isPending}
+                        onClick={() => openDecision(r.id, "approve")}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 min-h-11"
+                        disabled={isPending}
+                        onClick={() => openDecision(r.id, "reject")}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      Decided by: {r.decidedByName ?? "-"}
+                    </div>
+                  )}
+                  {editing && (
+                    <div className="flex flex-col gap-2 rounded-md bg-muted/30 p-2">
+                      <Textarea
+                        placeholder={`Optional note for ${pendingAction === "approve" ? "approval" : "rejection"}`}
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        className="min-h-[60px]"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1 min-h-11"
+                          onClick={submitDecision}
+                          disabled={isPending}
+                        >
+                          {isPending
+                            ? "Saving..."
+                            : pendingAction === "approve"
+                              ? "Confirm Approve"
+                              : "Confirm Reject"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1 min-h-11"
+                          onClick={closeDecision}
+                          disabled={isPending}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop table view (sm+) */}
+      <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

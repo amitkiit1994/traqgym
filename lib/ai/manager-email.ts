@@ -59,7 +59,22 @@ function renderSection(section: ComposedSection, baseUrl: string): string {
       const isPrimary = idx === 0;
       const bg = isPrimary ? "#16a34a" : "#374151";
       const fg = "#ffffff";
-      return `<a href="${escapeHtml(a.magicUrl)}" style="display:inline-block;padding:10px 16px;margin:4px 6px 4px 0;background:${bg};color:${fg};text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;mso-padding-alt:0;">${escapeHtml(a.label)}</a>`;
+      // Pure navigation actions don't need the magic-link wrapper — they're
+      // just deep links into the dashboard. Render as a plain same-origin
+      // anchor so the click works even if the magic-link dispatcher has been
+      // changed and so the URL isn't a single-use token. The href in
+      // `args.href` is whitelisted to same-origin paths.
+      let href = a.magicUrl;
+      if (a.action === "navigate") {
+        const navHref =
+          typeof a.args?.href === "string" ? a.args.href : "/admin/dashboard";
+        const safeNavHref =
+          navHref.startsWith("/") && !navHref.startsWith("//")
+            ? navHref
+            : "/admin/dashboard";
+        href = `${baseUrl.replace(/\/+$/, "")}${safeNavHref}`;
+      }
+      return `<a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 16px;margin:4px 6px 4px 0;background:${bg};color:${fg};text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;mso-padding-alt:0;">${escapeHtml(a.label)}</a>`;
     })
     .join("");
 

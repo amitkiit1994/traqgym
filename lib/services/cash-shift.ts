@@ -410,7 +410,14 @@ export async function closeShift(params: {
   const variance = +(params.closingCounted - closingExpected).toFixed(2);
   const absVariance = Math.abs(variance);
   const threshold = await getVarianceAutoApproveMax();
-  const requiresApproval = absVariance > threshold;
+  // Boundary semantics — QA fix:
+  //   Use `absVariance >= threshold` (greater-or-equal). A variance equal to
+  //   the threshold (e.g. ±₹100 with default = 100) MUST route through the
+  //   approval queue, not auto-close silently. Effective auto-approve range
+  //   is the half-open interval [0, threshold). If product policy ever flips
+  //   back to "exactly at threshold auto-closes", switch to `>` and update
+  //   the setting label to clarify.
+  const requiresApproval = absVariance >= threshold;
 
   try {
     let newStatus: ShiftStatus;

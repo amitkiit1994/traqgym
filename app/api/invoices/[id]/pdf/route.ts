@@ -42,6 +42,9 @@ export async function GET(
       payment: {
         select: {
           amount: true,
+          baseAmount: true,
+          taxRate: true,
+          taxAmount: true,
           paymentMode: true,
           upiReference: true,
           oldExpiryDate: true,
@@ -91,18 +94,47 @@ export async function GET(
     getSetting("gym_email", process.env.GYM_EMAIL || ""),
   ]);
   const gymLogo = safeLogoUrl(gymLogoRaw);
-  const isTaxInvoice = gymGstin.length > 0;
 
-  const memberName = `${invoice.user.firstname} ${invoice.user.lastname}`;
-  const planName = invoice.payment.memberTicket.plan.name;
-  const durationDays = invoice.payment.memberTicket.plan.expireDays;
+  // POS sales now share the Payment table with member renewals (H6 schema
+  // change), so memberTicket can be null. Fall back gracefully — POS invoices
+  // get a generic "POS Sale" plan label and zero joining fee.
+  const memberTicket = invoice.payment.memberTicket;
+  const memberName = invoice.user
+    ? `${invoice.user.firstname} ${invoice.user.lastname}`
+    : "Walk-in Customer";
+  const planName = memberTicket?.plan.name ?? "POS Sale";
+  const durationDays = memberTicket?.plan.expireDays ?? 0;
   const totalAmount = Number(invoice.payment.amount);
-  const joiningFee = Number(invoice.payment.memberTicket.joiningFeeCharged ?? 0);
+  const joiningFee = Number(memberTicket?.joiningFeeCharged ?? 0);
   // Plan portion = total - joining fee (joining fee not GST-applicable in this simple model)
   const planPortion = Math.max(totalAmount - joiningFee, 0);
-  const baseAmount = isTaxInvoice ? Math.round((planPortion / 1.18) * 100) / 100 : planPortion;
-  const cgst = isTaxInvoice ? Math.round(((planPortion - baseAmount) / 2) * 100) / 100 : 0;
-  const sgst = cgst;
+
+  // Surface GST line items if EITHER the gym is GST-registered OR the payment
+  // row carries a real taxAmount (e.g. invoice was raised under GST and gym
+  // GSTIN was later removed, or per-payment tax overrides). Prefer real values
+  // from Payment.baseAmount / Payment.taxAmount when present; fall back to
+  // assuming the plan portion is GST-inclusive at 18%.
+  const recordedTax = Number(invoice.payment.taxAmount ?? 0);
+  const recordedBase = Number(invoice.payment.baseAmount ?? 0);
+  const isTaxInvoice = gymGstin.length > 0 || recordedTax > 0;
+  let baseAmount: number;
+  let cgst: number;
+  let sgst: number;
+  if (isTaxInvoice) {
+    if (recordedTax > 0 && recordedBase > 0) {
+      baseAmount = Math.round(recordedBase * 100) / 100;
+      cgst = Math.round((recordedTax / 2) * 100) / 100;
+      sgst = Math.round((recordedTax / 2) * 100) / 100;
+    } else {
+      baseAmount = Math.round((planPortion / 1.18) * 100) / 100;
+      cgst = Math.round(((planPortion - baseAmount) / 2) * 100) / 100;
+      sgst = cgst;
+    }
+  } else {
+    baseAmount = planPortion;
+    cgst = 0;
+    sgst = 0;
+  }
   const paymentMode = invoice.payment.paymentMode.toUpperCase();
   const upiRef = invoice.payment.upiReference ?? "N/A";
   const invoiceDate = new Date(invoice.createdAt).toLocaleDateString("en-IN", {
@@ -210,7 +242,10 @@ export async function GET(
       text-align: center;
       font-size: 11px;
       color: #9ca3af;
+      line-height: 1.6;
     }
+    .footer .powered-by { margin-top: 4px; font-size: 10px; opacity: 0.85; }
+    .footer .powered-by strong { color: #6b7280; font-weight: 700; }
     .print-btn {
       display: block;
       margin: 20px auto;
@@ -277,11 +312,11 @@ export async function GET(
           </div>
           <div class="info-row">
             <span class="info-label">Email</span>
-            <span class="info-value">${escapeHtml(invoice.user.email)}</span>
+            <span class="info-value">${escapeHtml(invoice.user?.email ?? "N/A")}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Phone</span>
-            <span class="info-value">${escapeHtml(invoice.user.phone ?? "N/A")}</span>
+            <span class="info-value">${escapeHtml(invoice.user?.phone ?? "N/A")}</span>
           </div>
         </div>
       </div>
@@ -407,7 +442,8 @@ export async function GET(
     </div>
 
     <div class="footer">
-      This is a computer-generated ${isTaxInvoice ? "tax invoice" : "invoice"} and does not require a signature.
+      <div>This is a computer-generated ${isTaxInvoice ? "tax invoice" : "invoice"} and does not require a signature.</div>
+      <div class="powered-by">Powered by <strong>TraqGym</strong> &middot; powered.by/traqgym</div>
     </div>
   </div>
 

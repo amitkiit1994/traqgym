@@ -54,11 +54,23 @@ export async function searchMembers(query: string) {
 
 export async function getActivePlans() {
   try { await requireWorker(); } catch { return []; }
+  // Sort by createdAt desc so when we dedupe by name we keep the most-recent
+  // plan row (older agents/seeds occasionally created duplicate rows with the
+  // same name+price; the renewal dropdown previously showed e.g. 22 identical
+  // "Boundary30" entries). Final return is sorted by name for the picker.
   const plans = await prisma.ticketPlan.findMany({
     where: { isActive: true },
-    orderBy: { name: "asc" },
+    orderBy: { createdAt: "desc" },
   });
-  return plans.map((p) => ({
+  const seen = new Set<string>();
+  const deduped = plans.filter((p) => {
+    const key = p.name.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  deduped.sort((a, b) => a.name.localeCompare(b.name));
+  return deduped.map((p) => ({
     ...p,
     price: Number(p.price),
     joiningFee: Number(p.joiningFee ?? 0),
@@ -80,14 +92,33 @@ export async function submitRenewal(data: {
   paymentMode: string;
   upiReference?: string;
   promoCode?: string;
+  // H3 partial pay: amount actually collected. Omit/null = full payment.
+  amountPaid?: number;
 }) {
   const session = await getServerSession(authOptions);
   if (!session || session.user.actorType !== "worker") {
     return { error: "Unauthorized" };
   }
 
-  const parsed = renewalSchema.safeParse(data);
+  // The renewal zod schema doesn't currently know about amountPaid (validations
+  // are owned by another agent's surface). Validate the optional field locally
+  // before forwarding.
+  const parsed = renewalSchema.safeParse({
+    userId: data.userId,
+    planId: data.planId,
+    locationId: data.locationId,
+    paymentMode: data.paymentMode,
+    upiReference: data.upiReference,
+    promoCode: data.promoCode,
+  });
   if (!parsed.success) return { error: Object.values(zodErrors(parsed.error))[0] };
+
+  if (
+    typeof data.amountPaid === "number" &&
+    (!Number.isFinite(data.amountPaid) || data.amountPaid < 0)
+  ) {
+    return { error: "Amount paid must be a non-negative number" };
+  }
 
   try {
     const result = await renewMembership({
@@ -97,6 +128,7 @@ export async function submitRenewal(data: {
       paymentMode: data.paymentMode,
       upiReference: data.upiReference,
       promoCode: data.promoCode,
+      amountPaid: data.amountPaid,
       collectedById: parseInt(session.user.id, 10),
     });
 

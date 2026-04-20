@@ -45,6 +45,8 @@ const MARKER_ACTIONS: ReadonlySet<string> = new Set([
   "ticket.flag_writeoff",
   // Records investigation signal only; the real conversion is `comp.convert`.
   "comp.investigate",
+  // Pure navigation — opening a dashboard URL must not dismiss the insight.
+  "navigate",
 ]);
 
 // ─── listActiveInsights ────────────────────────────────────────────────────
@@ -652,6 +654,21 @@ export async function executeInsightAction(params: {
         },
       });
       return { success: true, result: { ticketId, kind, recorded: true } };
+    }
+
+    case "navigate": {
+      // Pure-navigation action — no server-side side-effect, just a redirect
+      // hint. Used by briefing emails to deep-link the owner to a dashboard
+      // route (e.g. /admin/insights). The email renderer prefers plain
+      // anchors for these (no magic-link wrap), but legacy links already in
+      // inboxes still resolve here.
+      const href = str("href") ?? "/admin/dashboard";
+      // Whitelist same-origin paths only — never trust the args to redirect
+      // off-site.
+      const safeHref = href.startsWith("/") && !href.startsWith("//")
+        ? href
+        : "/admin/dashboard";
+      return { success: true, result: { redirect: safeHref } };
     }
 
     case "upgrade.send_offer": {

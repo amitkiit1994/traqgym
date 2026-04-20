@@ -112,118 +112,135 @@ export default async function TrainerDashboardPage() {
         </Card>
       </div>
 
-      {/* Today's sessions */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base md:text-lg">
-            Today&apos;s Sessions
-          </CardTitle>
-          <Link
-            href="/trainer/sessions"
-            className="text-xs text-primary hover:underline"
-          >
-            See all
-          </Link>
-        </CardHeader>
-        <CardContent>
-          {todaySessions.length === 0 ? (
-            <div className="flex flex-col items-center py-6 text-center">
-              <Clock className="size-8 text-muted-foreground/50 mb-2" />
-              <p className="text-sm text-muted-foreground">
-                No sessions scheduled today.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {todaySessions.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/trainer/clients/${s.userId}`}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border/50 px-3 py-2 hover:bg-muted/40 transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{s.userName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatTime(s.scheduledAt)}
-                      {s.userPhone ? ` · ${s.userPhone}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-muted-foreground hidden sm:inline">
-                      {s.sessionsRemaining} left
-                    </span>
-                    <Badge variant="outline" className={statusClass(s.status)}>
-                      {s.status}
-                    </Badge>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Week summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base md:text-lg">This Week</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <div>
-            <p className="text-xs text-muted-foreground">Completed</p>
-            <p className="text-lg font-semibold">{weekStats.sessionsCompleted}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Scheduled</p>
-            <p className="text-lg font-semibold">{weekStats.sessionsScheduled}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">No-shows</p>
-            <p className="text-lg font-semibold">{weekStats.sessionsNoShow}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Cancelled</p>
-            <p className="text-lg font-semibold">{weekStats.sessionsCancelled}</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Pending payouts summary */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base md:text-lg flex items-center gap-2">
-            <Wallet className="size-5 text-status-grace" /> Pending Payouts
-          </CardTitle>
-          <Link
-            href="/trainer/payouts"
-            className="text-xs text-primary hover:underline"
-          >
-            View all
-          </Link>
-        </CardHeader>
-        <CardContent>
-          {pendingPayouts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No pending payouts.
-            </p>
-          ) : (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">
-                  {inr.format(pendingPayoutTotal)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  across {pendingPayouts.length} period
-                  {pendingPayouts.length === 1 ? "" : "s"}
+      {/* 2-column layout on lg+: left = today's sessions, right = week + payouts */}
+      <div className="grid lg:grid-cols-2 gap-4 md:gap-6">
+        {/* Today's sessions */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base md:text-lg">
+              Today&apos;s Sessions
+            </CardTitle>
+            <Link
+              href="/trainer/sessions"
+              className="text-xs text-primary hover:underline"
+            >
+              See all
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {todaySessions.length === 0 ? (
+              <div className="flex flex-col items-center py-6 text-center">
+                <Clock className="size-8 text-muted-foreground/50 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  No sessions scheduled today.
                 </p>
               </div>
-              <Badge variant="outline" className={statusClass("scheduled")}>
-                pending
-              </Badge>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              <div className="space-y-2">
+                {todaySessions.map((s) => (
+                  <Link
+                    key={s.id}
+                    href={`/trainer/clients/${s.userId}`}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border/50 px-3 py-2 hover:bg-muted/40 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{s.userName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatTime(s.scheduledAt)}
+                        {s.userPhone ? ` · ${s.userPhone}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-muted-foreground hidden sm:inline">
+                        {s.sessionsRemaining} left
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={statusClass(s.status)}
+                      >
+                        {s.status}
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right column: week summary + pending payouts stacked */}
+        <div className="space-y-4 md:space-y-6">
+          {/* Week summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base md:text-lg">This Week</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Completed</p>
+                <p className="text-lg font-semibold">
+                  {weekStats.sessionsCompleted}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Scheduled</p>
+                <p className="text-lg font-semibold">
+                  {weekStats.sessionsScheduled}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">No-shows</p>
+                <p className="text-lg font-semibold">
+                  {weekStats.sessionsNoShow}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Cancelled</p>
+                <p className="text-lg font-semibold">
+                  {weekStats.sessionsCancelled}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pending payouts summary */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base md:text-lg flex items-center gap-2">
+                <Wallet className="size-5 text-status-grace" /> Pending Payouts
+              </CardTitle>
+              <Link
+                href="/trainer/payouts"
+                className="text-xs text-primary hover:underline"
+              >
+                View all
+              </Link>
+            </CardHeader>
+            <CardContent>
+              {pendingPayouts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No pending payouts.
+                </p>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {inr.format(pendingPayoutTotal)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      across {pendingPayouts.length} period
+                      {pendingPayouts.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={statusClass("scheduled")}>
+                    pending
+                  </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

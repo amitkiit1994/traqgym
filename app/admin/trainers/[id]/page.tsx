@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireWorker } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { getTrainerStats, getMyPtClients } from "@/lib/services/pt";
@@ -17,7 +17,11 @@ export default async function TrainerDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireWorker(["admin"]);
+  try {
+    await requireWorker(["admin"]);
+  } catch {
+    redirect("/admin/dashboard");
+  }
 
   const { id } = await params;
   const trainerId = parseInt(id, 10);

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeGstSplitInclusive, getGymGstRate } from "./tax";
 
 type ServiceOk<T> = { success: true } & T;
 type ServiceErr = { success: false; error: string };
@@ -53,6 +54,12 @@ export async function sellPtPackage(params: {
       };
     }
 
+    // GST split for the PT package payment — tax-inclusive on the collected
+    // amount (paidAmount, not totalPrice — partial payments are taxable
+    // proportionally as they're collected).
+    const gymGstRate = await getGymGstRate();
+    const ptGst = computeGstSplitInclusive(paidAmount, gymGstRate);
+
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
@@ -65,6 +72,9 @@ export async function sellPtPackage(params: {
           trainerId: params.trainerId,
           paymentStatus,
           paymentFor: "pt_package",
+          baseAmount: ptGst.baseAmount,
+          taxRate: ptGst.taxRate,
+          taxAmount: ptGst.taxAmount,
         },
       });
 

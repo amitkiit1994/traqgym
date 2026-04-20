@@ -49,6 +49,7 @@ import { lockerTools } from "./tools/lockers";
 import { extensionTools } from "./tools/extension";
 import { feedbackTools } from "./tools/feedback";
 import { appointmentTools } from "./tools/appointments";
+import { compTools } from "./tools/comp-tools";
 
 // Tools that require admin role — tool executor will deny access for staff
 const ADMIN_ONLY_TOOLS = new Set([
@@ -98,6 +99,13 @@ const ADMIN_ONLY_TOOLS = new Set([
   "cancel_appointment",
   "get_attendance_patterns",
   "suggest_schedule",
+  // Comp / comp-pass mutations — admin-only (server actions also enforce).
+  "issue_comp_pass",
+  "revoke_comp_pass",
+  "convert_comp_pass",
+  "issue_comp",
+  "revoke_comp",
+  "convert_comp",
 ]);
 
 const allTools = [
@@ -150,6 +158,7 @@ const allTools = [
   ...feedbackTools,
   ...extensionTools,
   ...appointmentTools,
+  ...compTools,
 ];
 
 export { allTools };

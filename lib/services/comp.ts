@@ -13,6 +13,7 @@
 import type { MemberTicket } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/services/settings";
+import { computeGstSplitInclusive, getGymGstRate } from "@/lib/services/tax";
 import { todayIST } from "@/lib/utils/date";
 import { withSerializableRetry } from "@/lib/utils/serializable";
 
@@ -244,6 +245,10 @@ export async function issueComp(params: {
         },
       });
 
+      // Complimentary tickets are zero-rupee — base/tax both stay 0. We still
+      // record taxRate=0 explicitly (rather than leaving null) so GSTR-1
+      // exports can distinguish "this row carried zero tax intentionally"
+      // from "this row never had its tax computed" (legacy NULL bug).
       await tx.payment.create({
         data: {
           userId: params.userId,
@@ -259,6 +264,9 @@ export async function issueComp(params: {
             ? `comp:${params.reason}:${params.reasonDetail}`
             : `comp:${params.reason}`,
           paymentFor: "complimentary",
+          baseAmount: 0,
+          taxRate: 0,
+          taxAmount: 0,
         },
       });
 
@@ -346,6 +354,12 @@ export async function convertCompToPaid(params: {
         ? "partial"
         : "advance";
 
+  // GST split for the conversion payment — tax-inclusive on amountPaid (the
+  // collected cash, not the plan total). Resolved outside the txn since the
+  // setting is read-mostly.
+  const gymGstRate = await getGymGstRate();
+  const conversionGst = computeGstSplitInclusive(amountPaid, gymGstRate);
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const newTicket = await tx.memberTicket.create({
@@ -375,6 +389,9 @@ export async function convertCompToPaid(params: {
           newExpiryDate: newExpiry,
           paymentStatus,
           paymentFor: "comp_conversion",
+          baseAmount: conversionGst.baseAmount,
+          taxRate: conversionGst.taxRate,
+          taxAmount: conversionGst.taxAmount,
         },
       });
 
@@ -694,6 +711,10 @@ export async function convertCompPassToPaid(params: {
 
   const locationId = user.locationId ?? collector.locationId ?? null;
 
+  // GST split for the conversion payment — tax-inclusive on amountPaid.
+  const gymGstRate = await getGymGstRate();
+  const passConversionGst = computeGstSplitInclusive(amountPaid, gymGstRate);
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const ticket = await tx.memberTicket.create({
@@ -722,6 +743,9 @@ export async function convertCompPassToPaid(params: {
           newExpiryDate: newExpiry,
           paymentStatus,
           paymentFor: "comp_pass_conversion",
+          baseAmount: passConversionGst.baseAmount,
+          taxRate: passConversionGst.taxRate,
+          taxAmount: passConversionGst.taxAmount,
         },
       });
 

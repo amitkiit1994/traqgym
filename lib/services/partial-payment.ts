@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeGstSplitInclusive, getGymGstRate } from "./tax";
 
 export async function recordPartialPayment(params: {
   ticketId: number;
@@ -8,6 +9,11 @@ export async function recordPartialPayment(params: {
   collectedById: number;
 }) {
   if (params.amount <= 0) return { success: false, error: "Amount must be positive" };
+
+  // Resolve GST rate outside the txn — read-mostly setting, no need to refetch
+  // on every retry. Used to populate the Payment row's tax breakdown.
+  const gymGstRate = await getGymGstRate();
+  const gstSplit = computeGstSplitInclusive(params.amount, gymGstRate);
 
   const result = await prisma.$transaction(async (tx) => {
     // Read ticket inside the transaction so the validation snapshot matches the writes,
@@ -48,7 +54,9 @@ export async function recordPartialPayment(params: {
       return { error: "Ticket was modified concurrently — please retry" as const };
     }
 
-    // Create payment record
+    // Create payment record. GST split (base + rate + tax) is populated so
+    // Tally / GSTR-1 see the correct breakdown — every partial collection is
+    // also a taxable supply under GST inclusive pricing.
     const payment = await tx.payment.create({
       data: {
         userId: ticket.userId,
@@ -60,6 +68,9 @@ export async function recordPartialPayment(params: {
         collectedById: params.collectedById,
         paymentStatus: isFullyPaid ? "full" : "partial",
         newExpiryDate: ticket.expireDate,
+        baseAmount: gstSplit.baseAmount,
+        taxRate: gstSplit.taxRate,
+        taxAmount: gstSplit.taxAmount,
       },
     });
 

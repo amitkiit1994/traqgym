@@ -204,6 +204,21 @@ export async function POST(
     );
   }
 
+  // Pure-navigation actions return a `{ redirect }` result. Issue an HTTP
+  // redirect rather than rendering a confirmation page — the link is just a
+  // deep-link, not a side-effect.
+  const navResult = result.result as { redirect?: string } | null | undefined;
+  if (navResult && typeof navResult.redirect === "string") {
+    const target = navResult.redirect.startsWith("/") &&
+      !navResult.redirect.startsWith("//")
+      ? navResult.redirect
+      : "/admin/dashboard";
+    return new Response(null, {
+      status: 303,
+      headers: { Location: target },
+    });
+  }
+
   // Audit trail (best-effort).
   try {
     await prisma.auditLog.create({

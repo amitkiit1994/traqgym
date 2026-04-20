@@ -38,7 +38,10 @@ export async function updateChequeStatus(
 
       // If bounced, auto-create a PaymentFollowup atomically with the status flip
       // so a second concurrent call cannot double-insert a follow-up / penalty.
-      if (status === "bounced") {
+      // Cheque payments are always member-bound (POS sales never use cheque),
+      // but Payment.userId/memberTicketId became nullable for POS support.
+      // Skip followup creation defensively if either is null.
+      if (status === "bounced" && payment.userId && payment.memberTicketId) {
         await tx.paymentFollowup.create({
           data: {
             userId: payment.userId,
@@ -106,24 +109,26 @@ export async function getPendingCheques(locationId?: number) {
     if (locationId) where.locationId = locationId;
 
     const cheques = await prisma.payment.findMany({
-      where,
+      where: { ...where, userId: { not: null } },
       include: {
         user: { select: { id: true, firstname: true, lastname: true, phone: true } },
       },
       orderBy: { chequeDate: "asc" },
     });
 
-    return cheques.map((c) => ({
-      paymentId: c.id,
-      memberName: `${c.user.firstname} ${c.user.lastname}`,
-      memberId: c.user.id,
-      phone: c.user.phone || "-",
-      amount: Number(c.amount),
-      chequeNumber: c.chequeNumber,
-      chequeDate: c.chequeDate?.toISOString() ?? null,
-      bankName: c.bankName,
-      createdAt: c.createdAt.toISOString(),
-    }));
+    return cheques
+      .filter((c) => c.user !== null)
+      .map((c) => ({
+        paymentId: c.id,
+        memberName: `${c.user!.firstname} ${c.user!.lastname}`,
+        memberId: c.user!.id,
+        phone: c.user!.phone || "-",
+        amount: Number(c.amount),
+        chequeNumber: c.chequeNumber,
+        chequeDate: c.chequeDate?.toISOString() ?? null,
+        bankName: c.bankName,
+        createdAt: c.createdAt.toISOString(),
+      }));
   } catch (err) {
     console.error("[Cheque] getPendingCheques error:", err);
     return [];
@@ -136,24 +141,26 @@ export async function getBouncedCheques(locationId?: number) {
     if (locationId) where.locationId = locationId;
 
     const cheques = await prisma.payment.findMany({
-      where,
+      where: { ...where, userId: { not: null } },
       include: {
         user: { select: { id: true, firstname: true, lastname: true, phone: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return cheques.map((c) => ({
-      paymentId: c.id,
-      memberName: `${c.user.firstname} ${c.user.lastname}`,
-      memberId: c.user.id,
-      phone: c.user.phone || "-",
-      amount: Number(c.amount),
-      chequeNumber: c.chequeNumber,
-      chequeDate: c.chequeDate?.toISOString() ?? null,
-      bankName: c.bankName,
-      createdAt: c.createdAt.toISOString(),
-    }));
+    return cheques
+      .filter((c) => c.user !== null)
+      .map((c) => ({
+        paymentId: c.id,
+        memberName: `${c.user!.firstname} ${c.user!.lastname}`,
+        memberId: c.user!.id,
+        phone: c.user!.phone || "-",
+        amount: Number(c.amount),
+        chequeNumber: c.chequeNumber,
+        chequeDate: c.chequeDate?.toISOString() ?? null,
+        bankName: c.bankName,
+        createdAt: c.createdAt.toISOString(),
+      }));
   } catch (err) {
     console.error("[Cheque] getBouncedCheques error:", err);
     return [];
