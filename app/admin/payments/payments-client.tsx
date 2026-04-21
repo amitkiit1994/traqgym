@@ -213,7 +213,16 @@ export function PaymentsClient({
 
       {/* Filters */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-3">
+          <QuickRangeChips
+            from={from}
+            to={to}
+            onPick={(range) => {
+              setFrom(range.from);
+              setTo(range.to);
+              apply({ from: range.from, to: range.to });
+            }}
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label htmlFor="from">From</Label>
@@ -488,6 +497,59 @@ export function PaymentsClient({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function QuickRangeChips({
+  from,
+  to,
+  onPick,
+}: {
+  from: string;
+  to: string;
+  onPick: (range: { from: string; to: string }) => void;
+}) {
+  // IST-aware day boundaries. Browser may run in any TZ, so shift by IST offset
+  // before slicing the YYYY-MM-DD string.
+  const istToday = (() => {
+    const d = new Date();
+    return new Date(d.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+  })();
+
+  const presets: { label: string; range: { from: string; to: string } }[] = (() => {
+    const todayDate = new Date(istToday + "T00:00:00Z");
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const monthStart = new Date(Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), 1));
+    const yearStart = new Date(Date.UTC(todayDate.getUTCFullYear(), 0, 1));
+    // Week: Monday-anchored. getUTCDay: 0=Sun..6=Sat → Mon offset = (day+6)%7
+    const dayOfWeek = todayDate.getUTCDay();
+    const mondayOffset = (dayOfWeek + 6) % 7;
+    const weekStart = new Date(todayDate.getTime() - mondayOffset * 86400000);
+    return [
+      { label: "Today", range: { from: istToday, to: istToday } },
+      { label: "Week", range: { from: fmt(weekStart), to: istToday } },
+      { label: "Month", range: { from: fmt(monthStart), to: istToday } },
+      { label: "Year", range: { from: fmt(yearStart), to: istToday } },
+    ];
+  })();
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {presets.map((p) => {
+        const active = from === p.range.from && to === p.range.to;
+        return (
+          <Button
+            key={p.label}
+            type="button"
+            size="sm"
+            variant={active ? "default" : "outline"}
+            onClick={() => onPick(p.range)}
+          >
+            {p.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }
