@@ -226,11 +226,11 @@ export default function ClassesPage() {
     if (count === 0) return "transparent";
     const intensity = Math.round((count / maxHeatmapCount) * 100);
     // Use primary color with varying opacity
-    if (intensity <= 20) return "oklch(0.65 0.20 275 / 0.15)";
-    if (intensity <= 40) return "oklch(0.65 0.20 275 / 0.30)";
-    if (intensity <= 60) return "oklch(0.65 0.20 275 / 0.50)";
-    if (intensity <= 80) return "oklch(0.65 0.20 275 / 0.70)";
-    return "oklch(0.65 0.20 275 / 0.90)";
+    if (intensity <= 20) return "oklch(0.65 0.20 25 / 0.15)";
+    if (intensity <= 40) return "oklch(0.65 0.20 25 / 0.30)";
+    if (intensity <= 60) return "oklch(0.65 0.20 25 / 0.50)";
+    if (intensity <= 80) return "oklch(0.65 0.20 25 / 0.70)";
+    return "oklch(0.65 0.20 25 / 0.90)";
   };
 
   return (
@@ -468,7 +468,7 @@ export default function ClassesPage() {
                           key={opacity}
                           className="size-3 rounded-sm border border-border/30"
                           style={{
-                            backgroundColor: `oklch(0.65 0.20 275 / ${opacity})`,
+                            backgroundColor: `oklch(0.65 0.20 25 / ${opacity})`,
                           }}
                         />
                       ))}

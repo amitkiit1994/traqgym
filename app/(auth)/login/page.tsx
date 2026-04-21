@@ -51,8 +51,8 @@ export default function LoginPage() {
       {/* ── Animated background orbs ── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-primary/5 dark:bg-primary/10 blur-[100px] animate-[pulse_8s_ease-in-out_infinite]" />
-        <div className="absolute top-[20%] right-[-15%] w-[500px] h-[500px] rounded-full bg-[oklch(0.65_0.15_230_/_0.04)] dark:bg-[oklch(0.65_0.15_230_/_0.08)] blur-[100px] animate-[pulse_10s_ease-in-out_infinite_1s]" />
-        <div className="absolute bottom-[-10%] left-[30%] w-[400px] h-[400px] rounded-full bg-[oklch(0.55_0.18_295_/_0.03)] dark:bg-[oklch(0.55_0.18_295_/_0.06)] blur-[80px] animate-[pulse_12s_ease-in-out_infinite_2s]" />
+        <div className="absolute top-[20%] right-[-15%] w-[500px] h-[500px] rounded-full bg-[oklch(0.65_0.15_45_/_0.04)] dark:bg-[oklch(0.65_0.15_45_/_0.08)] blur-[100px] animate-[pulse_10s_ease-in-out_infinite_1s]" />
+        <div className="absolute bottom-[-10%] left-[30%] w-[400px] h-[400px] rounded-full bg-[oklch(0.55_0.18_15_/_0.03)] dark:bg-[oklch(0.55_0.18_15_/_0.06)] blur-[80px] animate-[pulse_12s_ease-in-out_infinite_2s]" />
       </div>
 
       {/* ── Subtle grid pattern ── */}
@@ -118,9 +118,9 @@ export default function LoginPage() {
           {/* Login card */}
           <div className="relative">
             {/* Card glow */}
-            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-primary/10 via-transparent to-[oklch(0.65_0.15_230_/_0.06)] blur-xl opacity-60 dark:opacity-40" />
+            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-primary/10 via-transparent to-[oklch(0.65_0.15_45_/_0.06)] blur-xl opacity-60 dark:opacity-40" />
 
-            <div className="relative bg-card/70 dark:bg-card/50 backdrop-blur-2xl backdrop-saturate-[1.5] rounded-2xl shadow-[0_8px_40px_oklch(0.565_0.20_275_/_6%),0_0_0_1px_oklch(0.565_0.20_275_/_8%)] dark:shadow-[0_8px_40px_oklch(0_0_0_/_20%),0_0_0_1px_oklch(0.68_0.17_275_/_10%)] overflow-hidden">
+            <div className="relative bg-card/70 dark:bg-card/50 backdrop-blur-2xl backdrop-saturate-[1.5] rounded-2xl shadow-[0_8px_40px_oklch(0.565_0.20_25_/_6%),0_0_0_1px_oklch(0.565_0.20_25_/_8%)] dark:shadow-[0_8px_40px_oklch(0_0_0_/_20%),0_0_0_1px_oklch(0.68_0.17_25_/_10%)] overflow-hidden">
               {/* Top gradient accent */}
               <div className="h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
 
@@ -201,7 +201,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="group relative w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50 transition-all duration-200 shadow-[0_4px_16px_oklch(0.565_0.20_275_/_25%)] hover:shadow-[0_6px_24px_oklch(0.565_0.20_275_/_35%)] hover:brightness-110 hover:scale-[1.01] active:scale-[0.99]"
+                    className="group relative w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground rounded-xl font-medium text-sm disabled:opacity-50 transition-all duration-200 shadow-[0_4px_16px_oklch(0.565_0.20_25_/_25%)] hover:shadow-[0_6px_24px_oklch(0.565_0.20_25_/_35%)] hover:brightness-110 hover:scale-[1.01] active:scale-[0.99]"
                   >
                     {loading ? (
                       <>
