@@ -65,6 +65,7 @@ export default function BalanceDuePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("balanceDue");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [statusFilter, setStatusFilter] = useState<"active" | "all">("active");
   const [loading, startTransition] = useTransition();
   const [payDialog, setPayDialog] = useState<BalanceRow | null>(null);
   const [payAmount, setPayAmount] = useState("");
@@ -84,6 +85,7 @@ export default function BalanceDuePage() {
         pageSize: PAGE_SIZE,
         sortBy,
         sortOrder,
+        status: statusFilter,
       });
       setData(result.data);
       setTotal(result.total);
@@ -102,7 +104,7 @@ export default function BalanceDuePage() {
     setPage(1);
     fetchData(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, sortBy, sortOrder]);
+  }, [locationId, sortBy, sortOrder, statusFilter]);
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -194,17 +196,43 @@ export default function BalanceDuePage() {
           </div>
         </div>
 
-        <SearchInput
-          placeholder="Search by name or phone..."
-          defaultValue={searchQuery}
-          onSearch={(q) => {
-            setSearchQuery(q);
-            setPage(1);
-            fetchData(1, q);
-          }}
-          isPending={loading}
-          className="w-full sm:w-72"
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <SearchInput
+            placeholder="Search by name or phone..."
+            defaultValue={searchQuery}
+            onSearch={(q) => {
+              setSearchQuery(q);
+              setPage(1);
+              fetchData(1, q);
+            }}
+            isPending={loading}
+            className="w-full sm:w-72"
+          />
+          <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("active")}
+              className={`px-3 py-1 text-xs rounded-sm transition-colors ${
+                statusFilter === "active"
+                  ? "bg-background shadow-sm font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Active only
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className={`px-3 py-1 text-xs rounded-sm transition-colors ${
+                statusFilter === "all"
+                  ? "bg-background shadow-sm font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Include cancelled / expired
+            </button>
+          </div>
+        </div>
       </div>
 
       <Card className="flex-1 min-h-0 flex flex-col overflow-hidden">

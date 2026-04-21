@@ -43,6 +43,7 @@ type Plan = {
 
 export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Plan | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -61,6 +62,7 @@ export default function PlansPage() {
     startTransition(async () => {
       const data = await getPlans();
       setPlans(data);
+      setLoaded(true);
     });
   };
 
@@ -194,16 +196,25 @@ export default function PlansPage() {
             <TableRow>
               <TableCell colSpan={7}>
                 <div className="flex flex-col items-center gap-2 py-8">
-                  <CreditCard className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">
-                    {plans.length === 0
-                      ? "No plans found"
-                      : `No ${statusFilter === "all" ? "" : statusFilter} plans`}
-                  </p>
-                  {plans.length === 0 && (
-                    <Button variant="outline" size="sm" onClick={openCreate}>
-                      Add Plan
-                    </Button>
+                  {!loaded ? (
+                    <>
+                      <Loader2 className="size-5 animate-spin text-muted-foreground/50" />
+                      <p className="text-sm text-muted-foreground">Loading plans...</p>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="size-8 text-muted-foreground/50" />
+                      <p className="text-sm text-muted-foreground">
+                        {plans.length === 0
+                          ? "No plans found"
+                          : `No ${statusFilter === "all" ? "" : statusFilter} plans`}
+                      </p>
+                      {plans.length === 0 && (
+                        <Button variant="outline" size="sm" onClick={openCreate}>
+                          Add Plan
+                        </Button>
+                      )}
+                    </>
                   )}
                 </div>
               </TableCell>

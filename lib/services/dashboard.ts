@@ -1,14 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { todayIST } from "@/lib/utils/date";
+import { todayIST, istCalendar, istMidnight } from "@/lib/utils/date";
 import { unstable_cache } from "next/cache";
 
 export async function getStats(locationId?: number) {
   const where = locationId ? { locationId } : {};
   const now = todayIST();
+  const ist = istCalendar();
 
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const monthStart = istMidnight(ist.year, ist.month, 1);
+  const monthEnd = istMidnight(ist.year, ist.month + 1, 1);
 
   const threeDaysFromNow = new Date(now);
   threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
@@ -26,9 +27,9 @@ export async function getStats(locationId?: number) {
   const sevenDaysAgoDate = new Date(now);
   sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
 
-  const todayMonth = now.getMonth() + 1;
-  const todayDay = now.getDate();
-  const thisYear = now.getFullYear();
+  const todayMonth = ist.month + 1;
+  const todayDay = ist.day;
+  const thisYear = ist.year;
 
   // Run all independent queries in parallel
   const [
@@ -68,10 +69,11 @@ export async function getStats(locationId?: number) {
       },
       _sum: { amount: true },
     }),
-    // Expiring in 3 days
+    // Expiring in 3 days — only active tickets (exclude already-renewed/cancelled).
     prisma.memberTicket.findMany({
       where: {
         ...(locationId ? { locationId } : {}),
+        status: "active",
         expireDate: { gte: now, lte: threeDaysFromNow },
       },
       include: {
@@ -368,10 +370,10 @@ export async function getStats(locationId?: number) {
 
 export async function getPreviousMonthStats(locationId?: number) {
   const where = locationId ? { locationId } : {};
-  const now = todayIST();
+  const ist = istCalendar();
 
-  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
-  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthEnd = istMidnight(ist.year, ist.month, 1);
+  const prevMonthStart = istMidnight(ist.year, ist.month - 1, 1);
 
   // Active members at end of previous month (had ticket expiring after prev month end)
   const activeMembers = await prisma.user.count({
@@ -563,8 +565,8 @@ export async function getUpgradeStats(dateRange?: { from: string; to: string }, 
 
 export async function getProfitLoss(month: string, locationId?: number) {
   const [year, mon] = month.split("-").map(Number);
-  const monthStart = new Date(year, mon - 1, 1);
-  const monthEnd = new Date(year, mon, 1);
+  const monthStart = istMidnight(year, mon - 1, 1);
+  const monthEnd = istMidnight(year, mon, 1);
 
   const where: Record<string, unknown> = {};
   if (locationId) where.locationId = locationId;
@@ -663,9 +665,9 @@ export async function getFinancialSplit(locationId?: number) {
 }
 
 export async function getTodayAnniversaries() {
-  const now = todayIST();
-  const todayMonth = now.getMonth() + 1;
-  const todayDay = now.getDate();
+  const ist = istCalendar();
+  const todayMonth = ist.month + 1;
+  const todayDay = ist.day;
 
   return prisma.$queryRaw<
     { id: number; firstname: string; lastname: string; phone: string | null }[]
@@ -680,8 +682,7 @@ export async function getTodayAnniversaries() {
 }
 
 export async function getUpcomingAnniversaries(days: number = 7) {
-  const now = todayIST();
-  const thisYear = now.getFullYear();
+  const thisYear = istCalendar().year;
 
   return prisma.$queryRaw<
     { id: number; firstname: string; lastname: string; phone: string | null; days_until: number }[]
@@ -804,26 +805,30 @@ export async function getRevenueChartData(
  * pushes the heavy lifting (group + sum) into the DB where indexes apply.
  */
 export async function getMonthlyRevenueTrend(months: number = 12, locationId?: number) {
-  const now = todayIST();
-  const windowStart = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-  const windowEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const ist = istCalendar();
+  const windowStart = istMidnight(ist.year, ist.month - (months - 1), 1);
+  const windowEnd = istMidnight(ist.year, ist.month + 1, 1);
 
   type Bucket = { month: string; cash: number; upi: number; other: number; renewals: number; newMembers: number; expenses: number };
   const bucketMap = new Map<string, Bucket>();
   for (let i = 0; i < months; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1) + i, 1);
-    const key = d.toISOString().slice(0, 7);
+    const m = ist.month - (months - 1) + i;
+    // Normalize month into a year/month pair; JS Date constructor handles overflow.
+    const norm = new Date(Date.UTC(ist.year, m, 1));
+    const key = `${norm.getUTCFullYear()}-${String(norm.getUTCMonth() + 1).padStart(2, "0")}`;
     bucketMap.set(key, { month: key, cash: 0, upi: 0, other: 0, renewals: 0, newMembers: 0, expenses: 0 });
   }
 
   // Run all 4 bucketed queries in parallel. Each does a single index range
   // scan + group, replacing what used to be N×6 separate round-trips.
+  // date_trunc applied to the IST-shifted timestamp so payments at IST-midnight
+  // boundary land in the correct calendar month (matches IST window above).
   const locClause = (col: string) =>
     locationId ? Prisma.sql`AND "${Prisma.raw(col)}" = ${locationId}` : Prisma.empty;
 
   const [paymentRows, expenseRows, renewalRows, newMemberRows] = await Promise.all([
     prisma.$queryRaw<Array<{ month: Date; mode: string; total: number }>>(Prisma.sql`
-      SELECT date_trunc('month', "createdAt") AS month,
+      SELECT date_trunc('month', "createdAt" AT TIME ZONE 'Asia/Kolkata') AS month,
              "paymentMode" AS mode,
              COALESCE(SUM("amount"), 0)::float8 AS total
       FROM "Payment"
@@ -832,7 +837,7 @@ export async function getMonthlyRevenueTrend(months: number = 12, locationId?: n
       GROUP BY 1, 2
     `),
     prisma.$queryRaw<Array<{ month: Date; total: number }>>(Prisma.sql`
-      SELECT date_trunc('month', "expenseDate") AS month,
+      SELECT date_trunc('month', "expenseDate" AT TIME ZONE 'Asia/Kolkata') AS month,
              COALESCE(SUM("amount"), 0)::float8 AS total
       FROM "Expense"
       WHERE "expenseDate" >= ${windowStart} AND "expenseDate" < ${windowEnd}
@@ -840,7 +845,7 @@ export async function getMonthlyRevenueTrend(months: number = 12, locationId?: n
       GROUP BY 1
     `),
     prisma.$queryRaw<Array<{ month: Date; cnt: number }>>(Prisma.sql`
-      SELECT date_trunc('month', "buyDate") AS month,
+      SELECT date_trunc('month', "buyDate" AT TIME ZONE 'Asia/Kolkata') AS month,
              COUNT(*)::int AS cnt
       FROM "MemberTicket"
       WHERE "buyDate" >= ${windowStart} AND "buyDate" < ${windowEnd}
@@ -848,7 +853,7 @@ export async function getMonthlyRevenueTrend(months: number = 12, locationId?: n
       GROUP BY 1
     `),
     prisma.$queryRaw<Array<{ month: Date; cnt: number }>>(Prisma.sql`
-      SELECT date_trunc('month', "createdAt") AS month,
+      SELECT date_trunc('month', "createdAt" AT TIME ZONE 'Asia/Kolkata') AS month,
              COUNT(*)::int AS cnt
       FROM "User"
       WHERE "createdAt" >= ${windowStart} AND "createdAt" < ${windowEnd}
@@ -856,7 +861,13 @@ export async function getMonthlyRevenueTrend(months: number = 12, locationId?: n
     `),
   ]);
 
-  const monthKey = (d: Date) => new Date(d).toISOString().slice(0, 7);
+  // date_trunc result is timestamp WITHOUT TZ representing IST wall clock.
+  // node-postgres reads it as if it were UTC. getUTCFullYear/Month return the
+  // IST calendar fields directly.
+  const monthKey = (d: Date) => {
+    const dt = new Date(d);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
 
   for (const r of paymentRows) {
     const b = bucketMap.get(monthKey(r.month));
