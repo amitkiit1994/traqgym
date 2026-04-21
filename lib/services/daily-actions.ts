@@ -171,7 +171,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
   if (expiringMembers > 0) {
     items.push({
       type: "expiring_member",
-      label: "Memberships expiring in 3 days",
+      label: "Memberships expiring in 3 days (active)",
       count: expiringMembers,
       href: "/admin/members?status=expiring",
       priority: "medium",
