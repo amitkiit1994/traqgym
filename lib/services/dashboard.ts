@@ -409,7 +409,7 @@ export async function getDailyCollection(locationId?: number) {
   const where: Record<string, unknown> = {
     createdAt: { gte: todayStart, lt: todayEnd },
     // C1: exclude complimentary payments from daily collection totals + staff breakdown
-    paymentMode: { not: { equals: "complimentary", mode: "insensitive" } },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
   };
   if (locationId) where.locationId = locationId;
 
