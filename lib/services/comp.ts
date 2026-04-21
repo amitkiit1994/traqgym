@@ -71,6 +71,36 @@ export type ActiveComp = {
   daysActive: number;
 };
 
+export type CompHistoryRow = {
+  ticketId: number;
+  userId: number;
+  userName: string;
+  userPhone: string | null;
+  planName: string;
+  reason: string | null;
+  buyDate: Date;
+  expireDate: Date;
+  status: string;
+  isCurrentlyActive: boolean;
+  issuedByName: string | null;
+  approvedByName: string | null;
+  locationId: number | null;
+};
+
+export type CompPassHistoryRow = {
+  passId: number;
+  userId: number;
+  userName: string;
+  userPhone: string | null;
+  reason: string;
+  reasonDetail: string | null;
+  startsAt: Date;
+  expiresAt: Date;
+  status: string;
+  isCurrentlyActive: boolean;
+  issuedByName: string;
+};
+
 export type ActiveCompPass = {
   passId: number;
   userId: number;
@@ -1207,4 +1237,97 @@ export async function getCompStats(opts?: {
     conversionCandidates,
     revenueLeakEstimateInRupees,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Historical comp + comp-pass listings (regardless of current status).
+// Used by the /admin/comps "Recent" / "All time" tabs so an owner can see
+// every comp they've ever issued, not only currently-active ones.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getCompHistory(opts?: {
+  sinceDays?: number;
+  locationId?: number;
+  limit?: number;
+}): Promise<CompHistoryRow[]> {
+  const today = todayIST();
+  const where: import("@prisma/client").Prisma.MemberTicketWhereInput = {
+    isComplimentary: true,
+    ...(opts?.locationId ? { locationId: opts.locationId } : {}),
+  };
+  if (opts?.sinceDays && opts.sinceDays > 0) {
+    const cutoff = new Date(today.getTime() - opts.sinceDays * 24 * 60 * 60 * 1000);
+    where.buyDate = { gte: cutoff };
+  }
+
+  const tickets = await prisma.memberTicket.findMany({
+    where,
+    include: {
+      user: { select: { id: true, firstname: true, lastname: true, phone: true } },
+      plan: { select: { name: true } },
+      compIssuer: { select: { firstname: true, lastname: true } },
+      compApprover: { select: { firstname: true, lastname: true } },
+    },
+    orderBy: { buyDate: "desc" },
+    take: opts?.limit ?? 500,
+  });
+
+  return tickets.map((t) => ({
+    ticketId: t.id,
+    userId: t.userId,
+    userName: `${t.user.firstname} ${t.user.lastname}`,
+    userPhone: t.user.phone,
+    planName: t.plan.name,
+    reason: t.compReason,
+    buyDate: t.buyDate,
+    expireDate: t.expireDate,
+    status: t.status,
+    isCurrentlyActive: t.status === "active" && t.expireDate >= today,
+    issuedByName: t.compIssuer
+      ? `${t.compIssuer.firstname} ${t.compIssuer.lastname}`
+      : null,
+    approvedByName: t.compApprover
+      ? `${t.compApprover.firstname} ${t.compApprover.lastname}`
+      : null,
+    locationId: t.locationId,
+  }));
+}
+
+export async function getCompPassHistory(opts?: {
+  sinceDays?: number;
+  locationId?: number;
+  limit?: number;
+}): Promise<CompPassHistoryRow[]> {
+  const today = todayIST();
+  const where: import("@prisma/client").Prisma.CompPassWhereInput = {
+    ...(opts?.locationId ? { user: { locationId: opts.locationId } } : {}),
+  };
+  if (opts?.sinceDays && opts.sinceDays > 0) {
+    const cutoff = new Date(today.getTime() - opts.sinceDays * 24 * 60 * 60 * 1000);
+    where.startsAt = { gte: cutoff };
+  }
+
+  const passes = await prisma.compPass.findMany({
+    where,
+    include: {
+      user: { select: { id: true, firstname: true, lastname: true, phone: true } },
+      issuedBy: { select: { firstname: true, lastname: true } },
+    },
+    orderBy: { startsAt: "desc" },
+    take: opts?.limit ?? 500,
+  });
+
+  return passes.map((p) => ({
+    passId: p.id,
+    userId: p.userId,
+    userName: `${p.user.firstname} ${p.user.lastname}`,
+    userPhone: p.user.phone,
+    reason: p.reason,
+    reasonDetail: p.reasonDetail,
+    startsAt: p.startsAt,
+    expiresAt: p.expiresAt,
+    status: p.status,
+    isCurrentlyActive: p.status === "active" && p.expiresAt >= today,
+    issuedByName: `${p.issuedBy.firstname} ${p.issuedBy.lastname}`,
+  }));
 }
