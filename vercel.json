@@ -32,6 +32,6 @@
     { "path": "/api/cron/agents/trainer-rating", "schedule": "0 8 * * 1" },
     { "path": "/api/cron/trainer-payout-monthly", "schedule": "30 21 1 * *" },
     { "path": "/api/cron/manager-morning-briefing", "schedule": "30 1 * * *" },
-    { "path": "/api/cron/manager-investigate", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/manager-investigate", "schedule": "0 4 * * *" }
   ]
 }
