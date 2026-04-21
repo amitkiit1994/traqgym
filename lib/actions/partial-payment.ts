@@ -41,6 +41,7 @@ export async function getBalanceDueReportAction(filters?: {
   pageSize?: number;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
+  status?: "active" | "all";
 }) {
   try { await requireWorker(); } catch { return { data: [], total: 0, totalDue: 0 }; }
   return getBalanceDueReport(filters);

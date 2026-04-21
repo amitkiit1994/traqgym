@@ -115,11 +115,16 @@ export async function getBalanceDueReport(filters?: {
   pageSize?: number;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
+  status?: "active" | "all";
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {
     balanceDue: { gt: 0 },
   };
+  // Default to active-only so the page matches the sidebar badge and the owner
+  // doesn't chase dues on cancelled/expired tickets that are uncollectible.
+  const statusFilter = filters?.status ?? "active";
+  if (statusFilter === "active") where.status = "active";
   if (filters?.locationId) where.locationId = filters.locationId;
 
   if (filters?.search) {

@@ -22,3 +22,28 @@ export function nowIST(): Date {
   const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
   return new Date(utcMs + istOffset);
 }
+
+/**
+ * Returns the IST calendar fields (year/month/day) for a given UTC instant.
+ * month is 0-indexed to match JS Date conventions.
+ */
+export function istCalendar(d: Date = new Date()): {
+  year: number;
+  month: number;
+  day: number;
+} {
+  const shifted = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+  };
+}
+
+/**
+ * Returns the UTC instant equal to IST midnight (00:00:00 IST) of the given
+ * IST calendar date. month is 0-indexed.
+ */
+export function istMidnight(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day, -5, -30, 0));
+}
