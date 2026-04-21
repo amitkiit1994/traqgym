@@ -125,6 +125,7 @@ const navGroups: NavGroup[] = [
       { href: "/admin/expenses", label: "Expenses", icon: Wallet, adminOnly: true },
       { href: "/admin/payroll", label: "Payroll", icon: Wallet, adminOnly: true },
       { href: "/admin/gift-cards", label: "Gift Cards", icon: Gift },
+      { href: "/admin/payments", label: "Payments", icon: IndianRupee },
       { href: "/admin/balance-due", label: "Balance Due", icon: IndianRupee },
       { href: "/admin/payment-schedules", label: "Payment Schedules", icon: CalendarClock },
       { href: "/admin/followups", label: "Followups", icon: AlertCircle },

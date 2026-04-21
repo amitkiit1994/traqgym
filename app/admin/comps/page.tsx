@@ -5,7 +5,10 @@ import {
   getActiveComps,
   getActiveCompPasses,
   getCompStats,
+  getCompHistory,
+  getCompPassHistory,
 } from "@/lib/services/comp";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,11 +46,16 @@ export default async function CompsPage() {
     redirect("/admin/dashboard");
   }
 
-  const [comps, passes, stats] = await Promise.all([
-    getActiveComps(),
-    getActiveCompPasses(),
-    getCompStats(),
-  ]);
+  const [comps, passes, stats, recentComps, allTimeComps, recentPasses, allTimePasses] =
+    await Promise.all([
+      getActiveComps(),
+      getActiveCompPasses(),
+      getCompStats(),
+      getCompHistory({ sinceDays: 90, limit: 200 }),
+      getCompHistory({ limit: 500 }),
+      getCompPassHistory({ sinceDays: 90, limit: 200 }),
+      getCompPassHistory({ limit: 500 }),
+    ]);
 
   const compRatioPct = (stats.compRatio * 100).toFixed(1);
 
@@ -118,6 +126,20 @@ export default async function CompsPage() {
         </Card>
       </section>
 
+      <Tabs defaultValue="active" className="space-y-4">
+        <TabsList className="overflow-x-auto max-w-full">
+          <TabsTrigger value="active">
+            Active ({comps.length + passes.length})
+          </TabsTrigger>
+          <TabsTrigger value="recent">
+            Recent 90d ({recentComps.length + recentPasses.length})
+          </TabsTrigger>
+          <TabsTrigger value="all">
+            All time ({allTimeComps.length + allTimePasses.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="active" className="space-y-4">
       <section aria-label="Active comps" className="space-y-2">
         <div className="flex items-baseline justify-between">
           <h2 className="text-base font-semibold">Active Comps</h2>
@@ -408,6 +430,202 @@ export default async function CompsPage() {
           </>
         )}
       </section>
+        </TabsContent>
+
+        <TabsContent value="recent" className="space-y-4">
+          <HistorySection
+            title="Free Plans (last 90 days)"
+            emptyLabel="No comp tickets in the last 90 days."
+            rows={recentComps}
+          />
+          <HistoryPassSection
+            title="Day Passes (last 90 days)"
+            emptyLabel="No day passes in the last 90 days."
+            rows={recentPasses}
+          />
+        </TabsContent>
+
+        <TabsContent value="all" className="space-y-4">
+          <HistorySection
+            title="Free Plans (all time)"
+            emptyLabel="No comp tickets on record."
+            rows={allTimeComps}
+          />
+          <HistoryPassSection
+            title="Day Passes (all time)"
+            emptyLabel="No day passes on record."
+            rows={allTimePasses}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+function statusBadgeVariant(
+  status: string,
+  isCurrentlyActive: boolean,
+): "active" | "expired" | "secondary" | "default" {
+  if (isCurrentlyActive) return "active";
+  const s = status.toLowerCase();
+  if (s === "cancelled" || s === "revoked") return "secondary";
+  if (s === "expired") return "expired";
+  return "default";
+}
+
+function HistorySection({
+  title,
+  emptyLabel,
+  rows,
+}: {
+  title: string;
+  emptyLabel: string;
+  rows: Awaited<ReturnType<typeof getCompHistory>>;
+}) {
+  return (
+    <section aria-label={title} className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-base font-semibold">{title}</h2>
+        <span className="text-xs text-muted-foreground">{rows.length} total</span>
+      </div>
+      {rows.length === 0 ? (
+        <Card size="sm">
+          <CardContent className="py-6 text-center text-sm text-muted-foreground">
+            {emptyLabel}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Plan</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Issued by</TableHead>
+                <TableHead>Issued on</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.ticketId}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/members/${r.userId}`}
+                      className="hover:underline underline-offset-4"
+                    >
+                      {r.userName}
+                    </Link>
+                    {r.userPhone && (
+                      <div className="text-xs text-muted-foreground">
+                        {r.userPhone}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">{r.planName}</TableCell>
+                  <TableCell className="text-sm">
+                    {r.reason ? <Badge variant="info">{r.reason}</Badge> : "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {r.issuedByName ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">{fmtDate(r.buyDate)}</TableCell>
+                  <TableCell className="text-sm">
+                    {fmtDate(r.expireDate)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={statusBadgeVariant(r.status, r.isCurrentlyActive)}
+                    >
+                      {r.isCurrentlyActive ? "active" : r.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HistoryPassSection({
+  title,
+  emptyLabel,
+  rows,
+}: {
+  title: string;
+  emptyLabel: string;
+  rows: Awaited<ReturnType<typeof getCompPassHistory>>;
+}) {
+  return (
+    <section aria-label={title} className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-base font-semibold">{title}</h2>
+        <span className="text-xs text-muted-foreground">{rows.length} total</span>
+      </div>
+      {rows.length === 0 ? (
+        <Card size="sm">
+          <CardContent className="py-6 text-center text-sm text-muted-foreground">
+            {emptyLabel}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Issued by</TableHead>
+                <TableHead>Started</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.passId}>
+                  <TableCell>
+                    <Link
+                      href={`/admin/members/${r.userId}`}
+                      className="hover:underline underline-offset-4"
+                    >
+                      {r.userName}
+                    </Link>
+                    {r.userPhone && (
+                      <div className="text-xs text-muted-foreground">
+                        {r.userPhone}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <Badge variant="info">{r.reason}</Badge>
+                    {r.reasonDetail && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {r.reasonDetail}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">{r.issuedByName}</TableCell>
+                  <TableCell className="text-sm">{fmtDate(r.startsAt)}</TableCell>
+                  <TableCell className="text-sm">{fmtDate(r.expiresAt)}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={statusBadgeVariant(r.status, r.isCurrentlyActive)}
+                    >
+                      {r.isCurrentlyActive ? "active" : r.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
   );
 }
