@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { todayIST } from "@/lib/utils/date";
+import { todayIST, istCalendar, istMidnight } from "@/lib/utils/date";
 import { getSetting } from "./settings";
 
 export type ActionItem = {
@@ -16,6 +16,7 @@ export type ActionItem = {
  */
 export async function getDailyActions(): Promise<ActionItem[]> {
   const today = todayIST();
+  const ist = istCalendar();
 
   const threeDaysOut = new Date(today);
   threeDaysOut.setDate(threeDaysOut.getDate() + 3);
@@ -60,9 +61,14 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       });
     })(),
 
-    // Memberships expiring in next 3 days
+    // Memberships expiring in next 3 days — only active tickets,
+    // matches the dashboard "Expiring Soon" card. Otherwise this counts
+    // every historical ticket whose expireDate happens to fall in the
+    // window, including ones that have already been renewed (status="renewed")
+    // or cancelled — inflated the FFF number to 112 vs the real 4.
     prisma.memberTicket.count({
       where: {
+        status: "active",
         expireDate: { gte: today, lte: threeDaysOut },
       },
     }),
@@ -79,16 +85,18 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       },
     }),
 
-    // Birthdays today
+    // Birthdays today (IST calendar — staff opens dashboard at 8am IST and
+    // expects to see today's birthdays, not yesterday's UTC date).
     prisma.user.findMany({
       where: { birthdate: { not: null } },
       select: { birthdate: true },
     }).then((users) => {
-      const todayMonth = today.getMonth();
-      const todayDay = today.getDate();
+      const todayMonth = ist.month;
+      const todayDay = ist.day;
       return users.filter((u) => {
         const bd = new Date(u.birthdate!);
-        return bd.getMonth() === todayMonth && bd.getDate() === todayDay;
+        const bdIst = istCalendar(bd);
+        return bdIst.month === todayMonth && bdIst.day === todayDay;
       }).length;
     }),
 
@@ -97,16 +105,17 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       where: { status: "pending" },
     }),
 
-    // Anniversaries today
+    // Anniversaries today (IST calendar — same reason as birthdays).
     prisma.user.findMany({
       where: { anniversaryDate: { not: null } },
       select: { anniversaryDate: true },
     }).then((users) => {
-      const todayMonth = today.getMonth();
-      const todayDay = today.getDate();
+      const todayMonth = ist.month;
+      const todayDay = ist.day;
       return users.filter((u) => {
         const ad = new Date(u.anniversaryDate!);
-        return ad.getMonth() === todayMonth && ad.getDate() === todayDay;
+        const adIst = istCalendar(ad);
+        return adIst.month === todayMonth && adIst.day === todayDay;
       }).length;
     }),
 
@@ -116,9 +125,11 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       const target = parseFloat(targetStr);
       if (target <= 0) return null;
 
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const daysSoFar = today.getDate();
-      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const monthStart = istMidnight(ist.year, ist.month, 1);
+      const daysSoFar = ist.day;
+      // Day 0 of next month = last day of current month, in IST.
+      const lastDayOfMonth = new Date(istMidnight(ist.year, ist.month + 1, 1).getTime() - 86400000);
+      const daysInMonthCount = istCalendar(lastDayOfMonth).day;
 
       const revenueResult = await prisma.payment.aggregate({
         _sum: { amount: true },
@@ -128,7 +139,7 @@ export async function getDailyActions(): Promise<ActionItem[]> {
       });
 
       const revenue = revenueResult._sum?.amount?.toNumber() ?? 0;
-      const pace = daysSoFar > 0 ? (revenue * daysInMonth) / daysSoFar : 0;
+      const pace = daysSoFar > 0 ? (revenue * daysInMonthCount) / daysSoFar : 0;
 
       if (pace < target) return 1; // flag: behind target
       return null;
