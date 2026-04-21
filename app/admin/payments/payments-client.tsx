@@ -43,6 +43,7 @@ function fmtDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
+    timeZone: "Asia/Kolkata",
   });
 }
 
@@ -129,7 +130,7 @@ export function PaymentsClient({
     ];
     const lines = data.rows.map((r) =>
       [
-        new Date(r.date).toLocaleString("en-IN"),
+        new Date(r.date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
         r.memberName,
         r.memberPhone ?? "",
         r.planName,
