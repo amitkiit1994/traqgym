@@ -17,7 +17,7 @@ See `docs/specs/2026-05-16-telegram-data-bot-design.md` for design and
 
 1. **Create the bot:** Telegram → @BotFather → `/newbot` → copy `TELEGRAM_BOT_TOKEN`.
 2. **Each user `/start`s the bot once.** Capture their `chat.id` from Vercel logs (or use the `getUpdates` API). Set `TELEGRAM_ALLOWED_CHAT_IDS=<amit_id>,<robin_id>`.
-3. **OpenAI key:** create at platform.openai.com, add credit, copy to `OPENAI_API_KEY`.
+3. **Google AI (Gemini) key:** create at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — free tier covers our load. Copy to `GOOGLE_API_KEY`. (Optional: set a daily quota cap in Cloud Console as a safety net.)
 4. **Vercel project:** `vercel link` from `telegram-bot/`, set Root Directory to `telegram-bot/` in Vercel dashboard. Set all envs from `.env.example` in Vercel project settings.
 5. **Vercel Blob:** create a Blob store in Vercel dashboard → Storage. Copy the `BLOB_READ_WRITE_TOKEN` into Vercel envs AND into GitHub secrets as `VERCEL_BLOB_RW_TOKEN`.
 6. **Seed the first snapshot manually** (so step 8 has data to read):

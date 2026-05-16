@@ -19,49 +19,48 @@ function makeStore(): BlobStore {
   };
 }
 
-describe("runLlm", () => {
-  it("returns final assistant text after tool calls", async () => {
+describe("runLlm (Gemini)", () => {
+  it("returns final assistant text after a tool call round-trip", async () => {
     let callIdx = 0;
-    const openai = {
-      chat: {
-        completions: {
-          create: vi.fn().mockImplementation(async () => {
-            callIdx++;
-            if (callIdx === 1) {
-              return {
-                choices: [{
-                  message: {
-                    role: "assistant",
-                    tool_calls: [{
-                      id: "t1",
-                      type: "function",
-                      function: {
-                        name: "query_csv",
-                        arguments: JSON.stringify({
-                          csv: "payments",
-                          filters: [{ col: "Payment Mode", op: "eq", val: "Cash" }],
-                          agg: { col: "Paid Amount", fn: "sum" },
-                        }),
-                      },
-                    }],
-                  },
-                }],
-              };
-            }
+    const ai = {
+      models: {
+        generateContent: vi.fn().mockImplementation(async () => {
+          callIdx++;
+          if (callIdx === 1) {
             return {
-              choices: [{
-                message: { role: "assistant", content: "Cash collections: ₹2,600" },
+              candidates: [{
+                content: {
+                  role: "model",
+                  parts: [{
+                    functionCall: {
+                      name: "query_csv",
+                      args: {
+                        csv: "payments",
+                        filters: [{ col: "Payment Mode", op: "eq", val: "Cash" }],
+                        agg: { col: "Paid Amount", fn: "sum" },
+                      },
+                    },
+                  }],
+                },
               }],
             };
-          }),
-        },
+          }
+          return {
+            candidates: [{
+              content: {
+                role: "model",
+                parts: [{ text: "Cash collections: ₹2,600" }],
+              },
+            }],
+          };
+        }),
       },
     } as any;
 
     const result = await runLlm({
       question: "how much cash collected?",
-      openai,
-      model: "gpt-4o-mini",
+      ai,
+      model: "gemini-2.5-flash",
       store: makeStore(),
       maxIterations: 5,
     });
@@ -70,29 +69,25 @@ describe("runLlm", () => {
   });
 
   it("stops after maxIterations and returns fallback", async () => {
-    const openai = {
-      chat: {
-        completions: {
-          create: vi.fn().mockResolvedValue({
-            choices: [{
-              message: {
-                role: "assistant",
-                tool_calls: [{
-                  id: "x",
-                  type: "function",
-                  function: { name: "list_csvs", arguments: "{}" },
-                }],
-              },
-            }],
-          }),
-        },
+    const ai = {
+      models: {
+        generateContent: vi.fn().mockResolvedValue({
+          candidates: [{
+            content: {
+              role: "model",
+              parts: [{
+                functionCall: { name: "list_csvs", args: {} },
+              }],
+            },
+          }],
+        }),
       },
     } as any;
 
     const result = await runLlm({
       question: "loop forever",
-      openai,
-      model: "gpt-4o-mini",
+      ai,
+      model: "gemini-2.5-flash",
       store: makeStore(),
       maxIterations: 3,
     });

@@ -27,7 +27,7 @@ Today this need is served by Amit running ad-hoc CSV queries and forwarding answ
 | Audience | Amit + Robin (2 Telegram chat IDs in an allowlist) |
 | Data freshness | Daily snapshot, cron at 06:00 IST |
 | Hosting | Vercel serverless (Next.js API route or standalone Vercel project) |
-| LLM | OpenAI GPT-4o-mini |
+| LLM | Google Gemini 2.5 Flash |
 | Data scope | All 8 CSVs available; LLM picks which to query per question |
 | Tool design | Schema + bounded filter DSL (no code execution) |
 | Cron host | GitHub Actions, daily + manual `workflow_dispatch` |
@@ -47,7 +47,7 @@ Today this need is served by Amit running ad-hoc CSV queries and forwarding answ
                   ┌───────────────┼───────────────┐
                   ▼               ▼               ▼
           ┌──────────────┐  ┌──────────┐  ┌──────────────┐
-          │ Allowlist    │  │  OpenAI  │  │ Vercel Blob  │
+          │ Allowlist    │  │  Gemini  │  │ Vercel Blob  │
           │ + secret-tok │  │ 4o-mini  │  │  CSV store   │
           │ + rate limit │  │ +tools   │  │              │
           └──────────────┘  └────┬─────┘  └──────┬───────┘
@@ -69,7 +69,7 @@ Today this need is served by Amit running ad-hoc CSV queries and forwarding answ
 4. Slash-commands (`/start`, `/help`, `/snapshot`, `/refresh`, `/ping`) handled directly without LLM call.
 5. Otherwise: per-chat rate limit check (max 20 msgs/min). If over, reply "Slow down a sec".
 6. Load `csv/latest.json` from Blob (cached in module scope for 60s).
-7. Build OpenAI chat request: system prompt + `list_csvs` + `query_csv` tools + user message.
+7. Build Gemini chat request: system prompt + `list_csvs` + `query_csv` tools + user message.
 8. Run tool-calling loop (max 5 iterations to bound runaway calls). Each `query_csv` call streams the named CSV from Blob (also cached in module scope) and applies the bounded DSL.
 9. Final assistant message → strip Markdown, format numbers Indian-style, append `📅 data as of <snapshot_date>`, split if >3500 chars.
 10. POST reply via `sendMessage` API.
@@ -270,7 +270,7 @@ freeformfitnessOS/telegram-bot/
 ├── src/
 │   ├── auth.ts                   # allowlist + secret-token check
 │   ├── commands.ts               # /start, /help, /snapshot, /refresh, /ping
-│   ├── llm.ts                    # OpenAI tool-calling loop
+│   ├── llm.ts                    # Gemini tool-calling loop
 │   ├── tools/
 │   │   ├── list-csvs.ts          # list_csvs implementation
 │   │   ├── query-csv.ts          # query_csv DSL executor
@@ -312,8 +312,9 @@ freeformfitnessOS/.github/workflows/refresh-export.yml   # new file
 TELEGRAM_BOT_TOKEN=                # from BotFather
 TELEGRAM_ALLOWED_CHAT_IDS=         # comma-separated, e.g. 12345,67890
 WEBHOOK_SECRET=                    # any long random string
-OPENAI_API_KEY=                    # user-provided
-OPENAI_MODEL=gpt-4o-mini           # default; overridable
+GOOGLE_API_KEY=                    # user-provided (aistudio.google.com/apikey)
+GEMINI_MODEL=gemini-2.5-flash      # default; overridable
+BLOB_LATEST_URL=                   # URL of csv/latest.json in Vercel Blob (set after first upload)
 BLOB_READ_WRITE_TOKEN=             # Vercel Blob token (function reads only)
 GITHUB_PAT=                        # optional; only needed for /refresh command
 GITHUB_REPO=amitkumardas/freeformfitnessOS  # for workflow_dispatch
@@ -329,8 +330,8 @@ LOG_LEVEL=info
 | Rate limit exceeded | Reply "Slow down, try in a moment", 200 |
 | `latest.json` missing in Blob | Reply "No data yet — Amit needs to run first export". Log error. |
 | `latest.json` stale > 36h | Prepend warning to answer; still answer |
-| OpenAI API error (5xx/timeout) | Retry once after 1s; if still fails, reply "AI is having a bad day, try again in a minute" |
-| OpenAI returns no tool call after 5 iterations | Reply "I couldn't figure out how to answer that — try rephrasing" |
+| Gemini API error (5xx/timeout) | Retry once after 1s; if still fails, reply "AI is having a bad day, try again in a minute" |
+| Gemini returns no tool call after 5 iterations | Reply "I couldn't figure out how to answer that — try rephrasing" |
 | `query_csv` invalid args | Return structured error to model; model self-corrects on next turn |
 | CSV column referenced doesn't exist | Same as above |
 | GH Action `workflow_dispatch` fails on `/refresh` | Reply "Couldn't trigger refresh — check GH" |
@@ -349,7 +350,7 @@ LOG_LEVEL=info
   - `csv-parse.test.ts` — DD-MM-YYYY → ISO, comma-thousands money parsing, blank fields.
   - `auth.test.ts` — allowlist match/miss, secret token mismatch, rate-limit overflow.
   - `format.test.ts` — Indian comma (3,05,700 not 305,700).
-- **Integration tests:** mock OpenAI, mock Blob → run webhook end-to-end with fixture CSVs. Verify a known question produces a known tool call and a known final answer.
+- **Integration tests:** mock Gemini, mock Blob → run webhook end-to-end with fixture CSVs. Verify a known question produces a known tool call and a known final answer.
 - **Manual smoke test (post-deploy):** ask 5 reference questions from real April data, compare against known answers (e.g., "how much collected 1-7 April" → must say 305700).
 - **No Telegram-side e2e tests in v1.**
 
@@ -359,14 +360,14 @@ LOG_LEVEL=info
 - Allowlist on `chat.id` (NOT username — usernames are mutable).
 - No code execution from LLM output — query_csv is a typed JSON DSL parsed/validated server-side.
 - Secrets (`OPENAI_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `TELEGRAM_BOT_TOKEN`, `GITHUB_PAT`, `FB_PASSWORD_FFF`) live in Vercel env vars + GH Actions secrets. Never logged.
-- Rate limit prevents runaway OpenAI bills if either chat ID is compromised.
+- Rate limit prevents runaway Gemini bills if either chat ID is compromised.
 - Function does NOT have Blob write token (read-only), so a compromised function can't corrupt snapshots.
 - GH Actions has Blob write token but not read-public.
 
 ## 14. Cost Model (rough)
 
-- OpenAI GPT-4o-mini ≈ $0.0001 per question (system prompt + 1-2 tool calls + answer).
-- 50 questions/day × 30 days = ~$0.15/mo OpenAI.
+- Gemini Gemini 2.5 Flash ≈ $0.0001 per question (system prompt + 1-2 tool calls + answer).
+- 50 questions/day × 30 days = ~$0.15/mo Gemini.
 - Vercel Hobby tier: $0 (well within limits).
 - Vercel Blob free tier: 1GB storage / 1GB bandwidth — easily covers 30 daily snapshots of ~500KB each.
 - GitHub Actions: free for public repos / 2000 min/mo on private — using ~5 min/day = ~150 min/mo.

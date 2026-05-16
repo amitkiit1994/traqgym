@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { QUERY_CSV_TOOL, LIST_CSVS_TOOL, parseQueryArgs } from "../src/tools/schema.js";
+import { QUERY_CSV_DECL, LIST_CSVS_DECL, parseQueryArgs } from "../src/tools/schema.js";
 
-describe("tool definitions", () => {
-  it("LIST_CSVS_TOOL is OpenAI tool shape", () => {
-    expect(LIST_CSVS_TOOL.type).toBe("function");
-    expect(LIST_CSVS_TOOL.function.name).toBe("list_csvs");
+describe("tool declarations (Gemini)", () => {
+  it("LIST_CSVS_DECL has the right name", () => {
+    expect(LIST_CSVS_DECL.name).toBe("list_csvs");
   });
-  it("QUERY_CSV_TOOL has required csv arg", () => {
-    expect(QUERY_CSV_TOOL.function.parameters.required).toContain("csv");
+  it("QUERY_CSV_DECL has required csv arg in JSON schema", () => {
+    const schema = QUERY_CSV_DECL.parametersJsonSchema as {
+      required: string[];
+    };
+    expect(schema.required).toContain("csv");
   });
 });
 

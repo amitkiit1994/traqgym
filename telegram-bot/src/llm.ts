@@ -1,13 +1,13 @@
-import type OpenAI from "openai";
+import type { GoogleGenAI, Content, GenerateContentResponse } from "@google/genai";
 import type { BlobStore } from "./data/blob-store.js";
 import { parseCsv } from "./data/csv-parse.js";
 import { buildListCsvsResult, CSV_HINTS } from "./tools/list-csvs.js";
-import { LIST_CSVS_TOOL, QUERY_CSV_TOOL, parseQueryArgs } from "./tools/schema.js";
+import { LIST_CSVS_DECL, QUERY_CSV_DECL, parseQueryArgs } from "./tools/schema.js";
 import { applyQuery } from "./tools/query-csv.js";
 
 export interface RunLlmInput {
   question: string;
-  openai: OpenAI;
+  ai: GoogleGenAI;
   model: string;
   store: BlobStore;
   maxIterations?: number;
@@ -37,65 +37,64 @@ Rules:
 `.trim();
 
 export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
-  const { openai, model, store, question } = input;
+  const { ai, model, store, question } = input;
   const maxIter = input.maxIterations ?? 5;
   const pointer = await store.fetchLatest();
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt(pointer.snapshot_date, todayIso) },
-    { role: "user", content: question },
+  const contents: Content[] = [
+    { role: "user", parts: [{ text: question }] },
   ];
 
   let toolCalls = 0;
   for (let i = 0; i < maxIter; i++) {
-    const resp = await openai.chat.completions.create({
+    const resp: GenerateContentResponse = await ai.models.generateContent({
       model,
-      messages,
-      tools: [LIST_CSVS_TOOL, QUERY_CSV_TOOL],
-      tool_choice: "auto",
+      contents,
+      config: {
+        systemInstruction: systemPrompt(pointer.snapshot_date, todayIso),
+        tools: [{ functionDeclarations: [LIST_CSVS_DECL, QUERY_CSV_DECL] }],
+      },
     });
-    const msg = resp.choices[0]!.message;
-    messages.push(msg as OpenAI.Chat.ChatCompletionMessageParam);
 
-    if (!msg.tool_calls || msg.tool_calls.length === 0) {
-      return { text: msg.content ?? "", toolCalls, snapshotDate: pointer.snapshot_date };
+    const candidate = resp.candidates?.[0];
+    const modelParts = candidate?.content?.parts ?? [];
+    contents.push({ role: "model", parts: modelParts });
+
+    const fnCalls = modelParts.filter(p => p.functionCall);
+    if (fnCalls.length === 0) {
+      const text = modelParts.map(p => p.text ?? "").join("").trim();
+      return { text, toolCalls, snapshotDate: pointer.snapshot_date };
     }
 
-    for (const call of msg.tool_calls) {
+    const responseParts: Content["parts"] = [];
+    for (const part of fnCalls) {
+      const call = part.functionCall!;
       toolCalls++;
-      if (call.type !== "function") {
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify({ error: `Unsupported tool call type: ${call.type}` }),
-        });
-        continue;
-      }
-      const fnName = call.function.name;
-      const fnArgs = call.function.arguments;
-      let content: string;
+      const name = call.name ?? "";
+      const args = call.args ?? {};
+      let response: Record<string, unknown>;
       try {
-        if (fnName === "list_csvs") {
-          const r = await buildListCsvsResult(store);
-          content = JSON.stringify(r);
-        } else if (fnName === "query_csv") {
-          const args = parseQueryArgs(JSON.parse(fnArgs));
-          const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
-          const text = await store.fetchCsv(args.csv);
+        if (name === "list_csvs") {
+          response = await buildListCsvsResult(store) as unknown as Record<string, unknown>;
+        } else if (name === "query_csv") {
+          const parsed = parseQueryArgs(args);
+          const hint = CSV_HINTS[parsed.csv] ?? { date: [], number: [] };
+          const text = await store.fetchCsv(parsed.csv);
           const { rows } = parseCsv(text, {
             dateColumns: hint.date,
             numberColumns: hint.number,
           });
-          content = JSON.stringify(applyQuery(rows, args));
+          response = applyQuery(rows, parsed) as unknown as Record<string, unknown>;
         } else {
-          content = JSON.stringify({ error: `Unknown tool: ${fnName}` });
+          response = { error: `Unknown tool: ${name}` };
         }
       } catch (e) {
-        content = JSON.stringify({ error: (e as Error).message });
+        response = { error: (e as Error).message };
       }
-      messages.push({ role: "tool", tool_call_id: call.id, content });
+      responseParts!.push({ functionResponse: { name, response } });
     }
+    contents.push({ role: "user", parts: responseParts });
   }
   return {
     text: "I couldn't figure out how to answer that — try rephrasing.",
