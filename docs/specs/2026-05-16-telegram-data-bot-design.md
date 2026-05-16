@@ -366,8 +366,8 @@ LOG_LEVEL=info
 
 ## 14. Cost Model (rough)
 
-- Gemini Gemini 2.5 Flash ≈ $0.0001 per question (system prompt + 1-2 tool calls + answer).
-- 50 questions/day × 30 days = ~$0.15/mo Gemini.
+- Gemini 2.5 Flash free tier covers ~1500 requests/day → ~$0/mo for our 2-user load.
+- If we exceed free tier: ~$0.0001 per question (system prompt + 1-2 tool calls + answer).
 - Vercel Hobby tier: $0 (well within limits).
 - Vercel Blob free tier: 1GB storage / 1GB bandwidth — easily covers 30 daily snapshots of ~500KB each.
 - GitHub Actions: free for public repos / 2000 min/mo on private — using ~5 min/day = ~150 min/mo.
