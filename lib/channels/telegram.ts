@@ -301,5 +301,5 @@ export function derivePairingCode(args: {
     .createHmac("sha256", secret)
     .update(`pair:${args.gymId}:${day}`)
     .digest("hex")
-    .slice(0, 8);
+    .slice(0, 16);
 }

@@ -1326,3 +1326,37 @@ model ProcessedTelegramUpdate {
 
   @@index([processedAt])
 }
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  email     String // not unique — can have multiple active tokens (last one wins for verification)
+  tokenHash String    @unique // sha256 of the actual token; we never store the raw value
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+// ─── Phase 6a: prospect-facing gym signup intake ────────────────────────────
+// Rows are inserted by the public /signup form. Ops review the queue and
+// provision approved entries via `scripts/onboard-gym.sh`.
+model PendingGymProvisioning {
+  id            Int       @id @default(autoincrement())
+  gymName       String
+  ownerName     String
+  ownerEmail    String
+  ownerPhone    String
+  subdomain     String? // requested (we'll validate uniqueness during provisioning)
+  city          String?
+  notes         String?
+  status        String    @default("pending") // pending | approved | provisioned | rejected
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  provisionedAt DateTime?
+  provisionedBy String?
+
+  @@index([status])
+  @@index([createdAt])
+}

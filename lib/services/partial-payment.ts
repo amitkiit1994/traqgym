@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { computeGstSplitInclusive, getGymGstRate } from "./tax";
 
 export async function recordPartialPayment(params: {
@@ -15,6 +16,12 @@ export async function recordPartialPayment(params: {
   const gymGstRate = await getGymGstRate();
   const gstSplit = computeGstSplitInclusive(params.amount, gymGstRate);
 
+  // Money math uses Prisma.Decimal end-to-end so repeated partial payments
+  // can't accumulate IEEE-754 drift (the phantom-balance bug documented in
+  // tests/bugs/financial-bugs.test.ts). The incoming `params.amount` is a
+  // plain number from the request boundary — wrap it once.
+  const paymentAmountDec = new Prisma.Decimal(params.amount);
+
   const result = await prisma.$transaction(async (tx) => {
     // Read ticket inside the transaction so the validation snapshot matches the writes,
     // closing the race window where two concurrent payments both pass the balance check.
@@ -24,14 +31,17 @@ export async function recordPartialPayment(params: {
     });
 
     if (!ticket) return { error: "Ticket not found" as const };
-    if (Number(ticket.balanceDue) <= 0) return { error: "No balance due on this ticket" as const };
-    if (params.amount > Number(ticket.balanceDue)) {
-      return { error: `Amount exceeds balance due (${ticket.balanceDue})` as const };
+    const balanceDueDec = new Prisma.Decimal(ticket.balanceDue);
+    const amountPaidDec = new Prisma.Decimal(ticket.amountPaid);
+    if (balanceDueDec.lte(0)) return { error: "No balance due on this ticket" as const };
+    if (paymentAmountDec.gt(balanceDueDec)) {
+      return { error: `Amount exceeds balance due (${balanceDueDec.toFixed(2)})` as const };
     }
 
-    const newAmountPaid = Number(ticket.amountPaid) + params.amount;
-    const newBalanceDue = Number(ticket.balanceDue) - params.amount;
-    const isFullyPaid = newBalanceDue <= 0;
+    const newAmountPaid = amountPaidDec.plus(paymentAmountDec);
+    const newBalanceDueRaw = balanceDueDec.minus(paymentAmountDec);
+    const newBalanceDue = Prisma.Decimal.max(newBalanceDueRaw, 0);
+    const isFullyPaid = newBalanceDue.lte(0);
 
     // Atomic compare-and-swap: only succeed if the balance/paid we read are
     // still the current values. Under READ COMMITTED two concurrent partial
@@ -47,7 +57,7 @@ export async function recordPartialPayment(params: {
       },
       data: {
         amountPaid: newAmountPaid,
-        balanceDue: Math.max(0, newBalanceDue),
+        balanceDue: newBalanceDue,
       },
     });
     if (updated.count === 0) {
@@ -83,9 +93,9 @@ export async function recordPartialPayment(params: {
           ticketId: params.ticketId,
           userId: ticket.userId,
           amount: params.amount,
-          previousPaid: Number(ticket.amountPaid),
-          newPaid: newAmountPaid,
-          remainingBalance: Math.max(0, newBalanceDue),
+          previousPaid: amountPaidDec.toFixed(2),
+          newPaid: newAmountPaid.toFixed(2),
+          remainingBalance: newBalanceDue.toFixed(2),
           isFullyPaid,
         }),
         actorId: params.collectedById,
@@ -93,7 +103,7 @@ export async function recordPartialPayment(params: {
       },
     });
 
-    return { payment, newBalanceDue: Math.max(0, newBalanceDue), isFullyPaid };
+    return { payment, newBalanceDue, isFullyPaid };
   });
 
   if ("error" in result) {
@@ -103,7 +113,9 @@ export async function recordPartialPayment(params: {
   return {
     success: true,
     paymentId: result.payment.id,
-    newBalanceDue: result.newBalanceDue,
+    // Boundary conversion: JSON / client expects a number. Done once, after
+    // all Decimal arithmetic is committed.
+    newBalanceDue: result.newBalanceDue.toNumber(),
     isFullyPaid: result.isFullyPaid,
   };
 }

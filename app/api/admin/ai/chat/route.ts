@@ -7,8 +7,12 @@ import type { AgentInputItem } from "@openai/agents";
 import { createGymAgent } from "@/lib/ai/agent";
 import type { AgentContext } from "@/lib/ai/system-prompt";
 import { runInAiContext } from "@/lib/ai-context";
+import { checkOrigin } from "@/lib/services/csrf";
 
 export async function POST(req: NextRequest) {
+  const csrf = checkOrigin(req);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (!session || session.user.actorType !== "worker") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
