@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 export function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -60,22 +61,32 @@ export async function createGiftCard(data: {
 
 export async function redeemGiftCard(code: string, amount: number) {
   try {
+    // Decimal math throughout so successive redemptions don't drift via IEEE-754
+    // (the "zombie card" bug in tests/bugs/financial-bugs.test.ts BUG 3).
+    const amountDec = new Prisma.Decimal(amount);
+
     const card = await prisma.giftCard.findUnique({ where: { code } });
     if (!card) return { success: false, error: "Gift card not found" };
     if (card.status !== "active") return { success: false, error: `Gift card is ${card.status}` };
     if (card.expiresAt && card.expiresAt < new Date()) return { success: false, error: "Gift card has expired" };
-    if (amount > Number(card.balance)) return { success: false, error: `Insufficient balance. Available: ₹${card.balance}` };
+    const balanceDec = new Prisma.Decimal(card.balance);
+    if (amountDec.gt(balanceDec)) {
+      return { success: false, error: `Insufficient balance. Available: ₹${balanceDec.toFixed(2)}` };
+    }
 
     // Atomic update with balance check to prevent race conditions
     const result = await prisma.$transaction(async (tx) => {
       // Re-read inside transaction for consistency
       const current = await tx.giftCard.findUnique({ where: { code } });
-      if (!current || Number(current.balance) < amount) {
+      if (!current) throw new Error("Insufficient balance");
+      const currentBalanceDec = new Prisma.Decimal(current.balance);
+      if (currentBalanceDec.lt(amountDec)) {
         throw new Error("Insufficient balance");
       }
 
-      const newBalance = Number(current.balance) - amount;
-      const newStatus = newBalance <= 0.005 ? "redeemed" : "active"; // Use epsilon for float comparison
+      const newBalance = currentBalanceDec.minus(amountDec);
+      // Exact Decimal comparison — no epsilon needed since math is precise.
+      const newStatus = newBalance.lte(0) ? "redeemed" : "active";
 
       return tx.giftCard.update({
         where: { code },
@@ -83,7 +94,7 @@ export async function redeemGiftCard(code: string, amount: number) {
       });
     });
 
-    return { success: true, remaining: Number(result.balance), status: result.status };
+    return { success: true, remaining: new Prisma.Decimal(result.balance).toNumber(), status: result.status };
   } catch (err) {
     if (err instanceof Error && err.message === "Insufficient balance") {
       return { success: false, error: "Insufficient balance (concurrent redemption)" };
