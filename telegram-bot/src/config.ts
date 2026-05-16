@@ -9,7 +9,7 @@ const schema = z.object({
   BLOB_READ_WRITE_TOKEN: z.string().min(1),
   BLOB_LATEST_URL: z.string().url(),
   GITHUB_PAT: z.string().optional(),
-  GITHUB_REPO: z.string().default("amitkumardas/freeformfitnessOS"),
+  GITHUB_REPO: z.string().default("amitkiit1994/traqgym"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
