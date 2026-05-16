@@ -64,13 +64,23 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
 
     for (const call of msg.tool_calls) {
       toolCalls++;
+      if (call.type !== "function") {
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify({ error: `Unsupported tool call type: ${call.type}` }),
+        });
+        continue;
+      }
+      const fnName = call.function.name;
+      const fnArgs = call.function.arguments;
       let content: string;
       try {
-        if (call.function.name === "list_csvs") {
+        if (fnName === "list_csvs") {
           const r = await buildListCsvsResult(store);
           content = JSON.stringify(r);
-        } else if (call.function.name === "query_csv") {
-          const args = parseQueryArgs(JSON.parse(call.function.arguments));
+        } else if (fnName === "query_csv") {
+          const args = parseQueryArgs(JSON.parse(fnArgs));
           const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
           const text = await store.fetchCsv(args.csv);
           const { rows } = parseCsv(text, {
@@ -79,7 +89,7 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
           });
           content = JSON.stringify(applyQuery(rows, args));
         } else {
-          content = JSON.stringify({ error: `Unknown tool: ${call.function.name}` });
+          content = JSON.stringify({ error: `Unknown tool: ${fnName}` });
         }
       } catch (e) {
         content = JSON.stringify({ error: (e as Error).message });
