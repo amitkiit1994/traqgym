@@ -3,8 +3,12 @@ import { authOptions } from "@/lib/auth";
 import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
 import { send as sendSMS } from "@/lib/channels/sms";
 import { send as sendEmail } from "@/lib/channels/email";
+import { checkOrigin } from "@/lib/services/csrf";
 
 export async function POST(request: Request) {
+  const csrf = checkOrigin(request);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (!session || session.user.role !== "admin") {
     return Response.json({ error: "Unauthorized" }, { status: 401 });

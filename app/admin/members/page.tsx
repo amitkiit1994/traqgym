@@ -37,6 +37,7 @@ import {
 import { ChevronUp, ChevronDown, Users, Loader2, Download, Archive } from "lucide-react";
 import { toCsv } from "@/lib/utils/csv-export";
 import Link from "next/link";
+import { EmptyState } from "@/components/empty-state";
 
 type MemberRow = {
   id: number;
@@ -532,25 +533,33 @@ export default function MembersPage() {
           </Card>
         ))}
         {members.length === 0 && (
-          <Card size="sm">
-            <CardContent>
-              <div className="flex flex-col items-center gap-2 py-8">
-                <Users className="size-8 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground text-center">
-                  {planFilter !== "all"
-                    ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
-                    : statusFilter !== "all"
-                      ? `No ${statusFilter} members`
-                      : search
-                        ? `No members match "${search}"`
-                        : "No members found"}
-                </p>
-                <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-                  Add Member
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          planFilter === "all" && statusFilter === "all" && !search ? (
+            <EmptyState
+              icon={Users}
+              title="No members yet"
+              description="Add your first member to start tracking memberships, payments, and attendance."
+              actionLabel="Add member"
+              actionOnClick={() => setDialogOpen(true)}
+            />
+          ) : (
+            <Card size="sm">
+              <CardContent>
+                <div className="flex flex-col items-center gap-2 py-8">
+                  <Users className="size-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground text-center">
+                    {planFilter !== "all"
+                      ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
+                      : statusFilter !== "all"
+                        ? `No ${statusFilter} members`
+                        : `No members match "${search}"`}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+                    Add Member
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )
         )}
       </div>
 
@@ -603,21 +612,29 @@ export default function MembersPage() {
           {members.length === 0 && (
             <TableRow>
               <TableCell colSpan={8}>
-                <div className="flex flex-col items-center gap-2 py-8">
-                  <Users className="size-8 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">
-                    {planFilter !== "all"
-                      ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
-                      : statusFilter !== "all"
-                        ? `No ${statusFilter} members`
-                        : search
-                          ? `No members match "${search}"`
-                          : "No members found"}
-                  </p>
-                  <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-                    Add Member
-                  </Button>
-                </div>
+                {planFilter === "all" && statusFilter === "all" && !search ? (
+                  <EmptyState
+                    icon={Users}
+                    title="No members yet"
+                    description="Add your first member to start tracking memberships, payments, and attendance."
+                    actionLabel="Add member"
+                    actionOnClick={() => setDialogOpen(true)}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-8">
+                    <Users className="size-8 text-muted-foreground/50" />
+                    <p className="text-sm text-muted-foreground">
+                      {planFilter !== "all"
+                        ? `No ${statusFilter !== "all" ? statusFilter + " " : ""}members on ${plans.find((p) => String(p.id) === planFilter)?.name ?? "this plan"}`
+                        : statusFilter !== "all"
+                          ? `No ${statusFilter} members`
+                          : `No members match "${search}"`}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+                      Add Member
+                    </Button>
+                  </div>
+                )}
               </TableCell>
             </TableRow>
           )}

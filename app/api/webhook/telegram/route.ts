@@ -29,6 +29,7 @@ import type { AgentContext } from "@/lib/ai/system-prompt";
 import { runInAiContext } from "@/lib/ai-context";
 import { getSetting, setSetting } from "@/lib/services/settings";
 import { executeInsightAction, snoozeInsight } from "@/lib/services/insight";
+import { rateLimit } from "@/lib/services/ratelimit";
 import {
   sendMessage,
   sendMessageWithButtons,
@@ -909,6 +910,19 @@ export async function POST(request: Request) {
 
   // ── /pair <code> ─────────────────────────────────────────────────────────
   if (msg.text && /^\/pair(@\w+)?\b/i.test(msg.text)) {
+    // Throttle pairing attempts per chat: 5/day. Codes are now 16 hex chars
+    // (64 bits of entropy) so brute force is already infeasible, but the
+    // limiter prevents a noisy attacker from filling the audit log with
+    // failed attempts. SILENT DROP — never tell the attacker they're being
+    // throttled (would leak that the bot is wired up and watching).
+    const rl = rateLimit({
+      key: "tg-pair:" + chatId,
+      limit: 5,
+      windowMs: 24 * 60 * 60 * 1000,
+    });
+    if (!rl.ok) {
+      return OK();
+    }
     return handlePairCommand({
       chatId,
       telegramUserId,

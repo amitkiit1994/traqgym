@@ -3,6 +3,23 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
+// Fail-fast: refuse to boot in production if NEXTAUTH_SECRET is missing or
+// is the .env.example placeholder. A weak/missing secret means JWTs are
+// signable by anyone with the source code.
+if (process.env.NODE_ENV === "production") {
+  const secret = process.env.NEXTAUTH_SECRET ?? "";
+  if (!secret) {
+    throw new Error(
+      "NEXTAUTH_SECRET is required in production. Generate one with `openssl rand -base64 32` and set it in your Vercel project's env vars."
+    );
+  }
+  if (secret.toLowerCase().includes("change-me") || secret.length < 32) {
+    throw new Error(
+      "NEXTAUTH_SECRET appears to be the .env.example placeholder or too short. Generate a real secret with `openssl rand -base64 32`."
+    );
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({

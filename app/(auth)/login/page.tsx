@@ -219,6 +219,14 @@ export default function LoginPage() {
                     )}
                   </button>
                 </form>
+
+                {/* New gym CTA */}
+                <p className="mt-6 text-center text-sm text-muted-foreground">
+                  New gym?{" "}
+                  <Link href="/signup" className="font-medium text-primary hover:underline">
+                    Sign up here
+                  </Link>
+                </p>
               </div>
 
               {/* Bottom bar */}

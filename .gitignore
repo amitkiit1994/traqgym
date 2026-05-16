@@ -60,3 +60,17 @@ landing/.next/
 # Capacitor
 android/app/build/
 android/.gradle/
+
+# Local data exports + audits — never commit (contain member PII)
+freeformfitness-data-export*/
+egymlokhandwala-data-export/
+_audit_*.csv
+
+# Playwright cache (old debug sessions)
+.playwright-mcp/
+
+# Sprint/findings working notes
+.sprint-findings/
+
+# Per-gym env scratch files
+.env.*.tmp
