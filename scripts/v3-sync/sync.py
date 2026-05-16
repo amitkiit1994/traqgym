@@ -211,32 +211,84 @@ def push_dataset(base_url: str, secret: str, dataset: str, rows: list[dict]) -> 
 
 # ─── Main pipeline ────────────────────────────────────────────────────────
 def fetch_payments(cookie: str) -> list[dict]:
+    """Fetch payment rows from v3, falling back to year-by-year on empty result.
+
+    Larger gym accounts (E-GYM Lokhandwala with 14k+ payments) sometimes return
+    empty or time out on the full-range request and need year-by-year chunking.
+    """
     today = date.today().strftime("%d-%m-%Y")
+    today_year = date.today().year
+
+    rows = _fetch_payment_range(cookie, DEFAULT_START, today)
+    log(f"  parsed {len(rows)} payment rows from v3 (full range)")
+
+    if not rows:
+        log("  full range empty — falling back to year-by-year")
+        for year in range(2020, today_year + 1):
+            start = f"01-01-{year}"
+            end = today if year == today_year else f"31-12-{year}"
+            year_rows = _fetch_payment_range(cookie, start, end)
+            if year_rows:
+                log(f"    {year}: {len(year_rows)} rows")
+                rows.extend(year_rows)
+
+    return _normalise_payments(rows)
+
+
+def _fetch_payment_range(cookie: str, start_date: str, end_date: str) -> list[dict]:
+    """Single date-range fetch. Returns [] on server 500 / timeout / XLSX response."""
     url = (
         f"/Dashboard/ExportToExcel?exportfor=payment"
-        f"&StartDate={DEFAULT_START}&EndDate={today}&mstat=0"
+        f"&StartDate={start_date}&EndDate={end_date}&mstat=0"
     )
-    raw = v3_get(url, cookie, referer=f"{V3_BASE}/Dashboard/DataReport")
-    rows = parse_html_table(raw)
-    log(f"  parsed {len(rows)} payment rows from v3")
+    try:
+        raw = v3_get(url, cookie, referer=f"{V3_BASE}/Dashboard/DataReport")
+    except urllib.error.HTTPError as e:
+        log(f"    v3 HTTP {e.code} for {start_date}..{end_date} — skipping")
+        return []
+    except Exception as e:
+        log(f"    v3 error for {start_date}..{end_date}: {type(e).__name__} — skipping")
+        return []
+    if raw.startswith(b"PK\x03\x04"):
+        return []
+    return parse_html_table(raw)
 
-    # The export uses "InvoiceNo" + "Amount" + "Payment Date" + "Payment Mode"
-    # + "Payment For" + "Remarks" + "ContactNo" as columns. The sync API
-    # accepts both InvoiceNo and BillNo, but normalise here for clarity.
+
+def _normalise_payments(rows: list[dict]) -> list[dict]:
+    """Map v3's column names (with spaces) to the keys the sync API expects.
+
+    Real v3 export headers (verified from actual export):
+      Sr No., Reg. Id, Branch Name, Member Id, Billing Name, Contact No,
+      Reciept No, Transanction Id, Bill No, GST No, Payment Date,
+      Payment Mode, Package Name, Start Date, End Date, Membership Amount,
+      Total Amount, Discount, Net Amount, Paid Amount, Balance Amount,
+      Payment Type, Sales Rep, Trainer, Created By, Created On
+
+    Note the spaces — earlier versions used camelCase keys that never matched,
+    silently dropping every row.
+    """
     normalised: list[dict] = []
     for r in rows:
-        bill_no = (r.get("InvoiceNo") or r.get("BillNo") or "").strip()
+        bill_no = (r.get("Bill No") or r.get("BillNo") or r.get("InvoiceNo") or "").strip()
         if not bill_no:
             continue
         normalised.append(
             {
                 "BillNo": bill_no,
-                "ContactNo": (r.get("ContactNo") or r.get("Mobile") or "").strip(),
-                "Amount": (r.get("Amount") or "0").strip(),
+                "ContactNo": (r.get("Contact No") or r.get("ContactNo") or r.get("Mobile") or "").strip(),
+                "Amount": (r.get("Paid Amount") or r.get("Amount") or "0").strip(),
                 "PaymentMode": (r.get("Payment Mode") or r.get("PaymentMode") or "").strip(),
                 "PaymentDate": (r.get("Payment Date") or r.get("PaymentDate") or "").strip(),
-                "PaymentFor": (r.get("Payment For") or r.get("PaymentFor") or "").strip(),
+                "PaymentFor": (r.get("Payment Type") or r.get("Payment For") or "").strip(),
                 "Remarks": (r.get("Remarks") or "").strip(),
+                # Extras useful for member lookup at sync time
+                "MemberId": (r.get("Member Id") or r.get("MemberId") or "").strip(),
+                "BillingName": (r.get("Billing Name") or r.get("Name") or "").strip(),
+                "PackageName": (r.get("Package Name") or "").strip(),
+                "StartDate": (r.get("Start Date") or "").strip(),
+                "EndDate": (r.get("End Date") or "").strip(),
+                "Trainer": (r.get("Trainer") or "").strip(),
+                "SalesRep": (r.get("Sales Rep") or "").strip(),
             }
         )
     return normalised
