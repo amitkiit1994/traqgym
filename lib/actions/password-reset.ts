@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, sendSMS, normalizePhone } from "@/lib/services/notification";
+import { rateLimit } from "@/lib/services/ratelimit";
 
 const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 min
 const TOKEN_LENGTH_BYTES = 24;
@@ -17,6 +18,21 @@ export async function requestPasswordReset(params: {
 }): Promise<{ success: true } | { success: false; error: string }> {
   const id = params.emailOrPhone.trim().toLowerCase();
   if (!id) return { success: false, error: "Please enter an email or phone number." };
+
+  // Rate limit per identifier: 5 requests per hour. When over the limit we
+  // STILL return success (never leak that the throttle exists or that the
+  // account exists — same response shape as the not-found path). The only
+  // change is that we don't actually generate a token / send a message.
+  // This prevents abuse (SMS bombing, mailbox bombing, token DB inflation)
+  // while preserving the existing email-enumeration protection.
+  const rl = rateLimit({
+    key: "pwd-reset:" + id,
+    limit: 5,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!rl.ok) {
+    return { success: true };
+  }
 
   // Find the user/worker — we deliberately do NOT reveal whether the account exists.
   // (Email enumeration protection.)
