@@ -147,14 +147,31 @@ export default async function handler(req: any, res: any) {
     res.status(200).end();
   } catch (e) {
     console.error("webhook error", e);
-    try {
-      await sendTelegramMessage({
-        token: config.telegramBotToken,
-        chatId,
-        text: "Something broke on my side — try again in a minute.",
-      });
-    } catch {
-      // swallow secondary failure
+    // OpenAI's Responses API can reject a chat history whose tool-call /
+    // tool-output pairings got broken (e.g. by a prior aborted run). When we
+    // see that signature, auto-reset this chat's memory so the next message
+    // starts clean instead of permanently wedging the conversation.
+    const msg = (e as Error).message ?? "";
+    const isHistoryCorruption =
+      /No tool call found for function call output/i.test(msg) ||
+      /tool_call.*not found/i.test(msg);
+    if (isHistoryCorruption) {
+      historyByChat.delete(chatId);
+      try {
+        await sendTelegramMessage({
+          token: config.telegramBotToken,
+          chatId,
+          text: "Lost the thread — I've cleared this chat's memory. Ask again and I'll start fresh.",
+        });
+      } catch { /* secondary */ }
+    } else {
+      try {
+        await sendTelegramMessage({
+          token: config.telegramBotToken,
+          chatId,
+          text: "Something broke on my side — try again in a minute.",
+        });
+      } catch { /* secondary */ }
     }
     res.status(200).end();
   }
