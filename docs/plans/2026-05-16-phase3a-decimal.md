@@ -1,6 +1,33 @@
 # Phase 3a: Float → Decimal Financial Data Migration
 
-> **STATUS: PLAN ONLY — NOT YET EXECUTED.** This phase changes Prisma schema and runs a data backfill against production gym databases. Requires user oversight at each step. Do not auto-execute via subagent.
+> **STATUS: CODE CHANGES SHIPPED — DB MIGRATION PENDING.** Schema, caller arithmetic, and the backfill tool are in main. The DB-side `ALTER COLUMN` + per-gym backfill run is the remaining operational step (still requires user oversight and a maintenance window per gym).
+
+## What's done in code
+
+- `prisma/schema.prisma`: `MemberTicket.amountPaid` and `MemberTicket.balanceDue` are `Decimal @db.Decimal(10, 2)` (verified already at HEAD, the type change pre-dated the current commit series).
+- `lib/services/partial-payment.ts`: `recordPartialPayment` now uses `Prisma.Decimal` end-to-end (`.plus()`, `.minus()`, `.gt()`, `.lte()`, `Decimal.max`); plain `Number()` arithmetic on `amountPaid` / `balanceDue` removed inside the transaction; boundary conversion (`.toNumber()`) only at the JSON response. Bundled into commit `b6dd7be`.
+- `lib/services/gift-cards.ts`: `redeemGiftCard` uses `Prisma.Decimal` for balance compare and update; exact `.lte(0)` redemption check replaces the `<= 0.005` Float-epsilon hack. Commit `b5d0f9e`.
+- `scripts/backfill-decimal-amounts.ts`: idempotent dry-run/`--apply` script — recomputes `amountPaid` from `SUM(Payment.amount WHERE memberTicketId = X)` and `balanceDue = max(totalAmount - amountPaid, 0)`. Type-checks clean. Commit `c61e4e4`.
+- `tests/bugs/financial-bugs.test.ts`: docblock updated to record BUG 1 / BUG 3 are fixed at the service layer; helper tests stay as regression witnesses (they exercise raw JS Float, so they still demonstrate the historical bug). No `it.skip` cases existed to flip. Commit `0d8786b`.
+
+`npx tsc --noEmit` baseline before this work was 54 errors; after, still 54 (no regressions introduced). `npx prisma format` + `npx prisma generate` ran clean.
+
+## What's still pending (operational)
+
+The DB cutover is intentionally **not** in the above commits — it must be coordinated per gym:
+
+1. Take per-gym `pg_dump` backups (offsite).
+2. Snapshot row count + `SUM("amountPaid")` + `SUM("balanceDue")` per gym before any change (sanity check for post-cutover).
+3. Coordinate a short read-only maintenance window with Robin (and any other live gym).
+4. Run `DATABASE_URL=$PROD_URL npx prisma migrate deploy` against each gym DB (only needed if any gym DB is still on the old Float types; verify with `\d "MemberTicket"`).
+5. Run `npx tsx scripts/backfill-decimal-amounts.ts` **dry-run** against each gym DB, review the drift report.
+6. Run with `--apply` if the drift report looks sane (small, bounded by Float epsilon).
+7. Verify post-snapshot sums against pre-snapshot (any change > ₹100 = STOP, investigate, possibly rollback).
+8. Lift read-only.
+
+See "Rollout" and "Rollback procedure" sections below for the exact steps.
+
+---
 
 **Goal:** Convert `MemberTicket.amountPaid` and `MemberTicket.balanceDue` from `Float` to `Decimal(10, 2)`. Backfill existing rows to recompute `amountPaid = SUM(payments)` and `balanceDue = totalAmount - amountPaid`. Update all caller code from `Number()` arithmetic to `Prisma.Decimal` arithmetic.
 
