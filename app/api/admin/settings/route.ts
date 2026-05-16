@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getSetting, setSetting } from "@/lib/services/settings";
+import { checkOrigin } from "@/lib/services/csrf";
 
 const SETTINGS_KEYS = [
   // Branding
@@ -198,6 +199,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const csrf = checkOrigin(req);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (
     !session ||

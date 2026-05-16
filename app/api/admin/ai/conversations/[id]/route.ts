@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkOrigin } from "@/lib/services/csrf";
 
 // GET - load conversation with messages
 export async function GET(
@@ -31,9 +32,12 @@ export async function GET(
 
 // DELETE - delete conversation
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const csrf = checkOrigin(req);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (!session || session.user.actorType !== "worker") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

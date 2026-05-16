@@ -3,8 +3,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { runProactiveAgent } from "@/lib/ai/proactive-runner";
+import { checkOrigin } from "@/lib/services/csrf";
 
 export async function POST(req: NextRequest) {
+  const csrf = checkOrigin(req);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (!session || session.user.actorType !== "worker") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { upgradePlan } from "@/lib/services/plan-change";
+import { checkOrigin } from "@/lib/services/csrf";
 
 export async function POST(req: Request) {
+  const csrf = checkOrigin(req);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).actorType !== "worker") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

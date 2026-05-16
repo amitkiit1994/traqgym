@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { setSetting } from "@/lib/services/settings";
+import { checkOrigin } from "@/lib/services/csrf";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -17,6 +18,9 @@ const ALLOWED: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
+  const csrf = checkOrigin(req);
+  if (!csrf.ok) return Response.json({ error: csrf.error }, { status: 403 });
+
   const session = await getServerSession(authOptions);
   if (
     !session ||
