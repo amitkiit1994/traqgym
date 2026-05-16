@@ -12,17 +12,29 @@
 
 ## Phase Index
 
-| # | Phase | Plan file | Status | Estimate | Depends on |
-|---|---|---|---|---:|---|
-| 1 | Repo cleanup | `2026-05-16-phase1-cleanup.md` | Plan written | 1-2 hr | — |
-| 2.5 | Encryption foundation | `2026-05-XX-phase2.5-encryption.md` *(JIT)* | Pending | 1 day | Phase 1 |
-| 2 | V3 nightly sync pipeline | `2026-05-XX-phase2-v3-sync.md` *(JIT)* | Pending | 1.5-2 days | Phase 2.5 |
-| 3a | Float→Decimal migration | `2026-05-XX-phase3a-decimal.md` *(JIT)* | Pending | 1 day | Phase 1 |
-| 3b | Cash/UPI-only mode | `2026-05-XX-phase3b-cash-mode.md` *(JIT)* | Pending | 0.5 day | Phase 1 |
-| 3c | Telegram one-click setup | `2026-05-XX-phase3c-telegram.md` *(JIT)* | Pending | 0.5 day | Phase 2.5 |
-| 5 | Security & ops basics | `2026-05-XX-phase5-security.md` *(JIT)* | Pending | 2 days | Phase 1 |
-| 6 | Onboarding + UX gaps | `2026-05-XX-phase6-onboarding.md` *(JIT)* | Pending | 2.5 days | Phase 1 |
-| 4 | Robin polish + demo prep | `2026-05-XX-phase4-polish.md` *(JIT)* | Pending | 0.5 day | All above |
+| # | Phase | Plan file | Status | Commits |
+|---|---|---|---|---|
+| 1 | Repo cleanup | `2026-05-16-phase1-cleanup.md` | ✅ DONE | `1641ea6` |
+| 2.5 | Encryption foundation | `2026-05-16-phase2.5-encryption.md` | ✅ DONE | `3adef8f`, `2474724`, `be8d716`, `bc34949` |
+| 3b | Cash/UPI-only mode | `2026-05-16-phase3b-cash-mode.md` | ✅ DONE | `3b75472`, `7532bec` |
+| 3c | Telegram one-click setup | `2026-05-16-phase3c-telegram.md` | ✅ DONE | `0ce5259`, `a97f763` |
+| 5 | Security & ops basics (subset) | `2026-05-16-phase5-security.md` | ✅ DONE (5a/5b/5c/5g) | `01f9905`, `c542732`, `b6d735d`, `b4dfd39`, `ab18ae1` |
+| 6 | Onboarding + UX gaps (subset) | inline in execution | ✅ DONE (6b/6c/6d) | `7b1facf`, `087eafc` |
+| 2 | V3 nightly sync pipeline | inline in execution | ✅ DONE | `ec66925`, `46f6d8a`, `3467622` |
+| 3a | Float→Decimal migration | `2026-05-16-phase3a-decimal.md` | ⚠️ **PLAN ONLY** — needs user-supervised execution | — |
+| 4 | Robin polish + demo prep | `docs/demo/2026-05-pitch-script.md` | ✅ Demo script written. Live sync run + AI spot-check pending | — |
+
+## What was deferred (call out for follow-up phase)
+
+- **Phase 6a — gym owner signup flow** — needs central registry/provisioning infra outside per-gym scope
+- **Phase 5d — Telegram pair code length** (8 hex → 16 hex) + per-chatId rate limiting on `/pair`
+- **Phase 5e — Sentry integration** with source maps + alert routing
+- **Phase 5f — `scripts/restore.sh`** + quarterly test calendar
+- **Phase 5 — Rate limiting middleware** (`lib/services/ratelimit.ts`) — referenced as gap by password reset (Phase 6b) but not yet built
+- **Phase 5 — CSRF Origin/Host check** across all `/api/admin/*` POST routes (significant scope)
+- **Phase 3a — Decimal migration** — plan written, execution requires direct DB access + maintenance windows
+- **Build-time DB issue** — `/kiosk` page hits Prisma at build time (mark `dynamic`)
+- **Vitest globalSetup DB requirement** — needs cleanup so default `vitest run` works offline (partially mitigated by `vitest.unit.config.ts`)
 
 *JIT = plan written just-in-time before the phase starts, so file references and code snippets are accurate.*
 
