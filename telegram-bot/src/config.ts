@@ -4,10 +4,10 @@ const schema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
   TELEGRAM_ALLOWED_CHAT_IDS: z.string().min(1),
   WEBHOOK_SECRET: z.string().min(1),
-  GOOGLE_API_KEY: z.string().min(1),
-  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
+  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   BLOB_READ_WRITE_TOKEN: z.string().min(1),
-  BLOB_LATEST_URL: z.string().url(),
+  BLOB_LATEST_URL: z.url(),
   GITHUB_PAT: z.string().optional(),
   GITHUB_REPO: z.string().default("amitkiit1994/traqgym"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -17,8 +17,8 @@ export type Config = {
   telegramBotToken: string;
   allowedChatIds: Set<number>;
   webhookSecret: string;
-  googleApiKey: string;
-  geminiModel: string;
+  openaiApiKey: string;
+  openaiModel: string;
   blobReadWriteToken: string;
   blobLatestUrl: string;
   githubPat: string | undefined;
@@ -49,8 +49,8 @@ export function loadConfig(
     telegramBotToken: parsed.data.TELEGRAM_BOT_TOKEN,
     allowedChatIds: ids,
     webhookSecret: parsed.data.WEBHOOK_SECRET,
-    googleApiKey: parsed.data.GOOGLE_API_KEY,
-    geminiModel: parsed.data.GEMINI_MODEL,
+    openaiApiKey: parsed.data.OPENAI_API_KEY,
+    openaiModel: parsed.data.OPENAI_MODEL,
     blobReadWriteToken: parsed.data.BLOB_READ_WRITE_TOKEN,
     blobLatestUrl: parsed.data.BLOB_LATEST_URL,
     githubPat: parsed.data.GITHUB_PAT,

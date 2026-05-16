@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import { loadConfig } from "../src/config.js";
 import { isAllowed, checkSecretToken } from "../src/auth.js";
 import { createRateLimiter } from "../src/rate-limit.js";
@@ -17,7 +16,9 @@ const dispatcher = createGithubDispatcher({
   repo: config.githubRepo,
   workflow: "refresh-export.yml",
 });
-const ai = new GoogleGenAI({ apiKey: config.googleApiKey });
+
+// OpenAI Agents SDK auto-reads OPENAI_API_KEY from env.
+process.env.OPENAI_API_KEY = config.openaiApiKey;
 
 interface TelegramUpdate {
   message?: {
@@ -93,8 +94,7 @@ export default async function handler(req: any, res: any) {
     } else {
       const llm = await runLlm({
         question: text,
-        ai,
-        model: config.geminiModel,
+        model: config.openaiModel,
         store: blobStore,
       });
       reply = llm.text;
@@ -113,7 +113,7 @@ export default async function handler(req: any, res: any) {
       chat_id: chatId,
       q: text.slice(0, 200),
       n_tool_calls: toolCalls,
-      model: config.geminiModel,
+      model: config.openaiModel,
       latency_ms: Date.now() - started,
       snapshot_date: snapshotDate,
       answer_preview: reply.slice(0, 200),

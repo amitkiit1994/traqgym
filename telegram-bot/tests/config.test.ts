@@ -6,7 +6,7 @@ describe("loadConfig", () => {
     TELEGRAM_BOT_TOKEN: "tok",
     TELEGRAM_ALLOWED_CHAT_IDS: "123,456",
     WEBHOOK_SECRET: "secret",
-    GOOGLE_API_KEY: "ai-key",
+    OPENAI_API_KEY: "sk-xxx",
     BLOB_READ_WRITE_TOKEN: "blob-tok",
     BLOB_LATEST_URL: "https://example.com/csv/latest.json",
   };
@@ -18,14 +18,14 @@ describe("loadConfig", () => {
     expect(cfg.allowedChatIds.size).toBe(2);
   });
 
-  it("defaults GEMINI_MODEL to gemini-2.5-flash", () => {
+  it("defaults OPENAI_MODEL to gpt-4o-mini", () => {
     const cfg = loadConfig(validEnv);
-    expect(cfg.geminiModel).toBe("gemini-2.5-flash");
+    expect(cfg.openaiModel).toBe("gpt-4o-mini");
   });
 
-  it("respects GEMINI_MODEL override", () => {
-    const cfg = loadConfig({ ...validEnv, GEMINI_MODEL: "gemini-2.5-pro" });
-    expect(cfg.geminiModel).toBe("gemini-2.5-pro");
+  it("respects OPENAI_MODEL override", () => {
+    const cfg = loadConfig({ ...validEnv, OPENAI_MODEL: "gpt-4o" });
+    expect(cfg.openaiModel).toBe("gpt-4o");
   });
 
   it("throws if TELEGRAM_BOT_TOKEN missing", () => {
