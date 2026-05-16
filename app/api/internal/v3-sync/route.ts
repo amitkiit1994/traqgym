@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { requireInternalSecret } from "@/lib/auth-internal";
 import { prisma } from "@/lib/prisma";
 import { setSetting } from "@/lib/services/settings";
@@ -100,11 +101,18 @@ export async function POST(req: NextRequest) {
 async function upsertPayments(rows: unknown[]): Promise<{
   inserted: number;
   skipped: number;
+  skippedBreakdown: { noBillNo: number; alreadyExists: number; negativeAmount: number; noPhone: number; userCreateFailed: number };
+  createdUsers: number;
   errors: number;
 }> {
   let inserted = 0;
-  let skipped = 0;
+  let createdUsers = 0;
   let errors = 0;
+  let skippedNoBillNo = 0;
+  let skippedAlreadyExists = 0;
+  let skippedNegativeAmount = 0;
+  let skippedNoPhone = 0;
+  let skippedUserCreateFailed = 0;
 
   // Pick the first worker as a fallback for the collectedBy FK. v3 doesn't
   // tell us *who* the actual cashier was, so this is a best-effort marker.
@@ -122,7 +130,7 @@ async function upsertPayments(rows: unknown[]): Promise<{
       const row = raw as Record<string, unknown>;
       const billNo = String(row.BillNo ?? row.InvoiceNo ?? "").trim();
       if (!billNo) {
-        skipped++;
+        skippedNoBillNo++;
         continue;
       }
       const fbInvoice = `FB-${billNo}`;
@@ -131,25 +139,67 @@ async function upsertPayments(rows: unknown[]): Promise<{
         select: { id: true },
       });
       if (existing) {
-        skipped++;
+        skippedAlreadyExists++;
         continue;
       }
 
       const amount = parseDecimal(row.Amount);
       if (amount < 0) {
-        skipped++;
+        skippedNegativeAmount++;
         continue;
       }
 
       const phone = normalisePhone(row.ContactNo ?? row.Mobile);
-      const user = phone
-        ? await prisma.user.findFirst({ where: { phone }, select: { id: true, locationId: true } })
-        : null;
-      if (!user) {
-        // Can't attribute the payment to a member — skip rather than error so
-        // the sync can complete and the operator can resolve manually.
-        skipped++;
+      if (!phone) {
+        // No phone → can't even create a placeholder user. Skip.
+        skippedNoPhone++;
         continue;
+      }
+
+      let user = await prisma.user.findFirst({
+        where: { phone },
+        select: { id: true, locationId: true },
+      });
+
+      if (!user) {
+        // Auto-create a placeholder user — matches the migrate-fitnessboard.ts
+        // convention so the v3 → TraqGym sync is complete rather than partial.
+        const billingName = String(row.BillingName ?? row.Name ?? "v3 member").trim() || "v3 member";
+        const nameParts = billingName.split(/\s+/);
+        const firstname = nameParts[0] || "v3";
+        const lastname = nameParts.slice(1).join(" ") || "member";
+        const placeholderEmail = `${phone}@imported.local`;
+        const hashedPassword = await bcrypt.hash(phone, 10);
+        const defaultLocation = await prisma.location.findFirst({
+          orderBy: { id: "asc" },
+          select: { id: true },
+        });
+
+        try {
+          user = await prisma.user.create({
+            data: {
+              firstname,
+              lastname,
+              phone,
+              email: placeholderEmail,
+              password: hashedPassword,
+              locationId: defaultLocation?.id ?? null,
+            },
+            select: { id: true, locationId: true },
+          });
+          createdUsers++;
+        } catch {
+          // Most likely a unique-constraint race on email/phone (another row
+          // for the same member created the user just now) — re-fetch.
+          user = await prisma.user.findFirst({
+            where: { phone },
+            select: { id: true, locationId: true },
+          });
+          if (!user) {
+            skippedUserCreateFailed++;
+            continue;
+          }
+        }
       }
 
       // Attach to the user's most recent ticket if any (mirrors migrate script).
@@ -194,7 +244,26 @@ async function upsertPayments(rows: unknown[]): Promise<{
     }
   }
 
-  return { inserted, skipped, errors };
+  const skipped =
+    skippedNoBillNo +
+    skippedAlreadyExists +
+    skippedNegativeAmount +
+    skippedNoPhone +
+    skippedUserCreateFailed;
+
+  return {
+    inserted,
+    skipped,
+    skippedBreakdown: {
+      noBillNo: skippedNoBillNo,
+      alreadyExists: skippedAlreadyExists,
+      negativeAmount: skippedNegativeAmount,
+      noPhone: skippedNoPhone,
+      userCreateFailed: skippedUserCreateFailed,
+    },
+    createdUsers,
+    errors,
+  };
 }
 
 async function markStatus(status: string): Promise<void> {
