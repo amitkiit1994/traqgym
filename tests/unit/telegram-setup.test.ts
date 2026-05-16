@@ -88,7 +88,7 @@ describe("telegram-setup actions", () => {
     expect(res.success).toBe(true);
     if (res.success) {
       expect(res.botUsername).toBe("b");
-      expect(res.pairCode).toMatch(/^[0-9a-f]{8}$/);
+      expect(res.pairCode).toMatch(/^[0-9a-f]{16}$/);
       expect(res.webhookUrl).toContain("/api/webhook/telegram");
     }
 
@@ -116,6 +116,6 @@ describe("telegram-setup actions", () => {
     const after = await getSetupStatus();
     expect(after.configured).toBe(true);
     expect(after.botUsername).toBe("demo_bot");
-    expect(after.pairCode).toMatch(/^[0-9a-f]{8}$/);
+    expect(after.pairCode).toMatch(/^[0-9a-f]{16}$/);
   });
 });
