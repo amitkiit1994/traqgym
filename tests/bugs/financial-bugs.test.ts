@@ -2,7 +2,17 @@
  * Regression tests for known financial bugs in the codebase.
  *
  * BUG 2 (tax rounding) is FIXED — tests now verify correct behavior.
- * Other bugs (Float vs Decimal) are documented as still present.
+ * BUG 1 (partial-payment Float drift) — schema now stores Decimal and
+ *   lib/services/partial-payment.ts uses Prisma.Decimal arithmetic
+ *   end-to-end (Phase 3a, 2026-05-16). The helper below replicates the
+ *   *old* Float math to keep this file as a regression witness — the bug
+ *   no longer reproduces against the service itself. See
+ *   tests/integration/partial-payment-service.test.ts for behaviour tests.
+ * BUG 3 (gift-card Float drift) — same as BUG 1; redeemGiftCard now uses
+ *   Decimal math. Helper retained for the same regression-witness reason.
+ * BUG 4 / BUG 5 (POS, reports) — still Float on Sale.* and Product.*;
+ *   tracked separately. These tests intentionally still fail-fast on the
+ *   schema-level Float so we don't forget them.
  */
 import { describe, it, expect } from "vitest";
 import { calculateTax } from "@/lib/services/tax";
