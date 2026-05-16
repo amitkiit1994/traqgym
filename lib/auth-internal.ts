@@ -33,11 +33,14 @@ if (process.env.NODE_ENV === "production") {
  * Uses timing-safe comparison to defeat timing side-channels.
  */
 export function requireInternalSecret(req: NextRequest): NextResponse | null {
-  const expected = process.env.INTERNAL_API_SECRET;
+  // .trim() defends against trailing whitespace/newlines in env var value.
+  // `echo "$X" | vercel env add` adds a trailing \n, baking it into the stored
+  // secret. The header value is also trimmed for symmetry.
+  const expected = process.env.INTERNAL_API_SECRET?.trim();
   if (!expected) {
     return NextResponse.json({ error: "INTERNAL_API_SECRET not configured" }, { status: 503 });
   }
-  const provided = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const provided = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!provided) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
