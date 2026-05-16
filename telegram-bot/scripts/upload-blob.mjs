@@ -70,6 +70,36 @@ const latest = {
   row_counts: rowCounts,
   blob_urls: urls,
 };
+
+// Snapshot integrity check: refuse to overwrite latest.json if any canonical
+// CSV's row count drops by more than 50% from the previous snapshot.
+// Guards against stale-cookie scrapes that silently upload login-page junk.
+try {
+  const head = await list({ token, prefix: "csv/latest.json", limit: 1 });
+  const prevBlob = head.blobs[0];
+  if (prevBlob) {
+    const res = await fetch(prevBlob.url, { cache: "no-store" });
+    if (res.ok) {
+      const prev = await res.json();
+      const drops = [];
+      for (const [name, cur] of Object.entries(rowCounts)) {
+        const prevCount = prev.row_counts?.[name] ?? 0;
+        if (prevCount > 0 && cur < prevCount * 0.5) {
+          drops.push(`${name}: ${prevCount} → ${cur}`);
+        }
+      }
+      if (drops.length > 0) {
+        console.error("REFUSING to swap latest.json — row counts dropped >50%:");
+        for (const d of drops) console.error("  " + d);
+        console.error("Likely cause: stale FB cookie. Today's per-CSV blobs were uploaded but latest.json is unchanged.");
+        process.exit(2);
+      }
+    }
+  }
+} catch (e) {
+  console.warn(`Could not fetch previous latest.json for sanity check: ${e.message}`);
+}
+
 const latestRes = await put("csv/latest.json", JSON.stringify(latest, null, 2), {
   access: "public",
   contentType: "application/json",

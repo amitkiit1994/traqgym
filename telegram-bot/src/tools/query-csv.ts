@@ -52,7 +52,13 @@ function cmp(a: CsvCell, b: CsvCell): number {
   if (a == null && b == null) return 0;
   if (a == null) return -1;
   if (b == null) return 1;
-  if (typeof a === "number" && typeof b === "number") return a - b;
+  // If either side is numeric, attempt numeric comparison.
+  if (typeof a === "number" || typeof b === "number") {
+    const na = typeof a === "number" ? a : Number(String(a).replace(/,/g, ""));
+    const nb = typeof b === "number" ? b : Number(String(b).replace(/,/g, ""));
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  }
+  // Both strings: localeCompare. ISO YYYY-MM-DD sorts correctly under lex compare.
   return String(a).localeCompare(String(b));
 }
 
@@ -163,7 +169,7 @@ function aggregateOver(rows: CsvRow[], col: string, fn: AggFn): number {
   switch (fn) {
     case "sum": return nums.reduce((a, b) => a + b, 0);
     case "avg": return nums.reduce((a, b) => a + b, 0) / nums.length;
-    case "min": return Math.min(...nums);
-    case "max": return Math.max(...nums);
+    case "min": return nums.reduce((a, b) => (a < b ? a : b));
+    case "max": return nums.reduce((a, b) => (a > b ? a : b));
   }
 }

@@ -72,6 +72,25 @@ describe("applyQuery projection + order + limit", () => {
   });
 });
 
+describe("applyQuery mixed-type comparisons (regression: C2)", () => {
+  it("gt with string val against numeric column compares numerically", () => {
+    const r = applyQuery(rows, { filters: [{ col: "Paid Amount", op: "gt", val: "10000" }] });
+    expect(r.row_count).toBe(3);
+  });
+  it("between with string vals against numeric column compares numerically", () => {
+    const r = applyQuery(rows, {
+      filters: [{ col: "Paid Amount", op: "between", val: ["10000", "15000"] }],
+    });
+    expect(r.row_count).toBe(3);
+  });
+  it("between on ISO date column with string vals works lexically (ISO sorts correctly)", () => {
+    const r = applyQuery(rows, {
+      filters: [{ col: "Payment Date", op: "between", val: ["2026-04-02", "2026-04-04"] }],
+    });
+    expect(r.row_count).toBe(2);
+  });
+});
+
 describe("applyQuery errors", () => {
   it("invalid op returns structured error", () => {
     const r = applyQuery(rows, { filters: [{ col: "Paid Amount", op: "bogus" as any, val: 1 }] });

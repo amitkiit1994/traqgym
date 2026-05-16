@@ -63,7 +63,17 @@ def curl(url, method="GET", referer=None, ajax=False, body=None, timeout=120):
     cmd += [url]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=timeout + 5)
-        return r.stdout
+        body_bytes = r.stdout
+        # Login-redirect detection: if response is HTML containing the login form,
+        # the cookie has expired and downstream parsing will produce junk.
+        sample = body_bytes[:2000].decode("utf-8", errors="ignore").lower()
+        if ("name=\"loginid\"" in sample or "name=\"password\"" in sample
+                or "/account/login" in sample):
+            log("FATAL: FB cookie expired — response is the login page. Refresh FB_COOKIE.")
+            sys.exit(3)
+        return body_bytes
+    except SystemExit:
+        raise
     except Exception as e:
         log(f"  curl error: {e}")
         return b""
