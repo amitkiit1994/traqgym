@@ -1326,3 +1326,15 @@ model ProcessedTelegramUpdate {
 
   @@index([processedAt])
 }
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  email     String // not unique — can have multiple active tokens (last one wins for verification)
+  tokenHash String    @unique // sha256 of the actual token; we never store the raw value
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
