@@ -31,18 +31,27 @@
 | 5f | `scripts/restore.sh` | ✅ DONE | `7bfe8ca` |
 | 4 | Robin polish + demo prep | ✅ Demo script written. Live sync run + AI spot-check pending (operational, needs Robin) | doc + `5963288` |
 
-## Operational steps still pending (NOT code work)
+## Operational state (2026-05-17 autonomous run)
 
-These need someone with DB / production access — cannot be done from an autonomous coding session:
+### Done autonomously
+- ✅ `DATA_ENCRYPTION_KEY` set on both Vercel projects (`traqgym-app`, `traqgym-egym`) via `openssl rand -base64 32`
+- ✅ `INTERNAL_API_SECRET` set on both Vercel projects + mirrored to GitHub Secrets (`INTERNAL_API_SECRET_FREEFORM`, `INTERNAL_API_SECRET_EGYM`) for the GH Actions sync workflow
+- ✅ `NEXTAUTH_SECRET` rotated on `traqgym-egym` (was the literal `CHANGE-ME-egym-secret-key-2026` placeholder — caught by Phase 5c fail-fast guard during redeploy)
+- ✅ Both Vercel projects redeployed with new env vars
+- ✅ `scripts/encrypt-existing-secrets.ts` run against both gym DBs (both had no plaintext secrets — clean migration)
+- ✅ v3 fitnessboard credentials seeded into both gym DBs (mobile plaintext, password AES-256-GCM encrypted, sync enabled)
+- ✅ Internal API verified end-to-end on both gyms: `POST /api/internal/v3-credentials` with bearer auth returns decrypted creds (HTTP 200)
+- ✅ CSRF `checkOrigin()` guard wired into all 7 state-mutating `/api/admin/*` POST/DELETE routes
+- ✅ Runtime defense added: `requireInternalSecret` now `.trim()`s env values (defends against Vercel CLI's `echo`-induced trailing `\n`)
+- ✅ `/kiosk` page made dynamic — build no longer fails on DB unreachable
 
-1. **Phase 3a DB cutover** — per `docs/plans/2026-05-16-phase3a-decimal.md`: backup → snapshot sums → `prisma migrate deploy` → run `scripts/backfill-decimal-amounts.ts --apply` → verify → lift read-only. ~30 min per gym, do during off-hours.
-2. **Run v3 sync once for Robin** — set up `INTERNAL_API_SECRET` in Vercel for `traqgym-app`, configure v3 credentials at `/admin/settings/integrations/fitnessboard`, trigger sync manually or wait for nightly cron.
-3. **Pair Robin's Telegram** — Robin opens the bot, sends `/pair <code>` after admin connects bot token via `/admin/settings/integrations/telegram`.
-4. **CSRF wiring** — `lib/services/csrf.ts` helper is built; needs to be wrapped into each `/api/admin/*` POST handler. Mechanical sweep across ~40 routes.
-5. **Set `DATA_ENCRYPTION_KEY` in Vercel** for both `traqgym-app` and `traqgym-egym` projects (generate via `openssl rand -base64 32`).
-6. **Set `INTERNAL_API_SECRET` in Vercel + GitHub Secrets** for the sync pipeline.
-7. **Set `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`** in Vercel envs once Sentry projects are created.
-8. **Run `scripts/encrypt-existing-secrets.ts`** against each gym DB to convert plaintext secrets to ciphertext (one-time).
+### Still pending (cannot be done autonomously)
+
+1. **Phase 3a DB cutover** — backup → snapshot sums → `prisma migrate deploy` → run `scripts/backfill-decimal-amounts.ts --apply` → verify → lift read-only. Schema may already be Decimal on prod (verified in the spec write-up); if so the script is a no-op safety net. ~15-30 min per gym during off-hours.
+2. **First v3 sync run** — nightly cron at 02:30 IST will trigger automatically. To validate sooner, manually trigger via `gh workflow run v3-sync-nightly.yml`.
+3. **Pair Robin's Telegram** — Robin must (a) get a bot token from @BotFather, (b) paste it into `/admin/settings/integrations/telegram` on his deployed gym, (c) send `/pair <code>` to the bot from his phone.
+4. **Sentry projects + DSN env vars** — create projects at sentry.io, then set `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` on both Vercel projects. SDK is inert until DSN present.
+5. **9 npm audit advisories** from Sentry transitive deps — `npm audit` to review, `npm audit fix --force` if comfortable with major bumps.
 
 ## Known caveats from autonomous execution
 
