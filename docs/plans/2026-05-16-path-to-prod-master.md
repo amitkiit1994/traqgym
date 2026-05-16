@@ -12,29 +12,44 @@
 
 ## Phase Index
 
-| # | Phase | Plan file | Status | Commits |
-|---|---|---|---|---|
-| 1 | Repo cleanup | `2026-05-16-phase1-cleanup.md` | ✅ DONE | `1641ea6` |
-| 2.5 | Encryption foundation | `2026-05-16-phase2.5-encryption.md` | ✅ DONE | `3adef8f`, `2474724`, `be8d716`, `bc34949` |
-| 3b | Cash/UPI-only mode | `2026-05-16-phase3b-cash-mode.md` | ✅ DONE | `3b75472`, `7532bec` |
-| 3c | Telegram one-click setup | `2026-05-16-phase3c-telegram.md` | ✅ DONE | `0ce5259`, `a97f763` |
-| 5 | Security & ops basics (subset) | `2026-05-16-phase5-security.md` | ✅ DONE (5a/5b/5c/5g) | `01f9905`, `c542732`, `b6d735d`, `b4dfd39`, `ab18ae1` |
-| 6 | Onboarding + UX gaps (subset) | inline in execution | ✅ DONE (6b/6c/6d) | `7b1facf`, `087eafc` |
-| 2 | V3 nightly sync pipeline | inline in execution | ✅ DONE | `ec66925`, `46f6d8a`, `3467622` |
-| 3a | Float→Decimal migration | `2026-05-16-phase3a-decimal.md` | ⚠️ **PLAN ONLY** — needs user-supervised execution | — |
-| 4 | Robin polish + demo prep | `docs/demo/2026-05-pitch-script.md` | ✅ Demo script written. Live sync run + AI spot-check pending | — |
+| # | Phase | Status | Commits |
+|---|---|---|---|
+| 1 | Repo cleanup | ✅ DONE | `1641ea6` |
+| 2.5 | Encryption foundation | ✅ DONE | `3adef8f`, `2474724`, `be8d716`, `bc34949` |
+| 3b | Cash/UPI-only mode | ✅ DONE | `3b75472`, `7532bec` |
+| 3c | Telegram one-click setup | ✅ DONE | `0ce5259`, `a97f763` |
+| 5a/5b/5c/5g | Security core (authz, validation, NextAuth, notifications) | ✅ DONE | `01f9905`, `c542732`, `b6d735d`, `b4dfd39`, `ab18ae1` |
+| 6b/6c/6d | Password reset + mobile drawer (already existed) + empty states | ✅ DONE | `7b1facf`, `087eafc` |
+| 2 | V3 nightly sync pipeline | ✅ DONE | `ec66925`, `46f6d8a`, `3467622` |
+| Build fix | `/kiosk` made dynamic | ✅ DONE | `a205329` |
+| 5 — rate limiting | In-memory limiter + wired to password reset | ✅ DONE | `2b797af` |
+| 5d | Telegram pair code 8→16 hex + per-chatId throttle | ✅ DONE | `d09adfe` |
+| 5 — CSRF | `lib/services/csrf.ts` helper (wiring still TODO) | ✅ DONE | `b595100` |
+| 6a | Gym owner self-serve signup at `/signup` | ✅ DONE | `0d9038c`, `294234e`, `8014c43`, `b6dd7be`, `6ab7445` |
+| 3a | Float→Decimal — schema + caller code + backfill script | ✅ CODE DONE; ⚠️ DB cutover pending | `b6dd7be`, `b5d0f9e`, `c61e4e4`, `0d8786b`, `5224f92` |
+| 5e | Sentry observability (DSN-gated) | ✅ DONE | `2a1b65a` |
+| 5f | `scripts/restore.sh` | ✅ DONE | `7bfe8ca` |
+| 4 | Robin polish + demo prep | ✅ Demo script written. Live sync run + AI spot-check pending (operational, needs Robin) | doc + `5963288` |
 
-## What was deferred (call out for follow-up phase)
+## Operational steps still pending (NOT code work)
 
-- **Phase 6a — gym owner signup flow** — needs central registry/provisioning infra outside per-gym scope
-- **Phase 5d — Telegram pair code length** (8 hex → 16 hex) + per-chatId rate limiting on `/pair`
-- **Phase 5e — Sentry integration** with source maps + alert routing
-- **Phase 5f — `scripts/restore.sh`** + quarterly test calendar
-- **Phase 5 — Rate limiting middleware** (`lib/services/ratelimit.ts`) — referenced as gap by password reset (Phase 6b) but not yet built
-- **Phase 5 — CSRF Origin/Host check** across all `/api/admin/*` POST routes (significant scope)
-- **Phase 3a — Decimal migration** — plan written, execution requires direct DB access + maintenance windows
-- **Build-time DB issue** — `/kiosk` page hits Prisma at build time (mark `dynamic`)
-- **Vitest globalSetup DB requirement** — needs cleanup so default `vitest run` works offline (partially mitigated by `vitest.unit.config.ts`)
+These need someone with DB / production access — cannot be done from an autonomous coding session:
+
+1. **Phase 3a DB cutover** — per `docs/plans/2026-05-16-phase3a-decimal.md`: backup → snapshot sums → `prisma migrate deploy` → run `scripts/backfill-decimal-amounts.ts --apply` → verify → lift read-only. ~30 min per gym, do during off-hours.
+2. **Run v3 sync once for Robin** — set up `INTERNAL_API_SECRET` in Vercel for `traqgym-app`, configure v3 credentials at `/admin/settings/integrations/fitnessboard`, trigger sync manually or wait for nightly cron.
+3. **Pair Robin's Telegram** — Robin opens the bot, sends `/pair <code>` after admin connects bot token via `/admin/settings/integrations/telegram`.
+4. **CSRF wiring** — `lib/services/csrf.ts` helper is built; needs to be wrapped into each `/api/admin/*` POST handler. Mechanical sweep across ~40 routes.
+5. **Set `DATA_ENCRYPTION_KEY` in Vercel** for both `traqgym-app` and `traqgym-egym` projects (generate via `openssl rand -base64 32`).
+6. **Set `INTERNAL_API_SECRET` in Vercel + GitHub Secrets** for the sync pipeline.
+7. **Set `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`** in Vercel envs once Sentry projects are created.
+8. **Run `scripts/encrypt-existing-secrets.ts`** against each gym DB to convert plaintext secrets to ciphertext (one-time).
+
+## Known caveats from autonomous execution
+
+- Two parallel agents had a staging race — `lib/services/partial-payment.ts` Decimal refactor landed in commit `b6dd7be` (which has a "signup tests" message). Commit boundary is off; the code itself is correct.
+- 3 pre-existing test failures in `tests/unit/ux-components.test.ts` predate this work; not addressed.
+- npm audit shows 9 advisories from Sentry transitive deps (1 low, 5 moderate, 3 high). `npm audit fix --force` would shift majors; left for user judgment.
+- Rate limiter is in-memory per-process — on Vercel with multiple lambdas, effective limit scales with N lambdas. Redis swap is the right next step.
 
 *JIT = plan written just-in-time before the phase starts, so file references and code snippets are accurate.*
 
