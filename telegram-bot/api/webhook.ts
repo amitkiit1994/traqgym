@@ -1,3 +1,4 @@
+import type { AgentInputItem } from "@openai/agents";
 import { loadConfig } from "../src/config.js";
 import { isAllowed, checkSecretToken } from "../src/auth.js";
 import { createRateLimiter } from "../src/rate-limit.js";
@@ -9,6 +10,15 @@ import { runLlm } from "../src/llm.js";
 
 const config = loadConfig();
 const rateLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
+
+// Per-chat conversation history. In-memory means it resets on each Vercel
+// cold start, which is fine for a low-volume 2-user bot: warm container
+// keeps memory for the active conversation, cold start drops history but
+// next message rebuilds it. Capped to last MAX_HISTORY items to bound
+// token cost and memory.
+const MAX_HISTORY = 30;
+const RESET_KEYWORDS = /^\s*\/(reset|new|forget)\b/i;
+const historyByChat = new Map<number, AgentInputItem[]>();
 
 const blobStore = createBlobStore({ latestUrl: config.blobLatestUrl });
 const dispatcher = createGithubDispatcher({
@@ -77,6 +87,18 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  // /reset, /new, /forget — clear conversation memory before handling.
+  if (RESET_KEYWORDS.test(text)) {
+    historyByChat.delete(chatId);
+    await sendTelegramMessage({
+      token: config.telegramBotToken,
+      chatId,
+      text: "Cleared. Start fresh.",
+    });
+    res.status(200).end();
+    return;
+  }
+
   try {
     const slash = await handleSlashCommand({
       text,
@@ -96,10 +118,14 @@ export default async function handler(req: any, res: any) {
         question: text,
         model: config.openaiModel,
         store: blobStore,
+        history: historyByChat.get(chatId) ?? [],
       });
       reply = llm.text;
       toolCalls = llm.toolCalls;
       snapshotDate = llm.snapshotDate;
+      // Persist updated history, capped to last MAX_HISTORY items.
+      const trimmed = llm.history.slice(-MAX_HISTORY);
+      historyByChat.set(chatId, trimmed);
     }
 
     await sendTelegramMessage({

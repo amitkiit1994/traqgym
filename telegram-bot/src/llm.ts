@@ -1,4 +1,5 @@
-import { Agent, run, tool } from "@openai/agents";
+import { Agent, run, tool, user } from "@openai/agents";
+import type { AgentInputItem } from "@openai/agents";
 import { z } from "zod";
 import type { BlobStore } from "./data/blob-store.js";
 import { parseCsv } from "./data/csv-parse.js";
@@ -9,6 +10,7 @@ export interface RunLlmInput {
   question: string;
   model: string;
   store: BlobStore;
+  history?: AgentInputItem[];
   maxIterations?: number;
 }
 
@@ -16,6 +18,7 @@ export interface RunLlmResult {
   text: string;
   toolCalls: number;
   snapshotDate: string;
+  history: AgentInputItem[];
 }
 
 const systemPrompt = (snapshot: string, todayIso: string) => `
@@ -137,10 +140,19 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
     tools: buildTools(store, counter),
   });
 
+  // Combine prior conversation history (if any) with the new user turn.
+  const priorHistory = input.history ?? [];
+  const turnInput: AgentInputItem[] = [...priorHistory, user(question)];
+
   try {
-    const result = await run(agent, question, { maxTurns });
+    const result = await run(agent, turnInput, { maxTurns });
     const text = result.finalOutput?.toString().trim() ?? "";
-    return { text, toolCalls: counter.n, snapshotDate: pointer.snapshot_date };
+    return {
+      text,
+      toolCalls: counter.n,
+      snapshotDate: pointer.snapshot_date,
+      history: result.history,
+    };
   } catch (e) {
     const msg = (e as Error).message ?? "";
     if (msg.toLowerCase().includes("maxturn")) {
@@ -148,6 +160,7 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
         text: "I couldn't figure out how to answer that — try rephrasing.",
         toolCalls: counter.n,
         snapshotDate: pointer.snapshot_date,
+        history: priorHistory,
       };
     }
     throw e;
