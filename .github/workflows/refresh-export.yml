@@ -1,0 +1,35 @@
+name: refresh-fitnessboard-export
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Python deps
+        run: pip install -r telegram-bot/scripts/requirements-cron.txt
+      - name: Install Node deps (Blob SDK only)
+        working-directory: telegram-bot
+        run: npm install --omit=dev @vercel/blob
+      - name: Fetch fresh CSVs
+        env:
+          FB_COOKIE: ${{ secrets.FB_COOKIE }}
+          FB_OUT_DIR: /tmp/csvs
+        run: |
+          mkdir -p /tmp/csvs
+          python freeformfitness-data-export-fresh/fetch_complete.py
+      - name: Upload CSVs to Vercel Blob
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.VERCEL_BLOB_RW_TOKEN }}
+        run: node telegram-bot/scripts/upload-blob.mjs /tmp/csvs
