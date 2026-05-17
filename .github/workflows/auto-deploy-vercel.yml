@@ -17,6 +17,14 @@ on:
     branches:
       - main
       - egymlokhandwala
+    paths-ignore:
+      # The bot lives in its own Vercel project; main-app deploy must skip these.
+      - 'telegram-bot/**'
+      - 'freeformfitness-data-export-fresh/**'
+      - 'docs/**'
+      - '.github/workflows/refresh-export.yml'
+      - '.github/workflows/morning-digest.yml'
+      - '**.md'
   workflow_dispatch:
 
 concurrency:
