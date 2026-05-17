@@ -616,6 +616,57 @@ export async function getExpiredMembershipsInRange(
 }
 
 /**
+ * Members who joined within the date range. Defined as users whose
+ * `createdAt` falls in the window. Returns count + per-day breakdown
+ * + sample of up to 20 with phone + source.
+ *
+ * Used by AI tool get_new_members_in_range to answer 'new members this
+ * week / month / quarter' questions.
+ */
+export async function getNewMembersInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const users = await prisma.user.findMany({
+    where,
+    select: { id: true, firstname: true, lastname: true, phone: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const byDay = new Map<string, number>();
+  for (const u of users) {
+    const day = u.createdAt.toISOString().slice(0, 10);
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    count: users.length,
+    byDay: Array.from(byDay.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    sample: users.slice(0, 20).map((u) => ({
+      memberId: u.id,
+      name: `${u.firstname} ${u.lastname}`.trim(),
+      phone: u.phone,
+      joinedOn: u.createdAt.toISOString().slice(0, 10),
+    })),
+  };
+}
+
+/**
  * Churn metrics for a date range.
  * Defines:
  *   - "active at start" = members with at least one MemberTicket whose
