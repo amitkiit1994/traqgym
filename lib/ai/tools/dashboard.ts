@@ -7,6 +7,8 @@ import {
   getProfitLoss,
   getDailyCollection,
   getCollectionsInRange,
+  getExpiredMembershipsInRange,
+  getPTRevenueByTrainer,
   getUpgradeStats,
 } from "@/lib/services/dashboard";
 import { getActivityFeed } from "@/lib/actions/activity";
@@ -69,6 +71,46 @@ export const dashboardTools = [
     }),
     async execute(input) {
       const result = await getDailyCollection(input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_expired_memberships_in_range",
+    description:
+      "Memberships that expired between two dates (inclusive). Returns count, total paid value, total billed value, per-plan breakdown, and a sample of up to 20 expired members with phone numbers (useful for renewal call lists).",
+    parameters: z.object({
+      from: z.string().describe("Start date inclusive, YYYY-MM-DD"),
+      to: z.string().describe("End date inclusive, YYYY-MM-DD"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const from = new Date(`${input.from}T00:00:00.000Z`);
+      const to = new Date(`${input.to}T00:00:00.000Z`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
+      }
+      const result = await getExpiredMembershipsInRange(from, to, input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_pt_revenue_by_trainer",
+    description:
+      "PT plan revenue split by trainer over a date range. Identifies PT plans by name (contains PT or OPT). Use this for trainer payouts, PT performance rankings, and 'who's selling the most PT' questions.",
+    parameters: z.object({
+      from: z.string().describe("Start date inclusive, YYYY-MM-DD"),
+      to: z.string().describe("End date inclusive, YYYY-MM-DD"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const from = new Date(`${input.from}T00:00:00.000Z`);
+      const to = new Date(`${input.to}T00:00:00.000Z`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
+      }
+      const result = await getPTRevenueByTrainer(from, to, input.locationId ?? undefined);
       return JSON.stringify(result);
     },
   }),

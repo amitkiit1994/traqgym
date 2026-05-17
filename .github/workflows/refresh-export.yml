@@ -24,7 +24,8 @@ jobs:
         run: npm install --omit=dev @vercel/blob
       - name: Fetch fresh CSVs
         env:
-          FB_COOKIE: ${{ secrets.FB_COOKIE }}
+          FB_MOBILE: ${{ secrets.FB_MOBILE }}
+          FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
           FB_OUT_DIR: /tmp/csvs
         run: |
           mkdir -p /tmp/csvs
