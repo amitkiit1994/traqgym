@@ -136,9 +136,37 @@ async function upsertPayments(rows: unknown[]): Promise<{
       const fbInvoice = `FB-${billNo}`;
       const existing = await prisma.invoice.findFirst({
         where: { invoiceNumber: fbInvoice },
-        select: { id: true },
+        select: { id: true, paymentId: true, payment: { select: { id: true, trainerId: true } } },
       });
       if (existing) {
+        // Payment already inserted on a prior sync — but back-fill trainerId
+        // if it's still null (earlier sync versions didn't write trainerId).
+        if (existing.payment && existing.payment.trainerId == null) {
+          const trainerName = String(row.Trainer ?? "").trim();
+          if (trainerName) {
+            const tokens = trainerName.split(/\s+/).filter((t) => t.length > 0);
+            const trainerWorker = await prisma.worker.findFirst({
+              where: {
+                isActive: true,
+                AND: tokens.map((t) => ({
+                  OR: [
+                    { firstname: { equals: t, mode: "insensitive" as const } },
+                    { lastname: { equals: t, mode: "insensitive" as const } },
+                    { firstname: { contains: t, mode: "insensitive" as const } },
+                    { lastname: { contains: t, mode: "insensitive" as const } },
+                  ],
+                })),
+              },
+              select: { id: true },
+            });
+            if (trainerWorker) {
+              await prisma.payment.update({
+                where: { id: existing.payment.id },
+                data: { trainerId: trainerWorker.id },
+              });
+            }
+          }
+        }
         skippedAlreadyExists++;
         continue;
       }
