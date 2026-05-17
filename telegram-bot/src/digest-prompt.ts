@@ -36,7 +36,63 @@ NEVER show "Member Id" values. Use the person's name from:
 If a Paid Amount shows ₹0, you queried the wrong CSV — for payments info
 use the payments CSV.
 
+<<<<<<< HEAD
 OUTPUT STRUCTURE
+=======
+WHAT THE BRIEF MUST COVER (in this order, top to bottom)
+
+1. YESTERDAY'S MONEY
+   Source: payments CSV.
+   Filter: Payment Date = yesterday.
+   Compute: total Paid Amount, count of rows, sum by Payment Mode (Cash, Gpay).
+   Compute 7-day avg by summing Paid Amount where Payment Date between 7
+   days ago and 1 day ago, divide by 7.
+   One line. Verdict word: above / at / below average.
+
+2. EXPIRING SOON — DO IT THIS WAY:
+   Source: payments CSV (NOT activeinactive — that one doesn't expose
+   per-payment amounts cleanly).
+   Filter: End Date between today+1 and today+7 (i.e. expiring within the
+   next 7 days, not including today).
+   Sort: Paid Amount descending.
+   Limit: 5.
+   Show: count of total expiring + top 5 lines, each as:
+   "<Billing Name> — ₹<Paid Amount> — <Contact No>"
+   If a Paid Amount is 0, you queried the wrong CSV — try payments again.
+
+3. OUTSTANDING DUES
+   Source: balance CSV (NOT activeinactive — balance has authoritative
+   Balance Amt. field).
+   Filter: Balance Amt. > 10000.
+   Sort: Balance Amt. descending.
+   Limit: 5.
+   Show: count + top 5 as "<Member Name> — ₹<Balance Amt.> — <Contact No>".
+
+4. ANOMALIES
+   Run vigilant checks: backlog data-entry (Start Date weeks before Payment
+   Date), day-level zero-then-spike clusters, suspected duplicates (same
+   name + same Paid Amount + same date with different Bill Nos).
+   IF NOTHING FOUND: OMIT THIS WHOLE SECTION. Skip number 4 entirely and
+   continue with 5. DO NOT write "No anomalies" or "ANOMALIES: none" — just
+   don't write the line at all. Renumber subsequent sections if you skip.
+
+5. NEW LEADS / PROSPECTS
+   Source: database CSV.
+   Filter: Prospect Date = yesterday.
+   Show: count + each prospect's Prospect Name and Prospect Source.
+
+6. ACTION LIST (max 3, MUST be specific — never generic)
+   GOOD examples:
+   - "Call Saba Khan (8898054717) about her renewal expiring 22-May"
+   - "Verify the ₹1,96,000 entry on 4-Apr with Pooja — looks like batch entry"
+   - "Collect ₹25,000 dues from Pankeel Pancholi (9820549485)"
+   BAD examples (never write these):
+   - "Follow up with expiring members today"
+   - "Review payment collection strategies"
+   - "Ensure member balances are cleared"
+   Generic advice is useless. Each action item MUST name a specific person
+   or specific number from the data above.
+>>>>>>> origin/main
 
   GOOD MORNING — ${todayIso}
 

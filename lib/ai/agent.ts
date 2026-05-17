@@ -51,6 +51,7 @@ import { feedbackTools } from "./tools/feedback";
 import { appointmentTools } from "./tools/appointments";
 import { compTools } from "./tools/comp-tools";
 import { insightTools } from "./tools/insights";
+import { anomalyTools } from "./tools/anomaly";
 
 // Tools that require admin role — tool executor will deny access for staff
 const ADMIN_ONLY_TOOLS = new Set([
@@ -107,6 +108,15 @@ const ADMIN_ONLY_TOOLS = new Set([
   "issue_comp",
   "revoke_comp",
   "convert_comp",
+  // Owner-trust anomaly suite — only the owner should see these signals.
+  "detect_duplicate_payments",
+  "detect_off_shift_cash",
+  "detect_discount_outliers",
+  "detect_refund_routing",
+  "detect_comp_abuse_patterns",
+  "detect_balance_mismatches",
+  "detect_audit_anomalies",
+  "get_owner_anomaly_summary",
 ]);
 
 const allTools = [
@@ -161,6 +171,7 @@ const allTools = [
   ...appointmentTools,
   ...compTools,
   ...insightTools,
+  ...anomalyTools,
 ];
 
 export { allTools };
