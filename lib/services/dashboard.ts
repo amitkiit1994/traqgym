@@ -547,6 +547,144 @@ export async function getCollectionsInRange(
   };
 }
 
+/**
+ * Memberships that expired within the given inclusive date range.
+ * Returns count + sum-of-paid value + per-plan breakdown.
+ * Used by AI tool get_expired_memberships_in_range.
+ */
+export async function getExpiredMembershipsInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    expireDate: { gte: fromInclusive, lt: endExclusive },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const tickets = await prisma.memberTicket.findMany({
+    where,
+    select: {
+      id: true,
+      expireDate: true,
+      totalAmount: true,
+      amountPaid: true,
+      plan: { select: { name: true } },
+      user: { select: { id: true, firstname: true, lastname: true, phone: true } },
+    },
+    orderBy: { expireDate: "desc" },
+  });
+
+  let totalPaid = 0;
+  let totalBilled = 0;
+  const byPlan = new Map<string, { plan: string; count: number; paid: number; billed: number }>();
+
+  for (const t of tickets) {
+    const paid = Number(t.amountPaid);
+    const billed = Number(t.totalAmount);
+    totalPaid += paid;
+    totalBilled += billed;
+    const planName = t.plan?.name ?? "(no plan)";
+    const entry = byPlan.get(planName) ?? { plan: planName, count: 0, paid: 0, billed: 0 };
+    entry.count += 1;
+    entry.paid += paid;
+    entry.billed += billed;
+    byPlan.set(planName, entry);
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    count: tickets.length,
+    totalPaid,
+    totalBilled,
+    byPlan: Array.from(byPlan.values()).sort((a, b) => b.paid - a.paid),
+    sample: tickets.slice(0, 20).map((t) => ({
+      memberId: t.user?.id,
+      name: t.user ? `${t.user.firstname} ${t.user.lastname}` : null,
+      phone: t.user?.phone,
+      plan: t.plan?.name,
+      expiredOn: t.expireDate.toISOString().slice(0, 10),
+      paid: Number(t.amountPaid),
+    })),
+  };
+}
+
+/**
+ * PT plan revenue split by trainer over a date range.
+ * "PT" plans = plan names containing PT or OPT (case-insensitive whole-word).
+ * Returns each trainer's total PT collections from member payments tied to PT plans.
+ * Used by AI tool get_pt_revenue_by_trainer.
+ */
+export async function getPTRevenueByTrainer(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const payments = await prisma.payment.findMany({
+    where,
+    select: {
+      amount: true,
+      trainerId: true,
+      trainer: { select: { id: true, firstname: true, lastname: true } },
+      memberTicket: {
+        select: { plan: { select: { name: true } } },
+      },
+    },
+  });
+
+  const byTrainer = new Map<
+    number | null,
+    { trainerId: number | null; name: string; ptTotal: number; ptCount: number }
+  >();
+  let totalPt = 0;
+  let totalPtCount = 0;
+
+  for (const p of payments) {
+    const planName = (p.memberTicket?.plan?.name ?? "").trim();
+    if (!/\bP(?:T|OT)\b|\bOPT\b/i.test(planName)) continue;
+    const amt = Number(p.amount);
+    totalPt += amt;
+    totalPtCount += 1;
+    const t = p.trainer;
+    const key = t?.id ?? null;
+    const entry =
+      byTrainer.get(key) ?? {
+        trainerId: key,
+        name: t ? `${t.firstname} ${t.lastname}`.trim() : "(no trainer)",
+        ptTotal: 0,
+        ptCount: 0,
+      };
+    entry.ptTotal += amt;
+    entry.ptCount += 1;
+    byTrainer.set(key, entry);
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    totalPtRevenue: totalPt,
+    totalPtTransactions: totalPtCount,
+    byTrainer: Array.from(byTrainer.values()).sort((a, b) => b.ptTotal - a.ptTotal),
+  };
+}
+
 export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
   const [workers, paymentsByWorker, distinctTicketRows, attendance] = await Promise.all([
     prisma.worker.findMany({
