@@ -1,7 +1,14 @@
 import { tool } from "@openai/agents";
 import { z } from "zod";
 import { n } from "./utils";
-import { getStats, getStaffPerformance, getProfitLoss, getDailyCollection, getUpgradeStats } from "@/lib/services/dashboard";
+import {
+  getStats,
+  getStaffPerformance,
+  getProfitLoss,
+  getDailyCollection,
+  getCollectionsInRange,
+  getUpgradeStats,
+} from "@/lib/services/dashboard";
 import { getActivityFeed } from "@/lib/actions/activity";
 import { getMyDashboard } from "@/lib/actions/worker-dashboard";
 
@@ -62,6 +69,26 @@ export const dashboardTools = [
     }),
     async execute(input) {
       const result = await getDailyCollection(input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_collections_in_range",
+    description:
+      "Get total payment collections for an arbitrary date range. Returns the grand total, per-day breakdown, payment-mode breakdown (cash/upi/card/cheque/other), and PT vs non-PT split. Use this for any 'how much did we collect between X and Y' question. Excludes complimentary payments.",
+    parameters: z.object({
+      from: z.string().describe("Start date inclusive, ISO format YYYY-MM-DD"),
+      to: z.string().describe("End date inclusive, ISO format YYYY-MM-DD"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const from = new Date(`${input.from}T00:00:00.000Z`);
+      const to = new Date(`${input.to}T00:00:00.000Z`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
+      }
+      const result = await getCollectionsInRange(from, to, input.locationId ?? undefined);
       return JSON.stringify(result);
     },
   }),
