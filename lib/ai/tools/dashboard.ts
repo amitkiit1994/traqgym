@@ -10,6 +10,7 @@ import {
   getExpiredMembershipsInRange,
   getPTRevenueByTrainer,
   getTopSpendersInRange,
+  getChurnMetricsInRange,
   getUpgradeStats,
 } from "@/lib/services/dashboard";
 import { getActivityFeed } from "@/lib/actions/activity";
@@ -92,6 +93,26 @@ export const dashboardTools = [
         return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
       }
       const result = await getExpiredMembershipsInRange(from, to, input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_churn_metrics_in_range",
+    description:
+      "Churn / retention metrics for a date range. Returns: members active at the start of the period, how many churned (had no plan extending beyond the period end), retention count, churn rate %, and a sample of churned members with phone + last plan + expiry. Use for 'what's our churn this month', 'how many members left last quarter' questions.",
+    parameters: z.object({
+      from: z.string().describe("Period start date inclusive, YYYY-MM-DD"),
+      to: z.string().describe("Period end date inclusive, YYYY-MM-DD"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const from = new Date(`${input.from}T00:00:00.000Z`);
+      const to = new Date(`${input.to}T00:00:00.000Z`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
+      }
+      const result = await getChurnMetricsInRange(from, to, input.locationId ?? undefined);
       return JSON.stringify(result);
     },
   }),

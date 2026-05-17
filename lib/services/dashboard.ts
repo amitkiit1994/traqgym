@@ -616,6 +616,99 @@ export async function getExpiredMembershipsInRange(
 }
 
 /**
+ * Churn metrics for a date range.
+ * Defines:
+ *   - "active at start" = members with at least one MemberTicket whose
+ *     buyDate <= fromInclusive AND expireDate >= fromInclusive.
+ *   - "churned during period" = active-at-start members whose only / latest
+ *     ticket expired within [from, to] AND who didn't renew (no new ticket
+ *     with buyDate >= fromInclusive that expires after `to`).
+ *
+ * Used by AI tool get_churn_metrics_in_range.
+ */
+export async function getChurnMetricsInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const baseTicketWhere: Record<string, unknown> = {};
+  if (locationId) baseTicketWhere.locationId = locationId;
+
+  // Active-at-start: users with a ticket valid on `fromInclusive`
+  const activeAtStart = await prisma.user.findMany({
+    where: {
+      memberTickets: {
+        some: {
+          ...baseTicketWhere,
+          buyDate: { lte: fromInclusive },
+          expireDate: { gte: fromInclusive },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  const activeAtStartIds = new Set(activeAtStart.map((u) => u.id));
+
+  // Churned: active-at-start AND (no ticket whose expireDate > toInclusive)
+  // i.e., they had a plan at the start but nothing extends beyond the period.
+  const stillActive = await prisma.user.findMany({
+    where: {
+      id: { in: Array.from(activeAtStartIds) },
+      memberTickets: {
+        some: {
+          ...baseTicketWhere,
+          expireDate: { gt: toInclusive },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  const stillActiveIds = new Set(stillActive.map((u) => u.id));
+
+  const churnedIds = Array.from(activeAtStartIds).filter((id) => !stillActiveIds.has(id));
+  const denominator = activeAtStartIds.size;
+  const churnRatePct =
+    denominator > 0 ? (churnedIds.length / denominator) * 100 : 0;
+
+  // Sample of churned members for follow-up call lists
+  const sample = await prisma.user.findMany({
+    where: { id: { in: churnedIds.slice(0, 25) } },
+    select: {
+      id: true,
+      firstname: true,
+      lastname: true,
+      phone: true,
+      memberTickets: {
+        select: { plan: { select: { name: true } }, expireDate: true },
+        orderBy: { expireDate: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    activeAtStart: denominator,
+    churned: churnedIds.length,
+    retained: stillActiveIds.size,
+    churnRatePct: Number(churnRatePct.toFixed(2)),
+    sample: sample.map((u) => ({
+      memberId: u.id,
+      name: `${u.firstname} ${u.lastname}`.trim(),
+      phone: u.phone,
+      lastPlan: u.memberTickets[0]?.plan?.name ?? null,
+      lastPlanExpiredOn: u.memberTickets[0]?.expireDate.toISOString().slice(0, 10) ?? null,
+    })),
+  };
+}
+
+/**
  * Top members by total spend (sum of payments) in a date range.
  * Used by AI tool get_top_spenders_in_range to answer "who's our top customer"
  * or "top 5 members by spend this year" questions.
