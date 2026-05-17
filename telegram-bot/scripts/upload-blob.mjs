@@ -120,6 +120,9 @@ const latestRes = await put(`csv/${gym}/latest.json`, JSON.stringify(latest, nul
   token,
   addRandomSuffix: false,
   allowOverwrite: true,
+  // CDN cache 0 — latest.json MUST always serve fresh. Per-day CSV blobs
+  // are immutable (random suffix) so they can be cached normally.
+  cacheControlMaxAge: 0,
 });
 console.log(`Wrote latest.json: ${latestRes.url}`);
 

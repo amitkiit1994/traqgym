@@ -188,7 +188,18 @@ def write_csv(filename, headers, rows):
 
 
 def parse_html_response(raw_bytes, filename):
-    """Parse HTML table response, write to CSV."""
+    """Parse server response (HTML tables OR XLSX binary), write to CSV.
+
+    Some tenants in v3.fitnessboard.in return ExportToExcel results as actual
+    XLSX binaries; others return HTML pages with <table> tags. We detect by
+    magic bytes (XLSX = ZIP container starts with PK\\x03\\x04) and route to
+    the right parser. Failure to detect either form returns 0 (skip).
+    """
+    if not raw_bytes:
+        return 0
+    # XLSX magic = ZIP file header.
+    if raw_bytes[:4] == b"PK\x03\x04":
+        return _parse_xlsx_response(raw_bytes, filename)
     try:
         html = raw_bytes.decode("utf-8", errors="replace")
     except Exception:
@@ -203,6 +214,90 @@ def parse_html_response(raw_bytes, filename):
             total += write_csv(filename.replace(".csv", f"{suffix}.csv"),
                                table[0], table[1:])
     return total
+
+
+def _parse_xlsx_response(raw_bytes, filename):
+    """Parse an XLSX binary into CSVs via stdlib (zipfile + xml.etree).
+
+    v3.fitnessboard.in's server-side XLSX writer produces a minimal Open XML
+    archive: no sharedStrings.xml, no styles.xml, all values inlined as
+    <x:c><x:v>...</x:v></x:c>. openpyxl chokes on this structure, but the
+    layout is simple enough to walk with stdlib. Same approach also avoids
+    adding a Python dependency.
+    """
+    import io
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+    except (zipfile.BadZipFile, Exception) as e:
+        log(f"  XLSX zip-open error for {filename}: {e}")
+        return 0
+
+    try:
+        sheet_paths = sorted(
+            n for n in zf.namelist()
+            if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")
+        )
+        if not sheet_paths:
+            log(f"  XLSX has no worksheets: {filename}")
+            return 0
+
+        # If sharedStrings.xml exists, build the string table for indirect refs.
+        # Otherwise (the v3 case), all values are inlined.
+        shared = []
+        if "xl/sharedStrings.xml" in zf.namelist():
+            try:
+                tree = ET.parse(zf.open("xl/sharedStrings.xml"))
+                for si in tree.getroot().iter(f"{NS}si"):
+                    # Concatenate all text in this string item (handles rich text).
+                    text = "".join(t.text or "" for t in si.iter(f"{NS}t"))
+                    shared.append(text)
+            except Exception as e:
+                log(f"  XLSX sharedStrings parse error for {filename}: {e}")
+                # Continue with shared=[] — inline strings still work.
+
+        total = 0
+        for i, sheet_path in enumerate(sheet_paths):
+            try:
+                tree = ET.parse(zf.open(sheet_path))
+            except Exception as e:
+                log(f"  XLSX sheet {sheet_path} parse error: {e}")
+                continue
+            rows_data = []
+            for row in tree.getroot().iter(f"{NS}row"):
+                cells = []
+                row_has_data = False
+                for cell in row.iter(f"{NS}c"):
+                    t_attr = cell.get("t", "")
+                    v = cell.find(f"{NS}v")
+                    if t_attr == "s" and v is not None and v.text:
+                        # Shared string lookup.
+                        try:
+                            cells.append(shared[int(v.text)] if shared else "")
+                        except (ValueError, IndexError):
+                            cells.append("")
+                    elif t_attr == "inlineStr":
+                        is_node = cell.find(f"{NS}is")
+                        text = "".join(t.text or "" for t in (is_node.iter(f"{NS}t") if is_node is not None else []))
+                        cells.append(text)
+                    else:
+                        # Numbers (t=""), strings (t="str"), dates (t="d"), bools (t="b") all stored in <v>.
+                        cells.append((v.text or "") if v is not None else "")
+                    if cells[-1].strip() != "":
+                        row_has_data = True
+                if row_has_data:
+                    rows_data.append(cells)
+            if len(rows_data) < 2 or len(rows_data[0]) < 2:
+                continue
+            suffix = f"_{i}" if len(sheet_paths) > 1 else ""
+            out_name = filename.replace(".csv", f"{suffix}.csv")
+            total += write_csv(out_name, rows_data[0], rows_data[1:])
+        return total
+    finally:
+        zf.close()
 
 
 def parse_json_response(raw_bytes, prefix):
