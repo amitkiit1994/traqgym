@@ -400,38 +400,87 @@ def fetch_attendance(cookie: str, days: int = 30) -> list[dict]:
 
 
 def _parse_attendance_json(raw: bytes) -> list[dict]:
-    """v3's FilterAttendanceReport returns JSON with HTML tables under Data* keys."""
+    """v3's FilterAttendanceReport response shape varies by gym setup.
+
+    Observed responses (May 2026):
+      - Direct HTML table: '<table id=...>...</table>~0' (most common,
+        the '~0' suffix is a row-count trailer)
+      - JSON-wrapped: '{"Data1":"<table>..."}' (other endpoints — older
+        servers / some configs)
+
+    We try both.
+    """
     try:
-        text = raw.decode("utf-8", errors="replace")
-        if not text.startswith("{"):
-            return []
-        data = json.loads(text)
+        text = raw.decode("utf-8", errors="replace").strip()
     except Exception:
         return []
-    all_rows: list[dict] = []
-    for key in sorted(data.keys()):
-        v = data[key]
-        if v and isinstance(v, str) and "<t" in v.lower():
-            try:
-                rows = parse_html_table(v.encode("utf-8"))
-                all_rows.extend(rows)
-            except Exception:
-                continue
-    return all_rows
+    if not text:
+        return []
+    if text.startswith("<"):
+        # Direct HTML — strip the trailing '~<count>' if present
+        if "~" in text[-10:]:
+            text = text.rsplit("~", 1)[0]
+        try:
+            return parse_html_table(text.encode("utf-8"))
+        except Exception:
+            return []
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        all_rows: list[dict] = []
+        for key in sorted(data.keys()):
+            v = data[key]
+            if v and isinstance(v, str) and "<t" in v.lower():
+                try:
+                    rows = parse_html_table(v.encode("utf-8"))
+                    all_rows.extend(rows)
+                except Exception:
+                    continue
+        return all_rows
+    return []
 
 
 def _normalise_attendance(rows: list[dict]) -> list[dict]:
-    """Map v3 attendance columns. v3 typically returns:
-      Member Id, Name, Contact No, Check In, Check Out, Date, Branch
-    Field names vary across v3 versions — we accept several aliases.
+    """Map v3 attendance columns to consistent keys.
+
+    Observed v3 column headers (May 2026):
+      SR. NO, Member Id, Name, Start Date, End DAte, Check In Date,
+      Check Out Date, In/Out Time
+
+    Member Id is the gym's v3 member id (not phone). Some older v3
+    deployments use 'Check In' / 'Check Out' or 'In Time' / 'Out Time' —
+    aliases accepted.
     """
     normalised: list[dict] = []
     for r in rows:
         member_id = (r.get("Member Id") or r.get("MemberId") or "").strip()
         contact = (r.get("Contact No") or r.get("ContactNo") or "").strip()
-        check_in = (r.get("Check In") or r.get("CheckIn") or r.get("In Time") or "").strip()
-        check_out = (r.get("Check Out") or r.get("CheckOut") or r.get("Out Time") or "").strip()
-        att_date = (r.get("Date") or r.get("Attendance Date") or r.get("AttendanceDate") or "").strip()
+        check_in = (
+            r.get("Check In Date")
+            or r.get("CheckInDate")
+            or r.get("Check In")
+            or r.get("CheckIn")
+            or r.get("In Time")
+            or ""
+        ).strip()
+        check_out = (
+            r.get("Check Out Date")
+            or r.get("CheckOutDate")
+            or r.get("Check Out")
+            or r.get("CheckOut")
+            or r.get("Out Time")
+            or ""
+        ).strip()
+        att_date = (
+            r.get("Date")
+            or r.get("Attendance Date")
+            or r.get("AttendanceDate")
+            or ""
+        ).strip()
+        # Many v3 attendance dumps lack Contact No — we'll fall back to
+        # MemberId lookup at the API side once that path exists.
         if not (member_id or contact):
             continue
         if not check_in:
