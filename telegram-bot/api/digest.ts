@@ -12,6 +12,7 @@ import { Agent, run, tool, user } from "@openai/agents";
 import { z } from "zod";
 import { loadConfig } from "../src/config.js";
 import { createBlobStore } from "../src/data/blob-store.js";
+import { createAllowlistStore } from "../src/data/allowlist-store.js";
 import { parseCsv } from "../src/data/csv-parse.js";
 import { buildListCsvsResult, CSV_HINTS } from "../src/tools/list-csvs.js";
 import { applyQuery } from "../src/tools/query-csv.js";
@@ -20,10 +21,22 @@ import { digestSystemPrompt } from "../src/digest-prompt.js";
 
 const config = loadConfig();
 const blobStore = createBlobStore({ latestUrl: config.blobLatestUrl });
+// Same allowlist file as the webhook reads. Digest sends to owner set
+// (env) + dynamic approved (Vercel Blob) so /approve-d users get the
+// morning brief too without redeploy.
+const allowlistUrl = config.blobLatestUrl.replace(/\/csv\/latest\.json$/, "/allowlist.json");
+const allowlistStore = createAllowlistStore({
+  url: allowlistUrl,
+  token: config.blobReadWriteToken,
+});
 process.env.OPENAI_API_KEY = config.openaiApiKey;
 
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
 const GYM_NAME = process.env.GYM_NAME ?? "Free Form Fitness";
+// Digest uses a faster model than chat — the prompt is explicit so it doesn't
+// need gpt-5's reasoning depth, and Vercel's 60s function timeout makes gpt-5
+// risky. gpt-4o-mini handles 6 sections + ~10 tool calls in 15-25s.
+const DIGEST_MODEL = process.env.DIGEST_MODEL ?? "gpt-4o-mini";
 
 // Same flat schema as the chat endpoint — keeps query_csv shape consistent.
 const cell = z.string().nullable();
@@ -56,7 +69,7 @@ function normalize(f: FlatFilter): import("../src/tools/query-csv.js").Filter {
   }
 }
 
-async function buildBrief(): Promise<{ text: string; toolCalls: number; snapshotDate: string }> {
+async function buildBrief(): Promise<{ text: string; toolCalls: number; snapshotDate: string; model: string }> {
   const pointer = await blobStore.fetchLatest();
   const todayIso = new Date().toISOString().slice(0, 10);
   let toolCalls = 0;
@@ -94,15 +107,16 @@ async function buildBrief(): Promise<{ text: string; toolCalls: number; snapshot
   const agent = new Agent({
     name: "TraqGym morning digest",
     instructions: digestSystemPrompt(pointer.snapshot_date, todayIso, GYM_NAME),
-    model: config.openaiModel,
+    model: DIGEST_MODEL,
     tools: [listTool, queryTool],
   });
 
-  const result = await run(agent, [user("Generate today's owner brief.")], { maxTurns: 25 });
+  const result = await run(agent, [user("Generate today's owner brief.")], { maxTurns: 20 });
   return {
     text: result.finalOutput?.toString().trim() ?? "(no brief generated)",
     toolCalls,
     snapshotDate: pointer.snapshot_date,
+    model: DIGEST_MODEL,
   };
 }
 
@@ -121,9 +135,18 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { text, toolCalls, snapshotDate } = await buildBrief();
+    // Resolve recipient set: env owners ∪ dynamic /approve-d users.
+    const recipients = new Set<number>(config.allowedChatIds);
+    try {
+      const al = await allowlistStore.read();
+      for (const e of al.approved) recipients.add(e.chatId);
+    } catch (e) {
+      console.warn("digest: allowlist read failed; sending to env owners only", e);
+    }
+
+    const { text, toolCalls, snapshotDate, model: usedModel } = await buildBrief();
     const sends: Promise<void>[] = [];
-    for (const chatId of config.allowedChatIds) {
+    for (const chatId of recipients) {
       sends.push(
         sendTelegramMessage({
           token: config.telegramBotToken,
@@ -132,18 +155,26 @@ export default async function handler(req: any, res: any) {
         }),
       );
     }
-    await Promise.allSettled(sends);
+    const results = await Promise.allSettled(sends);
+    const failed = results.filter(r => r.status === "rejected").length;
     console.log(JSON.stringify({
       kind: "digest",
       ts: new Date().toISOString(),
-      recipients: [...config.allowedChatIds],
+      recipients: [...recipients],
+      n_sent: recipients.size - failed,
+      n_failed: failed,
       n_tool_calls: toolCalls,
-      model: config.openaiModel,
+      model: usedModel,
       latency_ms: Date.now() - started,
       snapshot_date: snapshotDate,
       preview: text.slice(0, 200),
     }));
-    res.status(200).json({ ok: true, sent_to: config.allowedChatIds.size, snapshot_date: snapshotDate });
+    res.status(200).json({
+      ok: true,
+      sent_to: recipients.size - failed,
+      failed,
+      snapshot_date: snapshotDate,
+    });
   } catch (e) {
     console.error("digest error", e);
     res.status(500).json({ ok: false, error: (e as Error).message });
