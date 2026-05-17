@@ -2,7 +2,8 @@
 """
 Daily data export for the gym's source CRM/POS.
 
-End date is HARDCODED to today (16-05-2026). Never use a past date.
+End date is the system date at run time (date.today()). All upstream date
+filters use this so the cron always captures yesterday's activity.
 
 Phases:
   1. ExportToExcel reports (already done — re-confirms with end=today)
@@ -33,7 +34,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 COOKIE_FILE = "/tmp/fb_cookie_string.txt"
 BASE = "https://v3.fitnessboard.in"
 
-TODAY = date(2026, 5, 16)
+TODAY = date.today()
 TODAY_DASH = TODAY.strftime("%d-%m-%Y")
 TODAY_SLASH_ENC = TODAY.strftime("%d%%2F%m%%2F%Y")
 START_DASH = "01-01-2012"
@@ -321,8 +322,28 @@ def parse_json_response(raw_bytes, prefix):
 
 
 # ─── PHASE 1: ExportToExcel reports — re-confirm with end=today ────
+def _fetch_phase1_endpoint(t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT):
+    """Run cascading attempts for one Phase 1 endpoint. Returns row count."""
+    for attempt, (sd, ed) in enumerate(ranges, 1):
+        t_out = SLOW_TIMEOUT if attempt == 1 else FAST_TIMEOUT
+        log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)}, timeout={t_out}s)")
+        url = f"{BASE}/Dashboard/ExportToExcel?exportfor={t}&StartDate={sd}&EndDate={ed}&mstat=0"
+        data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=t_out)
+        if data and len(data) > 100:
+            rows = parse_html_response(data, f"export_{t}_all.csv")
+            if rows > 0:
+                log(f"  -> export_{t}_all.csv: parsed via attempt {attempt}")
+                return rows
+            log(f"    response={len(data)} bytes but 0 rows parsed; trying smaller range")
+        else:
+            log(f"    empty response ({len(data) if data else 0} bytes); trying smaller range")
+        time.sleep(1)
+    log(f"  {t}: gave up — endpoint unavailable for this tenant")
+    return 0
+
+
 def phase1_exports():
-    log("=== PHASE 1: ExportToExcel (end=today) ===")
+    log("=== PHASE 1: ExportToExcel (end=today) [parallel across endpoints] ===")
     types = ["database", "balance", "activeinactive", "memberenrollment", "payment"]
     # Cascading date-range fallback: large tenants (EGYM) time out at the
     # server when asked for 14 years. Try full range → last 5 years → last
@@ -337,24 +358,22 @@ def phase1_exports():
         year_window(5),               # 5yr fallback
         year_window(2),               # 2yr fallback
     ]
-    timeout_per_call = 360
-    for t in types:
-        rows_extracted = 0
-        for attempt, (sd, ed) in enumerate(ranges, 1):
-            log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)})")
-            url = f"{BASE}/Dashboard/ExportToExcel?exportfor={t}&StartDate={sd}&EndDate={ed}&mstat=0"
-            data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=timeout_per_call)
-            if data and len(data) > 100:
-                rows_extracted = parse_html_response(data, f"export_{t}_all.csv")
-                if rows_extracted > 0:
-                    break
-                log(f"    response={len(data)} bytes but 0 rows parsed; trying smaller range")
-            else:
-                log(f"    empty response ({len(data) if data else 0} bytes); trying smaller range")
-            time.sleep(3)
-        if rows_extracted == 0:
-            log(f"  {t}: gave up after {len(ranges)} attempts")
-        time.sleep(2)
+    SLOW_TIMEOUT = 360
+    FAST_TIMEOUT = 90
+    # Parallel: each of the 5 exports has its own cascading retry loop.
+    # Saves ~30 min on EGYM where each endpoint sequentially could take 6+ min.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        futures = {
+            ex.submit(_fetch_phase1_endpoint, t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT): t
+            for t in types
+        }
+        for fut in as_completed(futures):
+            t = futures[fut]
+            try:
+                fut.result()
+            except Exception as e:
+                log(f"  {t}: exception {e}")
 
 
 # ─── PHASE 2: AJAX endpoints w/ visit_parent ────────────────────────
@@ -452,9 +471,11 @@ def phase2_ajax():
 
 # ─── PHASE 3: Attendance month-by-month ────────────────────────────
 def phase3_attendance():
-    log("=== PHASE 3: Attendance (month-by-month, 2020-present) ===")
+    log("=== PHASE 3: Attendance (month-by-month, 2020-present) [parallel] ===")
+    # Prime the parent page once, then fan out the per-month AJAX calls.
     curl(f"{BASE}/Dashboard/AttendanceReport", timeout=20)
     time.sleep(0.5)
+    months = []
     for year in range(2020, TODAY.year + 1):
         for month in range(1, 13):
             if year == TODAY.year and month > TODAY.month:
@@ -462,32 +483,55 @@ def phase3_attendance():
             last = 28 if month == 2 else (30 if month in (4,6,9,11) else 31)
             if year == TODAY.year and month == TODAY.month:
                 last = TODAY.day
-            start = f"01%2F{month:02d}%2F{year}"
-            end = f"{last:02d}%2F{month:02d}%2F{year}"
-            path = f"FilterAttendanceReport?Start={start}&End={end}"
-            url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}"
-            data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/AttendanceReport", timeout=45)
-            saved = parse_json_response(data, f"ajax_attendance_{year}_{month:02d}")
-            if saved:
-                log(f"    {year}-{month:02d}: {saved} rows")
-            time.sleep(0.4)
+            months.append((year, month, last))
+
+    def fetch_month(year, month, last):
+        start = f"01%2F{month:02d}%2F{year}"
+        end = f"{last:02d}%2F{month:02d}%2F{year}"
+        path = f"FilterAttendanceReport?Start={start}&End={end}"
+        url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}"
+        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/AttendanceReport", timeout=45)
+        saved = parse_json_response(data, f"ajax_attendance_{year}_{month:02d}")
+        return (year, month, saved)
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = [ex.submit(fetch_month, y, m, l) for (y, m, l) in months]
+        for fut in as_completed(futures):
+            try:
+                y, m, saved = fut.result()
+                if saved:
+                    log(f"    {y}-{m:02d}: {saved} rows")
+            except Exception as e:
+                log(f"    month fetch error: {e}")
 
 
 # ─── PHASE 4: Invoices year-by-year ────────────────────────────────
 def phase4_invoices():
-    log("=== PHASE 4: Invoices (year-by-year, 2020-present) ===")
+    log("=== PHASE 4: Invoices (year-by-year, 2020-present) [parallel] ===")
     curl(f"{BASE}/Dashboard/InvoiceList", timeout=20)
     time.sleep(0.5)
-    for year in range(2020, TODAY.year + 1):
+    years = list(range(2020, TODAY.year + 1))
+
+    def fetch_year(year):
         start = f"01%2F01%2F{year}"
         end = f"31%2F12%2F{year}" if year < TODAY.year else TODAY_SLASH_ENC
         path = f"FilterInvoiceList?Start={start}&End={end}"
         url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}"
         data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/InvoiceList", timeout=60)
         saved = parse_json_response(data, f"ajax_invoices_{year}")
-        if saved:
-            log(f"    {year}: {saved} rows")
-        time.sleep(0.5)
+        return (year, saved)
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(fetch_year, y) for y in years]
+        for fut in as_completed(futures):
+            try:
+                y, saved = fut.result()
+                if saved:
+                    log(f"    {y}: {saved} rows")
+            except Exception as e:
+                log(f"    year fetch error: {e}")
 
 
 # ─── PHASE 5: Per-member details ───────────────────────────────────
