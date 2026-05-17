@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Complete data export for Free Form Fitness from v3.fitnessboard.in.
+Daily data export for the gym's source CRM/POS.
 
 End date is HARDCODED to today (16-05-2026). Never use a past date.
 
@@ -45,11 +45,12 @@ def log(msg):
 
 
 def _login_and_get_cookie(mobile: str, password: str) -> str:
-    """POST FB credentials to /Account/Login, return the cookie header string.
+    """POST credentials to the source-system login endpoint and return the
+    Cookie header string for subsequent requests.
 
     The reCAPTCHA `token` field is enforced client-side only — submitting
-    empty works. After login the server 302s to /Account/Branchlist (which
-    urllib auto-follows), establishing the gym-scoped .ASPXAUTH cookie.
+    empty works. After login the server 302s (which urllib auto-follows),
+    establishing the gym-scoped .ASPXAUTH cookie.
     """
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -92,7 +93,7 @@ def cookie():
     mobile = os.environ.get("FB_MOBILE", "").strip()
     password = os.environ.get("FB_PASSWORD", "").strip()
     if mobile and password:
-        log(f"Logging in to v3.fitnessboard.in as {mobile}...")
+        log(f"Logging in to source system as {mobile}...")
         _cached_cookie = _login_and_get_cookie(mobile, password)
         log("  login OK — session cookie acquired")
         return _cached_cookie
@@ -128,7 +129,7 @@ def curl(url, method="GET", referer=None, ajax=False, body=None, timeout=120):
         sample = body_bytes[:2000].decode("utf-8", errors="ignore").lower()
         if ("name=\"loginid\"" in sample or "name=\"password\"" in sample
                 or "/account/login" in sample):
-            log("FATAL: FB cookie expired — response is the login page. Refresh FB_COOKIE.")
+            log("FATAL: source-system session expired — response is the login page.")
             sys.exit(3)
         return body_bytes
     except SystemExit:
