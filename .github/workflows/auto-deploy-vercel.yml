@@ -1,0 +1,65 @@
+# Auto-deploy to Vercel on push.
+#
+# Compensates for the broken/missing Vercel→GitHub git integration. Every push
+# to main triggers a fresh production build for traqgym-app; pushes to
+# egymlokhandwala do the same for traqgym-egym.
+#
+# Required GitHub Secrets (already configured):
+#   VERCEL_TOKEN
+#   VERCEL_ORG_ID
+#   VERCEL_PROJECT_ID       (traqgym-app)
+#   VERCEL_EGYM_PROJECT_ID  (traqgym-egym)
+
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+      - egymlokhandwala
+  workflow_dispatch:
+
+concurrency:
+  # Cancel in-progress runs for the same branch — only the latest commit needs to deploy
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Move ref_name into env to avoid command-injection patterns in run: blocks
+      BRANCH: ${{ github.ref_name }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      APP_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      EGYM_PROJECT_ID: ${{ secrets.VERCEL_EGYM_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Determine target Vercel project id
+        id: target
+        run: |
+          if [[ "$BRANCH" == "egymlokhandwala" ]]; then
+            echo "project_id=$EGYM_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "project_id=$APP_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull Vercel project settings
+        env:
+          VERCEL_PROJECT_ID: ${{ steps.target.outputs.project_id }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
