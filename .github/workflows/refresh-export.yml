@@ -1,7 +1,7 @@
 name: refresh-gym-data
 on:
   schedule:
-    - cron: "30 0 * * *"
+    - cron: "30 0 * * *"     # 00:30 UTC = 06:00 IST
   workflow_dispatch:
 jobs:
   refresh:
@@ -9,6 +9,15 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      # Don't let one gym's failure cancel the others.
+      fail-fast: false
+      matrix:
+        include:
+          - gym: freeform
+            password_secret: FB_PASSWORD_FREEFORM
+          - gym: egym
+            password_secret: FB_PASSWORD_EGYM
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,15 +31,15 @@ jobs:
       - name: Install Node deps (Blob SDK only)
         working-directory: telegram-bot
         run: npm install --omit=dev @vercel/blob
-      - name: Fetch fresh CSVs
+      - name: Fetch fresh CSVs for ${{ matrix.gym }}
         env:
           FB_MOBILE: ${{ secrets.FB_MOBILE }}
-          FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
-          FB_OUT_DIR: /tmp/csvs
+          FB_PASSWORD: ${{ secrets[matrix.password_secret] }}
+          FB_OUT_DIR: /tmp/csvs-${{ matrix.gym }}
         run: |
-          mkdir -p /tmp/csvs
+          mkdir -p "$FB_OUT_DIR"
           python freeformfitness-data-export-fresh/fetch_complete.py
-      - name: Upload CSVs to Vercel Blob
+      - name: Upload CSVs to Vercel Blob (${{ matrix.gym }})
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.VERCEL_BLOB_RW_TOKEN }}
-        run: node telegram-bot/scripts/upload-blob.mjs /tmp/csvs
+        run: node telegram-bot/scripts/upload-blob.mjs /tmp/csvs-${{ matrix.gym }} --gym ${{ matrix.gym }}
