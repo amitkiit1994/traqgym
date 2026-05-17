@@ -13,11 +13,16 @@ jobs:
       # Don't let one gym's failure cancel the others.
       fail-fast: false
       matrix:
-        include:
-          - gym: freeform
-            password_secret: FB_PASSWORD_FREEFORM
-          - gym: egym
-            password_secret: FB_PASSWORD_EGYM
+        gym: [freeform, egym]
+    env:
+      FB_MOBILE: ${{ secrets.FB_MOBILE }}
+      # All passwords visible to every matrix run; the bash step picks
+      # the right one by gym slug. GitHub Actions doesn't allow
+      # dynamic `secrets[matrix.var]` indexing, so this is the
+      # standard workaround.
+      FB_PASSWORD_FREEFORM: ${{ secrets.FB_PASSWORD_FREEFORM }}
+      FB_PASSWORD_EGYM: ${{ secrets.FB_PASSWORD_EGYM }}
+      FB_OUT_DIR: /tmp/csvs-${{ matrix.gym }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,10 +38,16 @@ jobs:
         run: npm install --omit=dev @vercel/blob
       - name: Fetch fresh CSVs for ${{ matrix.gym }}
         env:
-          FB_MOBILE: ${{ secrets.FB_MOBILE }}
-          FB_PASSWORD: ${{ secrets[matrix.password_secret] }}
-          FB_OUT_DIR: /tmp/csvs-${{ matrix.gym }}
+          GYM: ${{ matrix.gym }}
         run: |
+          # Bash variable indirection: FB_PASSWORD = $FB_PASSWORD_<GYM_UPPER>
+          GYM_UPPER=$(echo "$GYM" | tr '[:lower:]' '[:upper:]')
+          PWD_VAR="FB_PASSWORD_${GYM_UPPER}"
+          export FB_PASSWORD="${!PWD_VAR}"
+          if [ -z "$FB_PASSWORD" ]; then
+            echo "ERROR: $PWD_VAR is empty — secret not set?"
+            exit 1
+          fi
           mkdir -p "$FB_OUT_DIR"
           python freeformfitness-data-export-fresh/fetch_complete.py
       - name: Upload CSVs to Vercel Blob (${{ matrix.gym }})
