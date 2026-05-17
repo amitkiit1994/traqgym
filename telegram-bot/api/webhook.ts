@@ -2,7 +2,7 @@ import type { AgentInputItem } from "@openai/agents";
 import { loadConfig } from "../src/config.js";
 import { isAllowed, checkSecretToken } from "../src/auth.js";
 import { createRateLimiter } from "../src/rate-limit.js";
-import { sendTelegramMessage } from "../src/telegram/send-message.js";
+import { sendTelegramMessage, withTypingIndicator } from "../src/telegram/send-message.js";
 import { handleSlashCommand } from "../src/commands.js";
 import { createBlobStore } from "../src/data/blob-store.js";
 import { createAllowlistStore } from "../src/data/allowlist-store.js";
@@ -235,12 +235,17 @@ export default async function handler(req: any, res: any) {
     if (slash !== null) {
       reply = slash;
     } else {
-      const llm = await runLlm({
-        question: text,
-        model: config.openaiModel,
-        store: blobStore,
-        history: historyByChat.get(chatId) ?? [],
-      });
+      // Show "typing..." in Telegram while the LLM works (40s on gpt-5).
+      const llm = await withTypingIndicator(
+        config.telegramBotToken,
+        chatId,
+        () => runLlm({
+          question: text,
+          model: config.openaiModel,
+          store: blobStore,
+          history: historyByChat.get(chatId) ?? [],
+        }),
+      );
       reply = llm.text;
       toolCalls = llm.toolCalls;
       snapshotDate = llm.snapshotDate;
