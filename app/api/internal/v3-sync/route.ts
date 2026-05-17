@@ -212,6 +212,30 @@ async function upsertPayments(rows: unknown[]): Promise<{
       const paymentDate = parseV3Date(row.PaymentDate);
       const mode = mapPaymentMode(row.PaymentMode);
 
+      // Resolve v3's Trainer string ("afzal", "Floor Trainers", etc.) to a
+      // Worker row by full-name match. Falls back to null so payment goes
+      // through without a trainer rather than being dropped.
+      const trainerName = String(row.Trainer ?? "").trim();
+      let trainerId: number | null = null;
+      if (trainerName) {
+        const tokens = trainerName.split(/\s+/).filter((t) => t.length > 0);
+        const trainerWorker = await prisma.worker.findFirst({
+          where: {
+            isActive: true,
+            AND: tokens.map((t) => ({
+              OR: [
+                { firstname: { equals: t, mode: "insensitive" as const } },
+                { lastname: { equals: t, mode: "insensitive" as const } },
+                { firstname: { contains: t, mode: "insensitive" as const } },
+                { lastname: { contains: t, mode: "insensitive" as const } },
+              ],
+            })),
+          },
+          select: { id: true },
+        });
+        trainerId = trainerWorker?.id ?? null;
+      }
+
       const payment = await prisma.payment.create({
         data: {
           userId: user.id,
@@ -222,6 +246,7 @@ async function upsertPayments(rows: unknown[]): Promise<{
           paymentNote: stringOrNull(row.Remarks),
           paymentFor: stringOrNull(row.PaymentFor),
           collectedById: fallback.id,
+          trainerId,
           createdAt: paymentDate ?? undefined,
         },
       });
