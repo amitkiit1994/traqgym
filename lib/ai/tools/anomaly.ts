@@ -97,15 +97,21 @@ export const anomalyTools = [
   tool({
     name: "detect_balance_mismatches",
     description:
-      "Tickets where the recorded amountPaid disagrees with the sum of actual Payment rows for that ticket. Catches: payment recorded against wrong ticket, ticket amountPaid manually adjusted, or a payment deleted out-of-band. Returns mismatch count, total drift, and the worst offenders.",
+      "Tickets where recorded amountPaid disagrees with the actual Payment sum for that ticket. Catches: payment recorded against wrong ticket, ticket amountPaid manually adjusted, or a payment deleted out-of-band. By default scans only the last 90 days of tickets (recentOnly=true) so legacy import drift is filtered out. Set recentOnly=false for a full historical sweep. Returns mismatch count, total drift, and the worst offenders.",
     parameters: z.object({
       locationId: z.number().nullable().describe("Filter by location ID"),
       limit: z.number().nullable().describe("Max mismatch rows to return (default 50)"),
+      recentOnly: z.boolean().nullable().describe("Default true. When false, scan all-time tickets (will include legacy import noise)."),
+      recentDays: z.number().nullable().describe("Lookback window if recentOnly is true. Default 90."),
+      minDriftRupees: z.number().nullable().describe("Ignore mismatches smaller than this rupee amount. Default 100."),
     }),
     async execute(input) {
       const out = await detectBalanceMismatches({
         locationId: input.locationId ?? undefined,
         limit: input.limit ?? 50,
+        recentOnly: input.recentOnly ?? true,
+        recentDays: input.recentDays ?? 90,
+        minDriftRupees: input.minDriftRupees ?? 100,
       });
       return JSON.stringify(out);
     },

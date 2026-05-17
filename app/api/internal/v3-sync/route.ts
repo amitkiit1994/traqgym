@@ -238,14 +238,32 @@ async function upsertPayments(rows: unknown[]): Promise<{
         }
       }
 
-      // Attach to the user's most recent ticket if any (mirrors migrate script).
-      const ticket = await prisma.memberTicket.findFirst({
-        where: { userId: user.id },
-        orderBy: { buyDate: "desc" },
-        select: { id: true },
-      });
-
       const paymentDate = parseV3Date(row.PaymentDate);
+
+      // Prefer the ticket whose date-window contains the paymentDate — that's
+      // the ticket this payment was actually for. Fall back to the most-recent
+      // ticket only if no date match. Stuffing every historical payment onto
+      // the newest ticket (the old behaviour) silently inflated amountPaid on
+      // newest tickets and produced ~₹7Cr of phantom "drift" on egym, which
+      // the detect_balance_mismatches detector then surfaced as fake fraud.
+      let ticket = paymentDate
+        ? await prisma.memberTicket.findFirst({
+            where: {
+              userId: user.id,
+              buyDate: { lte: paymentDate },
+              expireDate: { gte: paymentDate },
+            },
+            orderBy: { buyDate: "desc" },
+            select: { id: true },
+          })
+        : null;
+      if (!ticket) {
+        ticket = await prisma.memberTicket.findFirst({
+          where: { userId: user.id },
+          orderBy: { buyDate: "desc" },
+          select: { id: true },
+        });
+      }
       const mode = mapPaymentMode(row.PaymentMode);
 
       // Resolve v3's Trainer string ("afzal", "Floor Trainers", etc.) to a

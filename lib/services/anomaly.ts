@@ -335,21 +335,43 @@ export async function detectCompAbusePatterns(opts: Range) {
  * mismatch is either: a payment recorded against the wrong ticket, or
  * a ticket where a staff "adjusted" amountPaid manually.
  */
-export async function detectBalanceMismatches(opts: { locationId?: number; limit?: number }) {
+export async function detectBalanceMismatches(opts: {
+  locationId?: number;
+  limit?: number;
+  /** When true, only flag tickets bought in the last `recentDays` (default 90).
+   * Filters out the long tail of legacy import drift where the old v3 sync
+   * attached every historical payment to the user's newest ticket. */
+  recentOnly?: boolean;
+  recentDays?: number;
+  /** Ignore mismatches smaller than this absolute rupee value. Default 1. */
+  minDriftRupees?: number;
+}) {
+  const recentDays = opts.recentDays ?? 90;
+  const since = opts.recentOnly
+    ? new Date(Date.now() - recentDays * 24 * 60 * 60 * 1000)
+    : null;
+  const minDrift = opts.minDriftRupees ?? 1;
+
   const tickets = await prisma.memberTicket.findMany({
     where: {
       ...(opts.locationId != null ? { locationId: opts.locationId } : {}),
       status: { in: ["active", "cancelled"] },
+      ...(since ? { buyDate: { gte: since } } : {}),
     },
     select: {
-      id: true, amountPaid: true, balanceDue: true, totalAmount: true,
+      id: true, amountPaid: true, balanceDue: true, totalAmount: true, buyDate: true,
       user: { select: { firstname: true, lastname: true, phone: true } },
       plan: { select: { name: true } },
     },
     take: 50000,
   });
 
-  if (tickets.length === 0) return { mismatchCount: 0, mismatches: [] };
+  if (tickets.length === 0) {
+    return {
+      ticketsScanned: 0, mismatchCount: 0, totalAbsoluteDrift: 0,
+      mismatches: [], recentOnly: !!opts.recentOnly, recentDays,
+    };
+  }
 
   const ticketIds = tickets.map((t) => t.id);
   const grouped = await prisma.payment.groupBy({
@@ -371,7 +393,7 @@ export async function detectBalanceMismatches(opts: { locationId?: number; limit
     const actual = sumMap.get(t.id) ?? 0;
     const recorded = asRupees(t.amountPaid);
     const diff = Math.round((recorded - actual) * 100) / 100;
-    if (Math.abs(diff) >= 1) {
+    if (Math.abs(diff) >= minDrift) {
       mismatches.push({
         ticketId: t.id,
         member: `${t.user.firstname} ${t.user.lastname}`.trim(),
@@ -393,6 +415,9 @@ export async function detectBalanceMismatches(opts: { locationId?: number; limit
     mismatchCount: mismatches.length,
     totalAbsoluteDrift: Math.round(mismatches.reduce((s, m) => s + Math.abs(m.diff), 0)),
     mismatches: mismatches.slice(0, limit),
+    recentOnly: !!opts.recentOnly,
+    recentDays,
+    minDriftRupees: minDrift,
   };
 }
 
@@ -472,7 +497,13 @@ export async function getOwnerAnomalySummary(opts: Range) {
     detectRefundRouting(opts),
     detectCompAbusePatterns(opts),
     detectAuditAnomalies(opts),
-    detectBalanceMismatches({ locationId: opts.locationId, limit: 10 }),
+    detectBalanceMismatches({
+      locationId: opts.locationId,
+      limit: 10,
+      recentOnly: true,
+      recentDays: 90,
+      minDriftRupees: 100,
+    }),
   ]);
 
   return {

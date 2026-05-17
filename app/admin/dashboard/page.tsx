@@ -12,6 +12,7 @@ import { getAnnouncements } from "@/lib/actions/announcements";
 import { prisma } from "@/lib/prisma";
 import { DashboardClient } from "./dashboard-client";
 import { InsightCards } from "@/components/admin/insight-cards";
+import { CashShiftBanner } from "@/components/admin/cash-shift-banner";
 
 export default async function DashboardPage({
   searchParams,
@@ -90,6 +91,7 @@ export default async function DashboardPage({
 
   return (
     <>
+      <CashShiftBanner locationId={locationId} />
       <div className="px-4 pt-4 md:px-6"><InsightCards /></div>
       <DashboardClient
       stats={{
