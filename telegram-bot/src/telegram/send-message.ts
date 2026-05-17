@@ -23,6 +23,52 @@ export interface SendMessageInput {
   fetch?: typeof fetch;
 }
 
+export interface SendChatActionInput {
+  token: string;
+  chatId: number;
+  action: "typing" | "upload_document";
+  fetch?: typeof fetch;
+}
+
+/**
+ * Tells Telegram to show a "typing..." indicator in the chat. Lasts ~5 seconds
+ * client-side, so for longer waits call again every 4s.
+ */
+export async function sendChatAction(input: SendChatActionInput): Promise<void> {
+  const fetcher = input.fetch ?? globalThis.fetch;
+  const url = `https://api.telegram.org/bot${input.token}/sendChatAction`;
+  // Best-effort: never throw — typing is cosmetic, not critical.
+  try {
+    await fetcher(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: input.chatId, action: input.action }),
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Wrap an async operation with a periodic "typing..." indicator. Fires
+ * immediately and then every 4s until the inner promise resolves/rejects.
+ */
+export async function withTypingIndicator<T>(
+  token: string,
+  chatId: number,
+  fn: () => Promise<T>,
+  fetcher?: typeof fetch,
+): Promise<T> {
+  const ping = () => sendChatAction({ token, chatId, action: "typing", fetch: fetcher });
+  ping(); // immediate first ping
+  const interval = setInterval(ping, 4000);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(interval);
+  }
+}
+
 export async function sendTelegramMessage(input: SendMessageInput): Promise<void> {
   const fetcher = input.fetch ?? globalThis.fetch;
   const url = `https://api.telegram.org/bot${input.token}/sendMessage`;

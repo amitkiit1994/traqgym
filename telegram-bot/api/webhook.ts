@@ -2,9 +2,10 @@ import type { AgentInputItem } from "@openai/agents";
 import { loadConfig } from "../src/config.js";
 import { isAllowed, checkSecretToken } from "../src/auth.js";
 import { createRateLimiter } from "../src/rate-limit.js";
-import { sendTelegramMessage } from "../src/telegram/send-message.js";
+import { sendTelegramMessage, withTypingIndicator } from "../src/telegram/send-message.js";
 import { handleSlashCommand } from "../src/commands.js";
 import { createBlobStore } from "../src/data/blob-store.js";
+import { createAllowlistStore } from "../src/data/allowlist-store.js";
 import { createGithubDispatcher } from "../src/github-dispatch.js";
 import { runLlm } from "../src/llm.js";
 
@@ -122,6 +123,12 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
 }
 
 const blobStore = createBlobStore({ latestUrl: config.blobLatestUrl });
+// Allowlist lives alongside latest.json in the same Blob store.
+const allowlistUrl = config.blobLatestUrl.replace(/\/csv\/latest\.json$/, "/allowlist.json");
+const allowlistStore = createAllowlistStore({
+  url: allowlistUrl,
+  token: config.blobReadWriteToken,
+});
 const dispatcher = createGithubDispatcher({
   pat: config.githubPat,
   repo: config.githubRepo,
@@ -168,11 +175,22 @@ export default async function handler(req: any, res: any) {
   const firstName = msg.from?.first_name ?? "there";
   const text = msg.text;
 
-  if (!isAllowed(chatId, config.allowedChatIds)) {
+  // Combine env owner-set with the dynamic /approve-d set.
+  let dynamicApproved: Set<number> = new Set();
+  try {
+    const al = await allowlistStore.read();
+    dynamicApproved = new Set(al.approved.map((e: { chatId: number }) => e.chatId));
+  } catch (e) {
+    console.warn("allowlist read failed", e);
+  }
+  const isOwner = isAllowed(chatId, config.allowedChatIds);
+  const isApproved = isOwner || dynamicApproved.has(chatId);
+
+  if (!isApproved) {
     await sendTelegramMessage({
       token: config.telegramBotToken,
       chatId,
-      text: "Not authorized.",
+      text: `Not authorized. Your chat id is ${chatId} — forward this to the bot owner to get approved.`,
     });
     res.status(200).end();
     return;
@@ -207,6 +225,8 @@ export default async function handler(req: any, res: any) {
       firstName,
       store: blobStore,
       dispatchRefresh: dispatcher,
+      allowlistStore,
+      isOwner,
     });
 
     let reply: string;
@@ -215,12 +235,17 @@ export default async function handler(req: any, res: any) {
     if (slash !== null) {
       reply = slash;
     } else {
-      const llm = await runLlm({
-        question: text,
-        model: config.openaiModel,
-        store: blobStore,
-        history: historyByChat.get(chatId) ?? [],
-      });
+      // Show "typing..." in Telegram while the LLM works (40s on gpt-5).
+      const llm = await withTypingIndicator(
+        config.telegramBotToken,
+        chatId,
+        () => runLlm({
+          question: text,
+          model: config.openaiModel,
+          store: blobStore,
+          history: historyByChat.get(chatId) ?? [],
+        }),
+      );
       reply = llm.text;
       toolCalls = llm.toolCalls;
       snapshotDate = llm.snapshotDate;

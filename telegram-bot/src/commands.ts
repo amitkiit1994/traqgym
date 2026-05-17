@@ -1,4 +1,5 @@
 import type { BlobStore } from "./data/blob-store.js";
+import type { AllowlistStore, AllowlistEntry } from "./data/allowlist-store.js";
 
 export interface SlashContext {
   text: string;
@@ -6,6 +7,9 @@ export interface SlashContext {
   firstName: string;
   store: BlobStore;
   dispatchRefresh?: () => Promise<void>;
+  // For approval flow:
+  allowlistStore?: AllowlistStore;
+  isOwner?: boolean;
 }
 
 const HELP = [
@@ -16,7 +20,8 @@ const HELP = [
   "  • Total members joined this month",
   "  • Is <member name> active?",
   "",
-  "Commands: /start /help /snapshot /refresh /ping",
+  "Commands: /start /help /snapshot /refresh /ping /reset",
+  "Owner-only: /approve <chat_id> [name] /revoke <chat_id> /allowlist",
 ].join("\n");
 
 export async function handleSlashCommand(ctx: SlashContext): Promise<string | null> {
@@ -47,7 +52,71 @@ export async function handleSlashCommand(ctx: SlashContext): Promise<string | nu
       } catch (e) {
         return `Couldn't trigger refresh: ${(e as Error).message}`;
       }
+    case "/approve":
+      if (!ctx.allowlistStore) return "Allowlist storage is not configured.";
+      if (!ctx.isOwner) return "Only the owner can approve users.";
+      return await handleApprove(ctx);
+    case "/revoke":
+      if (!ctx.allowlistStore) return "Allowlist storage is not configured.";
+      if (!ctx.isOwner) return "Only the owner can revoke users.";
+      return await handleRevoke(ctx);
+    case "/allowlist":
+      if (!ctx.allowlistStore) return "Allowlist storage is not configured.";
+      if (!ctx.isOwner) return "Only the owner can view the allowlist.";
+      return await handleListAllowlist(ctx);
     default:
       return null;
+  }
+}
+
+async function handleApprove(ctx: SlashContext): Promise<string> {
+  const parts = ctx.text.trim().split(/\s+/);
+  const idStr = parts[1];
+  const name = parts.slice(2).join(" ").trim() || undefined;
+  const id = Number(idStr);
+  if (!Number.isFinite(id) || !Number.isInteger(id)) {
+    return "Usage: /approve <chat_id> [optional name]\n\nGet the chat_id from the bot's \"Not authorized\" reply to that user.";
+  }
+  const entry: AllowlistEntry = {
+    chatId: id,
+    name,
+    addedAt: new Date().toISOString(),
+    addedBy: ctx.chatId,
+  };
+  try {
+    await ctx.allowlistStore!.add(entry);
+    return `✅ Approved chat ${id}${name ? ` (${name})` : ""}. They can use the bot now.`;
+  } catch (e) {
+    return `Couldn't update allowlist: ${(e as Error).message}`;
+  }
+}
+
+async function handleRevoke(ctx: SlashContext): Promise<string> {
+  const parts = ctx.text.trim().split(/\s+/);
+  const id = Number(parts[1]);
+  if (!Number.isFinite(id) || !Number.isInteger(id)) {
+    return "Usage: /revoke <chat_id>";
+  }
+  try {
+    const next = await ctx.allowlistStore!.remove(id);
+    return `Removed chat ${id}. ${next.approved.length} approved user(s) remain.`;
+  } catch (e) {
+    return `Couldn't update allowlist: ${(e as Error).message}`;
+  }
+}
+
+async function handleListAllowlist(ctx: SlashContext): Promise<string> {
+  try {
+    const al = await ctx.allowlistStore!.read();
+    if (al.approved.length === 0) {
+      return "No additional approved users (owner set is in env var).";
+    }
+    const lines = ["Approved (besides owner set):"];
+    for (const e of al.approved) {
+      lines.push(`  • ${e.chatId}${e.name ? ` — ${e.name}` : ""} (added ${e.addedAt.slice(0, 10)})`);
+    }
+    return lines.join("\n");
+  } catch (e) {
+    return `Couldn't read allowlist: ${(e as Error).message}`;
   }
 }
