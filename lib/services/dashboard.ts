@@ -616,6 +616,68 @@ export async function getExpiredMembershipsInRange(
 }
 
 /**
+ * Top members by total spend (sum of payments) in a date range.
+ * Used by AI tool get_top_spenders_in_range to answer "who's our top customer"
+ * or "top 5 members by spend this year" questions.
+ *
+ * Limit defaults to 10; caller can request 1-100.
+ */
+export async function getTopSpendersInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  limit: number = 10,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+  const clampedLimit = Math.min(Math.max(limit, 1), 100);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
+    userId: { not: null },
+  };
+  if (locationId) where.locationId = locationId;
+
+  // Aggregate sum by userId, take top N
+  const grouped = await prisma.payment.groupBy({
+    by: ["userId"],
+    where,
+    _sum: { amount: true },
+    _count: { id: true },
+    orderBy: { _sum: { amount: "desc" } },
+    take: clampedLimit,
+  });
+
+  const userIds = grouped.map((g) => g.userId!).filter((id): id is number => id != null);
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, firstname: true, lastname: true, phone: true, email: true },
+  });
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    limit: clampedLimit,
+    topSpenders: grouped.map((g, idx) => {
+      const u = g.userId != null ? userMap.get(g.userId) : null;
+      return {
+        rank: idx + 1,
+        memberId: g.userId,
+        name: u ? `${u.firstname} ${u.lastname}`.trim() : "(unknown)",
+        phone: u?.phone ?? null,
+        email: u?.email ?? null,
+        totalSpent: Number(g._sum.amount ?? 0),
+        paymentCount: g._count.id,
+      };
+    }),
+  };
+}
+
+/**
  * PT plan revenue split by trainer over a date range.
  * "PT" plans = plan names containing PT or OPT (case-insensitive whole-word).
  * Returns each trainer's total PT collections from member payments tied to PT plans.
