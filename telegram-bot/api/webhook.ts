@@ -50,13 +50,13 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
   }
   if (status === 401 || /invalid.*api.*key|incorrect.*api.*key|authentication/i.test(msg)) {
     return {
-      text: "OpenAI rejected the API key — Amit needs to update OPENAI_API_KEY in Vercel envs.",
+      text: "OpenAI rejected the API key — the operator needs to update OPENAI_API_KEY.",
       resetMemory: false,
     };
   }
   if (status === 402 || /insufficient.*quota|billing/i.test(msg)) {
     return {
-      text: "OpenAI account has no credit. Amit needs to top up at platform.openai.com/billing.",
+      text: "OpenAI account has no credit. The operator needs to top up the billing.",
       resetMemory: false,
     };
   }
@@ -82,7 +82,7 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
   // Vercel Blob / snapshot fetch failures.
   if (/latest\.json fetch failed/i.test(msg)) {
     return {
-      text: `Couldn't read the CSV snapshot from storage (${msg.slice(0, 100)}). Amit needs to check the Vercel Blob store.`,
+      text: `Couldn't read the data snapshot from storage (${msg.slice(0, 100)}). The operator needs to check the storage backend.`,
       resetMemory: false,
     };
   }
@@ -117,7 +117,7 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
 
   // Last-resort: name the class + short message so we never say "something broke".
   return {
-    text: `Internal error (${name}): ${msg.slice(0, 200)}. Amit will see this in the logs.`,
+    text: `Internal error (${name}): ${msg.slice(0, 200)}. The operator will see this in the logs.`,
     resetMemory: false,
   };
 }
