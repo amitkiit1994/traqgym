@@ -337,13 +337,19 @@ def phase1_exports():
         year_window(5),               # 5yr fallback
         year_window(2),               # 2yr fallback
     ]
-    timeout_per_call = 360
+    # Fail-fast strategy: first attempt uses the long timeout (360s) on full
+    # range. If empty/0-bytes (server timeout), drop to FAST timeout on the
+    # smaller ranges — a server that returned 0 bytes once isn't going to
+    # produce data with the same query class. Cap total budget per report.
+    SLOW_TIMEOUT = 360
+    FAST_TIMEOUT = 90
     for t in types:
         rows_extracted = 0
         for attempt, (sd, ed) in enumerate(ranges, 1):
-            log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)})")
+            t_out = SLOW_TIMEOUT if attempt == 1 else FAST_TIMEOUT
+            log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)}, timeout={t_out}s)")
             url = f"{BASE}/Dashboard/ExportToExcel?exportfor={t}&StartDate={sd}&EndDate={ed}&mstat=0"
-            data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=timeout_per_call)
+            data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=t_out)
             if data and len(data) > 100:
                 rows_extracted = parse_html_response(data, f"export_{t}_all.csv")
                 if rows_extracted > 0:
@@ -351,9 +357,9 @@ def phase1_exports():
                 log(f"    response={len(data)} bytes but 0 rows parsed; trying smaller range")
             else:
                 log(f"    empty response ({len(data) if data else 0} bytes); trying smaller range")
-            time.sleep(3)
+            time.sleep(2)
         if rows_extracted == 0:
-            log(f"  {t}: gave up after {len(ranges)} attempts")
+            log(f"  {t}: gave up — endpoint unavailable for this tenant")
         time.sleep(2)
 
 
