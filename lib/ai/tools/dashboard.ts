@@ -11,6 +11,7 @@ import {
   getPTRevenueByTrainer,
   getTopSpendersInRange,
   getChurnMetricsInRange,
+  getNewMembersInRange,
   getUpgradeStats,
 } from "@/lib/services/dashboard";
 import { getActivityFeed } from "@/lib/actions/activity";
@@ -93,6 +94,26 @@ export const dashboardTools = [
         return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
       }
       const result = await getExpiredMembershipsInRange(from, to, input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_new_members_in_range",
+    description:
+      "Count of members who joined within a date range (User.createdAt). Returns count, per-day breakdown, and a sample of up to 20 with phone + join date. Use for 'new members this week / month / quarter' questions.",
+    parameters: z.object({
+      from: z.string().describe("Start date inclusive, YYYY-MM-DD"),
+      to: z.string().describe("End date inclusive, YYYY-MM-DD"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const from = new Date(`${input.from}T00:00:00.000Z`);
+      const to = new Date(`${input.to}T00:00:00.000Z`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
+      }
+      const result = await getNewMembersInRange(from, to, input.locationId ?? undefined);
       return JSON.stringify(result);
     },
   }),
