@@ -672,17 +672,37 @@ export async function getNewMembersInRange(
     }
   }
 
-  // Users with NO tickets at all but createdAt in range (rare — typically
-  // self-signup or stub members)
-  const ticketlessUsersWithCreatedInRange = await prisma.user.findMany({
+  // Users with NO tickets but WITH payments: their first payment date
+  // is the most-reliable join proxy. Auto-created sync users fall in
+  // this bucket — they have correct historical payment dates even
+  // though their User.createdAt is "today" (when sync ran).
+  const ticketlessWithPayments = await prisma.payment.groupBy({
+    by: ["userId"],
+    where: {
+      ...(locationId ? { locationId } : {}),
+      user: { memberTickets: { none: {} } },
+    },
+    _min: { createdAt: true },
+  });
+  for (const row of ticketlessWithPayments) {
+    if (row.userId == null || !row._min.createdAt) continue;
+    if (row._min.createdAt >= fromInclusive && row._min.createdAt < endExclusive) {
+      trueJoiners.add(row.userId);
+    }
+  }
+
+  // Users with NEITHER tickets NOR payments — fall back to User.createdAt.
+  // (Rare: self-signup stub records, manual creates that never paid.)
+  const orphanUsers = await prisma.user.findMany({
     where: {
       createdAt: { gte: fromInclusive, lt: endExclusive },
       memberTickets: { none: {} },
+      payments: { none: {} },
       ...(locationId ? { locationId } : {}),
     },
     select: { id: true },
   });
-  for (const u of ticketlessUsersWithCreatedInRange) trueJoiners.add(u.id);
+  for (const u of orphanUsers) trueJoiners.add(u.id);
 
   const joiners = await prisma.user.findMany({
     where: { id: { in: Array.from(trueJoiners) } },
