@@ -85,9 +85,16 @@ const latest = {
 };
 
 // Snapshot integrity check: refuse to overwrite this gym's latest.json
-// if any canonical CSV's row count drops by more than 50% from the
+// if any CRITICAL CSV's row count drops by more than 50% from the
 // previous snapshot. Guards against stale-cookie scrapes that silently
 // upload login-page junk.
+//
+// Critical = the CSVs the digest + bot lean on most heavily. We do NOT
+// gate on best-effort enrichment CSVs (member_details, sessionreport)
+// because those may legitimately partial-fail under time budgets without
+// indicating a bad scrape.
+const CRITICAL = new Set(["payments", "database", "balance", "members",
+                          "memberenrollment", "activeinactive"]);
 try {
   const head = await list({ token, prefix: `csv/${gym}/latest.json`, limit: 1 });
   const prevBlob = head.blobs[0];
@@ -96,14 +103,20 @@ try {
     if (res.ok) {
       const prev = await res.json();
       const drops = [];
+      const partials = [];
       for (const [name, cur] of Object.entries(rowCounts)) {
         const prevCount = prev.row_counts?.[name] ?? 0;
         if (prevCount > 0 && cur < prevCount * 0.5) {
-          drops.push(`${name}: ${prevCount} → ${cur}`);
+          if (CRITICAL.has(name)) drops.push(`${name}: ${prevCount} → ${cur}`);
+          else partials.push(`${name}: ${prevCount} → ${cur}`);
         }
       }
+      if (partials.length > 0) {
+        console.warn("Partial fetch on non-critical CSVs (proceeding):");
+        for (const p of partials) console.warn("  " + p);
+      }
       if (drops.length > 0) {
-        console.error("REFUSING to swap latest.json — row counts dropped >50%:");
+        console.error("REFUSING to swap latest.json — critical CSVs dropped >50%:");
         for (const d of drops) console.error("  " + d);
         console.error("Likely cause: stale FB cookie. Today's per-CSV blobs were uploaded but latest.json is unchanged.");
         process.exit(2);
