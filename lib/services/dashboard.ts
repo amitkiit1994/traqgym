@@ -616,12 +616,14 @@ export async function getExpiredMembershipsInRange(
 }
 
 /**
- * Members who joined within the date range. Defined as users whose
- * `createdAt` falls in the window. Returns count + per-day breakdown
- * + sample of up to 20 with phone + source.
+ * Members who joined within the date range. Join date is computed as
+ * MIN(MemberTicket.buyDate) per user — i.e., when they first bought a
+ * plan. Falls back to User.createdAt for users with no tickets yet.
  *
- * Used by AI tool get_new_members_in_range to answer 'new members this
- * week / month / quarter' questions.
+ * Using the first ticket avoids counting sync-time auto-creates as
+ * "new members": when the v3 → TraqGym sync inserts a placeholder User
+ * row today for a member who actually joined the gym in 2025, the
+ * first ticket date (e.g., 03-Oct-2025) is the correct join date.
  */
 export async function getNewMembersInRange(
   fromInclusive: Date,
@@ -631,20 +633,77 @@ export async function getNewMembersInRange(
   const endExclusive = new Date(toInclusive);
   endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
 
-  const where: Record<string, unknown> = {
-    createdAt: { gte: fromInclusive, lt: endExclusive },
-  };
-  if (locationId) where.locationId = locationId;
+  // Two paths: users whose FIRST MemberTicket buyDate falls in range,
+  // OR users with no tickets at all whose createdAt falls in range.
+  const ticketsInRange = await prisma.memberTicket.findMany({
+    where: {
+      buyDate: { gte: fromInclusive, lt: endExclusive },
+      ...(locationId ? { locationId } : {}),
+    },
+    select: { userId: true, buyDate: true },
+    orderBy: { buyDate: "asc" },
+  });
+  // For each userId, check the earliest-ever ticket — only count those
+  // whose earliest ticket falls in the range (so renewals don't count).
+  const earliestByUser = new Map<number, Date>();
+  for (const t of ticketsInRange) {
+    if (t.userId == null) continue;
+    const cur = earliestByUser.get(t.userId);
+    if (!cur || t.buyDate < cur) earliestByUser.set(t.userId, t.buyDate);
+  }
+  // Filter out users whose first-ever ticket was BEFORE the range
+  const candidateUserIds = Array.from(earliestByUser.keys());
+  const allTickets = await prisma.memberTicket.findMany({
+    where: { userId: { in: candidateUserIds } },
+    select: { userId: true, buyDate: true },
+    orderBy: { buyDate: "asc" },
+  });
+  const trueEarliest = new Map<number, Date>();
+  for (const t of allTickets) {
+    if (t.userId == null) continue;
+    const cur = trueEarliest.get(t.userId);
+    if (!cur || t.buyDate < cur) trueEarliest.set(t.userId, t.buyDate);
+  }
+  const trueJoiners = new Set<number>();
+  for (const [uid, firstInRange] of earliestByUser) {
+    const everEarliest = trueEarliest.get(uid);
+    if (everEarliest && everEarliest >= fromInclusive && everEarliest < endExclusive) {
+      trueJoiners.add(uid);
+    }
+  }
 
-  const users = await prisma.user.findMany({
-    where,
-    select: { id: true, firstname: true, lastname: true, phone: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
+  // Users with NO tickets at all but createdAt in range (rare — typically
+  // self-signup or stub members)
+  const ticketlessUsersWithCreatedInRange = await prisma.user.findMany({
+    where: {
+      createdAt: { gte: fromInclusive, lt: endExclusive },
+      memberTickets: { none: {} },
+      ...(locationId ? { locationId } : {}),
+    },
+    select: { id: true },
+  });
+  for (const u of ticketlessUsersWithCreatedInRange) trueJoiners.add(u.id);
+
+  const joiners = await prisma.user.findMany({
+    where: { id: { in: Array.from(trueJoiners) } },
+    select: {
+      id: true,
+      firstname: true,
+      lastname: true,
+      phone: true,
+      createdAt: true,
+      memberTickets: {
+        select: { buyDate: true },
+        orderBy: { buyDate: "asc" },
+        take: 1,
+      },
+    },
   });
 
   const byDay = new Map<string, number>();
-  for (const u of users) {
-    const day = u.createdAt.toISOString().slice(0, 10);
+  for (const u of joiners) {
+    const joinDate = u.memberTickets[0]?.buyDate ?? u.createdAt;
+    const day = joinDate.toISOString().slice(0, 10);
     byDay.set(day, (byDay.get(day) ?? 0) + 1);
   }
 
@@ -653,16 +712,19 @@ export async function getNewMembersInRange(
       from: fromInclusive.toISOString().slice(0, 10),
       to: toInclusive.toISOString().slice(0, 10),
     },
-    count: users.length,
+    count: joiners.length,
     byDay: Array.from(byDay.entries())
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date)),
-    sample: users.slice(0, 20).map((u) => ({
-      memberId: u.id,
-      name: `${u.firstname} ${u.lastname}`.trim(),
-      phone: u.phone,
-      joinedOn: u.createdAt.toISOString().slice(0, 10),
-    })),
+    sample: joiners.slice(0, 20).map((u) => {
+      const joinDate = u.memberTickets[0]?.buyDate ?? u.createdAt;
+      return {
+        memberId: u.id,
+        name: `${u.firstname} ${u.lastname}`.trim(),
+        phone: u.phone,
+        joinedOn: joinDate.toISOString().slice(0, 10),
+      };
+    }),
   };
 }
 
