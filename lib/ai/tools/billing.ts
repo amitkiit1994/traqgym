@@ -45,16 +45,18 @@ export const billingTools = [
   tool({
     name: "get_balance_due_report",
     description:
-      "Get all members with outstanding balance due, sorted by highest balance first",
+      "All members with outstanding balance > 0, sorted highest first. Default 'all' includes expired/cancelled tickets so totals match v3 / what the owner expects; use 'active' to filter to chase-worthy current memberships only.",
     parameters: z.object({
-      locationId: z
-        .number()
+      locationId: z.number().nullable().describe("Filter by location ID"),
+      status: z
+        .enum(["all", "active"])
         .nullable()
-        .describe("Filter by location ID"),
+        .describe("'all' = every ticket with balance > 0 (default, matches v3 totals); 'active' = exclude expired/cancelled"),
     }),
     async execute(input) {
       const { data } = await getBalanceDueReportAction({
         locationId: input.locationId ?? undefined,
+        status: (input.status ?? "all") as "all" | "active",
       });
       return JSON.stringify(data);
     },
