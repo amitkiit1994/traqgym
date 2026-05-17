@@ -8,7 +8,7 @@ describe("loadConfig", () => {
     WEBHOOK_SECRET: "secret",
     OPENAI_API_KEY: "sk-xxx",
     BLOB_READ_WRITE_TOKEN: "blob-tok",
-    BLOB_LATEST_URL: "https://example.com/csv/latest.json",
+    BLOB_BASE_URL: "https://example.com",
   };
 
   it("parses comma-separated chat IDs into number set", () => {
@@ -33,9 +33,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig(env)).toThrow(/TELEGRAM_BOT_TOKEN/);
   });
 
-  it("throws if BLOB_LATEST_URL is not a URL", () => {
-    expect(() => loadConfig({ ...validEnv, BLOB_LATEST_URL: "not a url" }))
-      .toThrow(/BLOB_LATEST_URL/);
+  it("throws if BLOB_BASE_URL is not a URL", () => {
+    expect(() => loadConfig({ ...validEnv, BLOB_BASE_URL: "not a url" }))
+      .toThrow(/BLOB_BASE_URL/);
+  });
+  it("accepts legacy BLOB_BASE_URL with /csv/latest.json suffix (strips it)", () => {
+    const cfg = loadConfig({ ...validEnv, BLOB_BASE_URL: "https://example.com/csv/latest.json" });
+    expect(cfg.blobBaseUrl).toBe("https://example.com");
   });
 
   it("throws on non-numeric chat ID", () => {

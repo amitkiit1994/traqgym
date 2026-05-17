@@ -1,9 +1,9 @@
 /**
- * Morning digest cron endpoint.
+ * Morning digest cron endpoint (multi-gym).
  *
- * Triggered daily by GitHub Actions at 01:00 UTC (06:30 IST), after the
- * CSV refresh cron has finished at 00:30 UTC. Generates a brief for each
- * allowlisted owner and sends via Telegram.
+ * Daily 06:30 IST via GitHub Actions (after CSV refresh at 06:00 IST).
+ * Generates ONE combined brief covering every gym in the registry,
+ * sends to every owner (env owners ∪ /approve-d users).
  *
  * Auth: shared secret in Authorization: Bearer <CRON_SECRET>.
  */
@@ -11,43 +11,37 @@
 import { Agent, run, tool, user } from "@openai/agents";
 import { z } from "zod";
 import { loadConfig } from "../src/config.js";
-import { createBlobStore } from "../src/data/blob-store.js";
+import { BlobStoreRegistry } from "../src/data/blob-store.js";
 import { createAllowlistStore } from "../src/data/allowlist-store.js";
 import { parseCsv } from "../src/data/csv-parse.js";
 import { buildListCsvsResult, CSV_HINTS } from "../src/tools/list-csvs.js";
 import { applyQuery } from "../src/tools/query-csv.js";
 import { sendTelegramMessage } from "../src/telegram/send-message.js";
 import { digestSystemPrompt } from "../src/digest-prompt.js";
+import { listGyms, isValidGymSlug } from "../src/gyms.js";
 
 const config = loadConfig();
-const blobStore = createBlobStore({ latestUrl: config.blobLatestUrl });
-// Same allowlist file as the webhook reads. Digest sends to owner set
-// (env) + dynamic approved (Vercel Blob) so /approve-d users get the
-// morning brief too without redeploy.
-const allowlistUrl = config.blobLatestUrl.replace(/\/csv\/latest\.json$/, "/allowlist.json");
+const blobRegistry = new BlobStoreRegistry(config.blobBaseUrl);
 const allowlistStore = createAllowlistStore({
-  url: allowlistUrl,
+  url: `${config.blobBaseUrl}/allowlist.json`,
   token: config.blobReadWriteToken,
 });
 process.env.OPENAI_API_KEY = config.openaiApiKey;
 
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
-const GYM_NAME = process.env.GYM_NAME ?? "Free Form Fitness";
-// Digest uses a faster model than chat — the prompt is explicit so it doesn't
-// need gpt-5's reasoning depth, and Vercel's 60s function timeout makes gpt-5
-// risky. gpt-4o-mini handles 6 sections + ~10 tool calls in 15-25s.
+// gpt-5 is too slow for the 60s function cap when computing per-gym briefs;
+// 4o-mini handles 6 sections × N gyms in ~25s reliably.
 const DIGEST_MODEL = process.env.DIGEST_MODEL ?? "gpt-4o-mini";
 
-// Same flat schema as the chat endpoint — keeps query_csv shape consistent.
-const cell = z.string().nullable();
 const flatFilter = z.object({
   col: z.string(),
   op: z.enum(["eq","neq","gt","gte","lt","lte","icontains","between","in","isblank","notblank"]),
-  val: cell,
-  val_to: cell,
+  val: z.string().nullable(),
+  val_to: z.string().nullable(),
   val_list: z.array(z.string()).nullable(),
 });
 const queryArgs = z.object({
+  gym: z.string(),
   csv: z.string(),
   filters: z.array(flatFilter).nullable(),
   group_by: z.array(z.string()).nullable(),
@@ -69,53 +63,112 @@ function normalize(f: FlatFilter): import("../src/tools/query-csv.js").Filter {
   }
 }
 
-async function buildBrief(): Promise<{ text: string; toolCalls: number; snapshotDate: string; model: string }> {
-  const pointer = await blobStore.fetchLatest();
+async function loadSnapshots(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  await Promise.all(
+    listGyms().map(async g => {
+      try {
+        const p = await blobRegistry.for(g.slug).fetchLatest();
+        out[g.slug] = p.snapshot_date;
+      } catch { /* gym not yet seeded — digest will note "(no snapshot yet)" */ }
+    }),
+  );
+  return out;
+}
+
+function snapshotsLine(snapshots: Record<string, string>): string {
+  const lines = listGyms().map(g =>
+    snapshots[g.slug]
+      ? `  ${g.name}: snapshot ${snapshots[g.slug]}`
+      : `  ${g.name}: (no snapshot yet)`
+  );
+  return `SNAPSHOTS:\n${lines.join("\n")}`;
+}
+
+async function buildBrief(): Promise<{
+  text: string; toolCalls: number; snapshots: Record<string, string>; model: string;
+}> {
   const todayIso = new Date().toISOString().slice(0, 10);
+  const snapshots = await loadSnapshots();
   let toolCalls = 0;
 
-  const listTool = tool({
-    name: "list_csvs",
-    description: "List CSVs with exact column names and sample rows.",
+  const listGymsTool = tool({
+    name: "list_gyms",
+    description: "List all gyms in this brief. Returns slug + display name.",
     parameters: z.object({}),
     execute: async () => {
       toolCalls++;
-      return await buildListCsvsResult(blobStore);
+      return { gyms: listGyms().map(g => ({ slug: g.slug, name: g.name })) };
+    },
+  });
+
+  const listTool = tool({
+    name: "list_csvs",
+    description: "List CSVs for ONE gym with exact column names. gym arg is required.",
+    parameters: z.object({ gym: z.string() }),
+    execute: async ({ gym }) => {
+      toolCalls++;
+      if (!isValidGymSlug(gym)) {
+        return {
+          error: `Unknown gym: ${gym}`,
+          hint: `Valid: ${listGyms().map(g => g.slug).join(", ")}`,
+        };
+      }
+      try {
+        return await buildListCsvsResult(blobRegistry.for(gym));
+      } catch (e) {
+        return { error: `list_csvs failed for ${gym}: ${(e as Error).message}` };
+      }
     },
   });
 
   const queryTool = tool({
     name: "query_csv",
-    description: "Query one CSV. val for most ops; val + val_to for between; val_list for in.",
+    description: "Query one CSV of one gym. gym + csv required.",
     parameters: queryArgs,
     execute: async (args: FlatQueryArgs) => {
       toolCalls++;
-      const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
-      const text = await blobStore.fetchCsv(args.csv);
-      const { rows } = parseCsv(text, { dateColumns: hint.date, numberColumns: hint.number });
-      return applyQuery(rows, {
-        filters: args.filters?.map(normalize),
-        group_by: args.group_by ?? undefined,
-        agg: args.agg ?? undefined,
-        select: args.select ?? undefined,
-        order_by: args.order_by ?? undefined,
-        limit: args.limit ?? undefined,
-      });
+      if (!isValidGymSlug(args.gym)) {
+        return {
+          error: `Unknown gym: ${args.gym}`,
+          hint: `Valid: ${listGyms().map(g => g.slug).join(", ")}`,
+        };
+      }
+      try {
+        const store = blobRegistry.for(args.gym);
+        const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
+        const text = await store.fetchCsv(args.csv);
+        const { rows } = parseCsv(text, { dateColumns: hint.date, numberColumns: hint.number });
+        return applyQuery(rows, {
+          filters: args.filters?.map(normalize),
+          group_by: args.group_by ?? undefined,
+          agg: args.agg ?? undefined,
+          select: args.select ?? undefined,
+          order_by: args.order_by ?? undefined,
+          limit: args.limit ?? undefined,
+        });
+      } catch (e) {
+        return { error: `query_csv failed for ${args.gym}/${args.csv}: ${(e as Error).message}` };
+      }
     },
   });
 
   const agent = new Agent({
     name: "TraqGym morning digest",
-    instructions: digestSystemPrompt(pointer.snapshot_date, todayIso, GYM_NAME),
+    instructions: digestSystemPrompt(snapshotsLine(snapshots), todayIso),
     model: DIGEST_MODEL,
-    tools: [listTool, queryTool],
+    tools: [listGymsTool, listTool, queryTool],
   });
 
-  const result = await run(agent, [user("Generate today's owner brief.")], { maxTurns: 20 });
+  const result = await run(
+    agent,
+    [user("Generate today's owner brief covering every gym.")],
+    { maxTurns: 30 },
+  );
   return {
     text: result.finalOutput?.toString().trim() ?? "(no brief generated)",
     toolCalls,
-    snapshotDate: pointer.snapshot_date,
+    snapshots,
     model: DIGEST_MODEL,
   };
 }
@@ -127,7 +180,6 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  // Shared-secret check — GH Action POSTs with Authorization: Bearer <CRON_SECRET>.
   const auth = req.headers["authorization"];
   if (!CRON_SECRET || auth !== `Bearer ${CRON_SECRET}`) {
     res.status(401).end();
@@ -135,7 +187,6 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // Resolve recipient set: env owners ∪ dynamic /approve-d users.
     const recipients = new Set<number>(config.allowedChatIds);
     try {
       const al = await allowlistStore.read();
@@ -144,7 +195,8 @@ export default async function handler(req: any, res: any) {
       console.warn("digest: allowlist read failed; sending to env owners only", e);
     }
 
-    const { text, toolCalls, snapshotDate, model: usedModel } = await buildBrief();
+    const { text, toolCalls, snapshots, model: usedModel } = await buildBrief();
+
     const sends: Promise<void>[] = [];
     for (const chatId of recipients) {
       sends.push(
@@ -157,6 +209,7 @@ export default async function handler(req: any, res: any) {
     }
     const results = await Promise.allSettled(sends);
     const failed = results.filter(r => r.status === "rejected").length;
+
     console.log(JSON.stringify({
       kind: "digest",
       ts: new Date().toISOString(),
@@ -166,14 +219,14 @@ export default async function handler(req: any, res: any) {
       n_tool_calls: toolCalls,
       model: usedModel,
       latency_ms: Date.now() - started,
-      snapshot_date: snapshotDate,
+      snapshots,
       preview: text.slice(0, 200),
     }));
     res.status(200).json({
       ok: true,
       sent_to: recipients.size - failed,
       failed,
-      snapshot_date: snapshotDate,
+      snapshots,
     });
   } catch (e) {
     console.error("digest error", e);

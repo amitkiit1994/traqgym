@@ -7,7 +7,11 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().min(1),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   BLOB_READ_WRITE_TOKEN: z.string().min(1),
-  BLOB_LATEST_URL: z.url(),
+  /** Base URL of the Vercel Blob store, e.g.
+   *  "https://abc.public.blob.vercel-storage.com". Per-gym latest.json lives
+   *  at "{BLOB_BASE_URL}/csv/{gym}/latest.json". Accepts the legacy
+   *  BLOB_LATEST_URL value (with /csv/latest.json suffix) for transition. */
+  BLOB_BASE_URL: z.string().url(),
   GITHUB_PAT: z.string().optional(),
   GITHUB_REPO: z.string().default("amitkiit1994/traqgym"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -20,11 +24,20 @@ export type Config = {
   openaiApiKey: string;
   openaiModel: string;
   blobReadWriteToken: string;
-  blobLatestUrl: string;
+  blobBaseUrl: string;
   githubPat: string | undefined;
   githubRepo: string;
   logLevel: "debug" | "info" | "warn" | "error";
 };
+
+/**
+ * Accept either the new base URL form ("https://x.blob.com") or the legacy
+ * pre-migration form ("https://x.blob.com/csv/latest.json"). Strip the
+ * legacy suffix so callers always get a clean base.
+ */
+function normalizeBaseUrl(raw: string): string {
+  return raw.replace(/\/+$/, "").replace(/\/csv\/latest\.json$/i, "");
+}
 
 export function loadConfig(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
@@ -52,7 +65,7 @@ export function loadConfig(
     openaiApiKey: parsed.data.OPENAI_API_KEY,
     openaiModel: parsed.data.OPENAI_MODEL,
     blobReadWriteToken: parsed.data.BLOB_READ_WRITE_TOKEN,
-    blobLatestUrl: parsed.data.BLOB_LATEST_URL,
+    blobBaseUrl: normalizeBaseUrl(parsed.data.BLOB_BASE_URL),
     githubPat: parsed.data.GITHUB_PAT,
     githubRepo: parsed.data.GITHUB_REPO,
     logLevel: parsed.data.LOG_LEVEL,

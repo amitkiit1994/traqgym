@@ -1,100 +1,122 @@
 import { Agent, run, tool, user, MaxTurnsExceededError } from "@openai/agents";
 import type { AgentInputItem } from "@openai/agents";
 import { z } from "zod";
-import type { BlobStore } from "./data/blob-store.js";
+import { BlobStoreRegistry } from "./data/blob-store.js";
 import { parseCsv } from "./data/csv-parse.js";
 import { buildListCsvsResult, CSV_HINTS } from "./tools/list-csvs.js";
 import { applyQuery } from "./tools/query-csv.js";
+import { listGyms, isValidGymSlug } from "./gyms.js";
 
 export interface RunLlmInput {
   question: string;
   model: string;
-  store: BlobStore;
+  registry: BlobStoreRegistry;
   history?: AgentInputItem[];
   maxIterations?: number;
-  /**
-   * Optional image data URLs (data:image/jpeg;base64,...) to attach to the
-   * user turn. The model sees them as image content alongside the text.
-   */
   imageUrls?: string[];
 }
 
 export interface RunLlmResult {
   text: string;
   toolCalls: number;
-  snapshotDate: string;
+  /** ISO date strings keyed by gym slug. Useful for the "data as of"
+   * footer when answers cover multiple gyms. */
+  snapshotDates: Record<string, string>;
   history: AgentInputItem[];
 }
 
-const systemPrompt = (snapshot: string, todayIso: string) => `
-You are a vigilant data analyst for an Indian gym. The owner and admins
-trust your numbers and act on them — for instance, verifying staff
-data-entry quality and reconciling cash. Be a good analyst, not a calculator.
+const GYM_LIST_FOR_PROMPT = listGyms().map(g => `  - ${g.slug}: ${g.name}`).join("\n");
+
+const systemPrompt = (snapshotsLine: string, todayIso: string) => `
+You are a vigilant data analyst serving an Indian gym OWNER who runs multiple
+gyms. The owner trusts your numbers and acts on them. Be a good analyst,
+not a calculator.
+
+GYMS YOU CAN ANSWER FOR
+${GYM_LIST_FOR_PROMPT}
 
 DATA SOURCE
-You are reading a daily-snapshot export of the gym's business data —
-payments, members, balances, sessions, attendance. The data is recorded
-by gym staff in the source system — NOT bank-statement ground truth.
-Treat it as the system's record, which may lag or batch real-world events.
-If you need to know WHO recorded a given entry, the data has columns like
-"Created By" / "Sales Rep" / "Trainer" — query them; never hardcode names.
+For each gym you are reading a daily-snapshot export of that gym's business
+data — payments, members, balances, sessions, attendance. The data is
+recorded by gym staff in the source system — NOT bank-statement ground
+truth. Treat it as the system's record, which may lag or batch real-world
+events. If you need to know WHO recorded a given entry, the data has
+columns like "Created By" / "Sales Rep" / "Trainer" — query them; never
+hardcode names.
 
-TOOLS
-- list_csvs: returns exact CSV names and exact column names. Call FIRST for
-  any data question. Columns are case-sensitive with spaces (e.g.
-  "Payment Mode", "Paid Amount", "Billing Name", "Start Date"). Never guess.
-- query_csv: run filters / group_by / agg against one CSV.
+${snapshotsLine}
+
+TOOLS (gym is REQUIRED in every data tool call)
+- list_gyms: returns all available gyms with slugs + display names.
+- list_csvs(gym): returns the exact CSV names + columns for that gym.
+  Call FIRST for any data question. Column names are case-sensitive and
+  contain spaces (e.g. "Payment Mode", "Paid Amount", "Billing Name").
+- query_csv(gym, csv, ...): run filters / group_by / agg against one CSV
+  of one gym.
+
+MULTI-GYM RULES (CRITICAL)
+- If the user names a gym ("FFF", "free form", "egym", "lokhandwala"), use
+  that gym. Match against gym names case-insensitive — "fff" and "ffm" and
+  "free form" all = freeform. "egym" and "lokhandwala" = egym.
+- If the question is ambiguous about which gym (e.g. "cash today"), answer
+  for BOTH gyms side-by-side. Compute each separately, present them
+  together with clear section headers per gym.
+- Each gym's snapshot may have a different date. Use each gym's actual
+  snapshot date in answers about that gym.
 
 WORKFLOW RULES
-- NEVER ask a clarifying question. Make the best interpretation and state your
-  assumption in one short line if needed.
-- After list_csvs you MUST call query_csv to compute the answer; list_csvs
-  alone returns metadata, not the answer.
-- If query_csv returns an error, read the "hint" field for valid options and
-  re-call with corrected args. Do not give up after one error.
-- For follow-up questions, use the conversation history to maintain context
-  (e.g. if user just asked about April 1-7, "give me details" means details
-  for THAT period — don't ask which period).
+- NEVER ask a clarifying question. Make the best interpretation and state
+  your assumption in one short line if needed.
+- After list_csvs you MUST call query_csv to compute the answer.
+- If query_csv returns an error, read the "hint" field and re-call.
+- For follow-up questions, use conversation history. If the prior turn was
+  about a specific gym, "give me details" means details for THAT gym.
 
-WHEN ANSWERING NUMERIC QUESTIONS, ALSO RUN THESE CHECKS AND FLAG (briefly):
-1. **Backlog data entry**: For payment-date totals, check the Start Date of
-   the included memberships. If many membership Start Dates are weeks or
-   months before the Payment Date, the staff likely did a batch catch-up
-   entry. Flag: "Note: ₹X of ₹Y was data-entered on <date> for memberships
-   that actually started <range> — real cash flow was earlier."
-2. **Day-level gaps & spikes**: If a date range has zero-transaction days
-   adjacent to spike days (e.g. zero on Mon+Wed, ₹2L on Tue), flag the
-   spike as likely catch-up entry.
-3. **Possible duplicates**: Same Billing Name + same Paid Amount + same
-   Payment Date with different Bill Nos — flag as worth verifying.
-4. **Round-number clusters**: If many transactions on one day are perfectly
-   round (₹10,000, ₹15,000, ₹18,000) it may indicate package re-keying
-   rather than real per-customer collection. Worth noting.
+WHEN ANSWERING NUMERIC QUESTIONS, ALSO RUN THESE CHECKS AND FLAG (per gym):
+1. Backlog data entry: if many membership Start Dates are weeks before
+   their Payment Date, flag as batch catch-up entry.
+2. Day-level gaps & spikes: zero-then-spike clusters suggest catch-up.
+3. Possible duplicates: same Billing Name + same Paid Amount + same date
+   with different Bill Nos.
+4. Round-number clusters: many transactions all perfectly round on one day.
 
-CRITICAL: only flag patterns you have actually verified from the data via a
-tool call. Never speculate. If you flag something, also state the supporting
-numbers.
+Only flag patterns you have actually verified via a tool call. Never speculate.
+
+NAMES NOT IDs
+NEVER show "Member Id" values to the user. Member Id is internal. ALWAYS
+show the person's name. Name columns to use:
+- payments → "Billing Name"
+- activeinactive / balance → "Member Name"
+- members → "Name"
+- database → "Prospect Name"
+- member_details → "Name"
 
 FORMATTING
+- Plain text only. NO markdown (no **bold**, no _italic_, no \`code\`, no #
+  headings). Use UPPER CASE labels + dashes for structure.
+- When answering for multiple gyms, structure as:
+      FREE FORM FITNESS
+      <answer>
+
+      EGYM LOKHANDWALA
+      <answer>
 - All money in Indian rupees with Indian commas (₹3,05,700).
-- Today is ${todayIso}. Snapshot date is ${snapshot}.
-- Keep the headline answer short and on top; put caveats below it.
-- If the data has caveats, the user MUST see them — do not bury or omit.
-- End every reply with: "📅 data as of ${snapshot}".
+- Today is ${todayIso}.
+- Keep replies short. End with "📅 data as of <date>" per gym if dates
+  differ, or a single footer if all the same.
 `.trim();
 
-// Strict-mode-friendly flat schema. The DSL executor maps these fields back
-// into the richer Filter union (see normalizeFilter below). Values are always
-// strings here; cmp() in query-csv.ts coerces to numbers/dates as needed.
+// Strict-mode-friendly flat schema (same as before, but with optional gym arg).
 const flatFilter = z.object({
   col: z.string(),
   op: z.enum(["eq","neq","gt","gte","lt","lte","icontains","between","in","isblank","notblank"]),
-  val: z.string().nullable(),                  // for eq/neq/gt/lt/icontains
-  val_to: z.string().nullable(),               // for between (paired with val)
-  val_list: z.array(z.string()).nullable(),    // for "in"
+  val: z.string().nullable(),
+  val_to: z.string().nullable(),
+  val_list: z.array(z.string()).nullable(),
 });
 
 const queryArgs = z.object({
+  gym: z.string(),  // REQUIRED: which gym to query
   csv: z.string(),
   filters: z.array(flatFilter).nullable(),
   group_by: z.array(z.string()).nullable(),
@@ -115,72 +137,145 @@ type FlatQueryArgs = z.infer<typeof queryArgs>;
 
 function normalizeFilter(f: FlatFilter): import("./tools/query-csv.js").Filter {
   switch (f.op) {
-    case "between":
-      return { col: f.col, op: "between", val: [f.val ?? "", f.val_to ?? ""] };
-    case "in":
-      return { col: f.col, op: "in", val: f.val_list ?? [] };
+    case "between":  return { col: f.col, op: "between", val: [f.val ?? "", f.val_to ?? ""] };
+    case "in":       return { col: f.col, op: "in", val: f.val_list ?? [] };
     case "isblank":
-    case "notblank":
-      return { col: f.col, op: f.op };
-    default:
-      return { col: f.col, op: f.op, val: f.val };
+    case "notblank": return { col: f.col, op: f.op };
+    default:         return { col: f.col, op: f.op, val: f.val };
   }
 }
 
-function buildTools(store: BlobStore, counter: { n: number }) {
-  const listCsvs = tool({
-    name: "list_csvs",
-    description: "List all available CSVs with exact column names and a few sample rows. Call this FIRST.",
+function buildTools(registry: BlobStoreRegistry, counter: { n: number }, snapshots: Record<string, string>) {
+  const listGymsTool = tool({
+    name: "list_gyms",
+    description: "List all gyms the owner can query. Returns slug + display name for each.",
     parameters: z.object({}),
     execute: async () => {
       counter.n++;
-      return await buildListCsvsResult(store);
+      return { gyms: listGyms().map(g => ({ slug: g.slug, name: g.name })) };
     },
   });
 
-  const queryCsv = tool({
+  const listCsvsTool = tool({
+    name: "list_csvs",
+    description:
+      "List CSVs for ONE gym with exact column names + sample rows. " +
+      "gym arg must be a slug from list_gyms (e.g. 'freeform', 'egym').",
+    parameters: z.object({ gym: z.string() }),
+    execute: async ({ gym }) => {
+      counter.n++;
+      if (!isValidGymSlug(gym)) {
+        return {
+          error: `Unknown gym: ${gym}`,
+          hint: `Valid: ${listGyms().map(g => g.slug).join(", ")}. Call list_gyms first.`,
+        };
+      }
+      try {
+        const store = registry.for(gym);
+        const result = await buildListCsvsResult(store);
+        snapshots[gym] = result.snapshot_date;
+        return result;
+      } catch (e) {
+        return {
+          error: `list_csvs failed for gym ${gym}: ${(e as Error).message}`,
+        };
+      }
+    },
+  });
+
+  const queryCsvTool = tool({
     name: "query_csv",
     description:
-      "Query one CSV with filters / group_by / agg. Use exact names from list_csvs. " +
+      "Query one CSV of one gym. gym + csv args are required. " +
       "For filter ops: use 'val' for eq/neq/gt/gte/lt/lte/icontains. " +
-      "Use 'val' AND 'val_to' for 'between' (val = lower bound, val_to = upper bound). " +
-      "Use 'val_list' for 'in'. Use neither for 'isblank'/'notblank'.",
+      "Use 'val' AND 'val_to' for 'between'. Use 'val_list' for 'in'. " +
+      "Use neither for 'isblank'/'notblank'.",
     parameters: queryArgs,
     execute: async (args: FlatQueryArgs) => {
       counter.n++;
-      const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
-      const text = await store.fetchCsv(args.csv);
-      const { rows } = parseCsv(text, { dateColumns: hint.date, numberColumns: hint.number });
-      return applyQuery(rows, {
-        filters: args.filters?.map(normalizeFilter),
-        group_by: args.group_by ?? undefined,
-        agg: args.agg ?? undefined,
-        select: args.select ?? undefined,
-        order_by: args.order_by ?? undefined,
-        limit: args.limit ?? undefined,
-      });
+      if (!isValidGymSlug(args.gym)) {
+        return {
+          error: `Unknown gym: ${args.gym}`,
+          hint: `Valid: ${listGyms().map(g => g.slug).join(", ")}.`,
+        };
+      }
+      try {
+        const store = registry.for(args.gym);
+        const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
+        const text = await store.fetchCsv(args.csv);
+        const { rows } = parseCsv(text, {
+          dateColumns: hint.date,
+          numberColumns: hint.number,
+        });
+        // Cache snapshot date opportunistically.
+        if (!snapshots[args.gym]) {
+          const pointer = await store.fetchLatest();
+          snapshots[args.gym] = pointer.snapshot_date;
+        }
+        return applyQuery(rows, {
+          filters: args.filters?.map(normalizeFilter),
+          group_by: args.group_by ?? undefined,
+          agg: args.agg ?? undefined,
+          select: args.select ?? undefined,
+          order_by: args.order_by ?? undefined,
+          limit: args.limit ?? undefined,
+        });
+      } catch (e) {
+        return {
+          error: `query_csv failed for gym ${args.gym}, csv ${args.csv}: ${(e as Error).message}`,
+        };
+      }
     },
   });
 
-  return [listCsvs, queryCsv];
+  return [listGymsTool, listCsvsTool, queryCsvTool];
+}
+
+/**
+ * Pre-warm snapshot dates so the system prompt can advertise per-gym
+ * snapshot freshness. Best-effort — if a gym's pointer is missing,
+ * we silently omit it (caller will see the error on first tool call).
+ */
+async function loadSnapshotDates(registry: BlobStoreRegistry): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  await Promise.all(
+    listGyms().map(async g => {
+      try {
+        const pointer = await registry.for(g.slug).fetchLatest();
+        out[g.slug] = pointer.snapshot_date;
+      } catch {
+        // Gym snapshot may not exist yet (e.g. EGYM before first scrape).
+        // The system prompt simply won't mention its date.
+      }
+    }),
+  );
+  return out;
+}
+
+function snapshotsLine(snapshots: Record<string, string>): string {
+  const entries = listGyms()
+    .filter(g => snapshots[g.slug])
+    .map(g => `  ${g.name}: ${snapshots[g.slug]}`);
+  if (entries.length === 0) return "SNAPSHOTS: (none loaded yet)";
+  return `SNAPSHOTS:\n${entries.join("\n")}`;
 }
 
 export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
-  const { model, store, question } = input;
-  // Bigger models (gpt-5) run more analytical checks; give them headroom.
+  const { model, registry, question } = input;
   const maxTurns = input.maxIterations ?? 12;
-  const pointer = await store.fetchLatest();
   const todayIso = new Date().toISOString().slice(0, 10);
+
+  // Snapshots populated by both pre-warm + observed-during-tool-calls.
+  const snapshots = await loadSnapshotDates(registry);
 
   const counter = { n: 0 };
   const agent = new Agent({
     name: "TraqGym data analyst",
-    instructions: systemPrompt(pointer.snapshot_date, todayIso),
+    instructions: systemPrompt(snapshotsLine(snapshots), todayIso),
     model,
-    tools: buildTools(store, counter),
+    tools: buildTools(registry, counter, snapshots),
   });
 
-  // Combine prior conversation history (if any) with the new user turn.
   const priorHistory = input.history ?? [];
   const userTurn: AgentInputItem = input.imageUrls && input.imageUrls.length > 0
     ? {
@@ -203,24 +298,18 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
     return {
       text,
       toolCalls: counter.n,
-      snapshotDate: pointer.snapshot_date,
+      snapshotDates: snapshots,
       history: result.history,
     };
   } catch (e) {
     if (e instanceof MaxTurnsExceededError) {
-      // Try to surface partial progress: the SDK exposes the run state on the
-      // error so we can pull whatever the agent has produced so far.
-      const state = (e as any).state;
-      const history: AgentInputItem[] = state?._modelResponses
-        ? priorHistory  // Conservative: don't poison memory with a half-turn.
-        : priorHistory;
       return {
         text:
           "I ran out of analysis budget on this one. Try narrowing the question " +
-          "(e.g. \"just the total\" instead of \"total + breakdown + caveats\").",
+          "(e.g. \"just the total for FFF\" instead of \"both gyms with caveats\").",
         toolCalls: counter.n,
-        snapshotDate: pointer.snapshot_date,
-        history,
+        snapshotDates: snapshots,
+        history: priorHistory,
       };
     }
     throw e;
