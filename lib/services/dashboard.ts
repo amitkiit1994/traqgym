@@ -462,6 +462,384 @@ export async function getDailyCollection(locationId?: number) {
   };
 }
 
+/**
+ * Total collections in an arbitrary date range — broken down per day, by
+ * payment mode, and by PT vs non-PT plan. Used by the AI agent's
+ * `get_collections_in_range` tool to answer "how much did we collect from X
+ * to Y?" questions.
+ *
+ * Range is inclusive on both ends (whole days).
+ * Complimentary payments are EXCLUDED (matches getDailyCollection behaviour).
+ */
+export async function getCollectionsInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const payments = await prisma.payment.findMany({
+    where,
+    select: {
+      amount: true,
+      paymentMode: true,
+      createdAt: true,
+      memberTicket: { select: { plan: { select: { name: true } } } },
+    },
+  });
+
+  let total = 0;
+  let cash = 0;
+  let upi = 0;
+  let card = 0;
+  let cheque = 0;
+  let other = 0;
+  let ptTotal = 0;
+  let ptCount = 0;
+
+  const byDay = new Map<string, { date: string; total: number; pt: number; nonPt: number; count: number }>();
+
+  for (const p of payments) {
+    const amt = Number(p.amount);
+    total += amt;
+    const day = p.createdAt.toISOString().slice(0, 10);
+    const entry = byDay.get(day) ?? { date: day, total: 0, pt: 0, nonPt: 0, count: 0 };
+    entry.total += amt;
+    entry.count += 1;
+
+    const planName = (p.memberTicket?.plan?.name ?? "").trim();
+    const isPt = /\bP(?:T|OT)\b|\bOPT\b/i.test(planName);
+    if (isPt) {
+      ptTotal += amt;
+      ptCount += 1;
+      entry.pt += amt;
+    } else {
+      entry.nonPt += amt;
+    }
+    byDay.set(day, entry);
+
+    const mode = p.paymentMode.toLowerCase();
+    if (mode === "cash") cash += amt;
+    else if (mode === "upi" || mode === "gpay") upi += amt;
+    else if (mode === "card" || mode.includes("credit") || mode.includes("debit")) card += amt;
+    else if (mode === "cheque") cheque += amt;
+    else other += amt;
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    transactionCount: payments.length,
+    total,
+    byMode: { cash, upi, card, cheque, other },
+    pt: { total: ptTotal, count: ptCount },
+    nonPt: { total: total - ptTotal, count: payments.length - ptCount },
+    byDay: Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+/**
+ * Memberships that expired within the given inclusive date range.
+ * Returns count + sum-of-paid value + per-plan breakdown.
+ * Used by AI tool get_expired_memberships_in_range.
+ */
+export async function getExpiredMembershipsInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    expireDate: { gte: fromInclusive, lt: endExclusive },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const tickets = await prisma.memberTicket.findMany({
+    where,
+    select: {
+      id: true,
+      expireDate: true,
+      totalAmount: true,
+      amountPaid: true,
+      plan: { select: { name: true } },
+      user: { select: { id: true, firstname: true, lastname: true, phone: true } },
+    },
+    orderBy: { expireDate: "desc" },
+  });
+
+  let totalPaid = 0;
+  let totalBilled = 0;
+  const byPlan = new Map<string, { plan: string; count: number; paid: number; billed: number }>();
+
+  for (const t of tickets) {
+    const paid = Number(t.amountPaid);
+    const billed = Number(t.totalAmount);
+    totalPaid += paid;
+    totalBilled += billed;
+    const planName = t.plan?.name ?? "(no plan)";
+    const entry = byPlan.get(planName) ?? { plan: planName, count: 0, paid: 0, billed: 0 };
+    entry.count += 1;
+    entry.paid += paid;
+    entry.billed += billed;
+    byPlan.set(planName, entry);
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    count: tickets.length,
+    totalPaid,
+    totalBilled,
+    byPlan: Array.from(byPlan.values()).sort((a, b) => b.paid - a.paid),
+    sample: tickets.slice(0, 20).map((t) => ({
+      memberId: t.user?.id,
+      name: t.user ? `${t.user.firstname} ${t.user.lastname}` : null,
+      phone: t.user?.phone,
+      plan: t.plan?.name,
+      expiredOn: t.expireDate.toISOString().slice(0, 10),
+      paid: Number(t.amountPaid),
+    })),
+  };
+}
+
+/**
+ * Churn metrics for a date range.
+ * Defines:
+ *   - "active at start" = members with at least one MemberTicket whose
+ *     buyDate <= fromInclusive AND expireDate >= fromInclusive.
+ *   - "churned during period" = active-at-start members whose only / latest
+ *     ticket expired within [from, to] AND who didn't renew (no new ticket
+ *     with buyDate >= fromInclusive that expires after `to`).
+ *
+ * Used by AI tool get_churn_metrics_in_range.
+ */
+export async function getChurnMetricsInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const baseTicketWhere: Record<string, unknown> = {};
+  if (locationId) baseTicketWhere.locationId = locationId;
+
+  // Active-at-start: users with a ticket valid on `fromInclusive`
+  const activeAtStart = await prisma.user.findMany({
+    where: {
+      memberTickets: {
+        some: {
+          ...baseTicketWhere,
+          buyDate: { lte: fromInclusive },
+          expireDate: { gte: fromInclusive },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  const activeAtStartIds = new Set(activeAtStart.map((u) => u.id));
+
+  // Churned: active-at-start AND (no ticket whose expireDate > toInclusive)
+  // i.e., they had a plan at the start but nothing extends beyond the period.
+  const stillActive = await prisma.user.findMany({
+    where: {
+      id: { in: Array.from(activeAtStartIds) },
+      memberTickets: {
+        some: {
+          ...baseTicketWhere,
+          expireDate: { gt: toInclusive },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  const stillActiveIds = new Set(stillActive.map((u) => u.id));
+
+  const churnedIds = Array.from(activeAtStartIds).filter((id) => !stillActiveIds.has(id));
+  const denominator = activeAtStartIds.size;
+  const churnRatePct =
+    denominator > 0 ? (churnedIds.length / denominator) * 100 : 0;
+
+  // Sample of churned members for follow-up call lists
+  const sample = await prisma.user.findMany({
+    where: { id: { in: churnedIds.slice(0, 25) } },
+    select: {
+      id: true,
+      firstname: true,
+      lastname: true,
+      phone: true,
+      memberTickets: {
+        select: { plan: { select: { name: true } }, expireDate: true },
+        orderBy: { expireDate: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    activeAtStart: denominator,
+    churned: churnedIds.length,
+    retained: stillActiveIds.size,
+    churnRatePct: Number(churnRatePct.toFixed(2)),
+    sample: sample.map((u) => ({
+      memberId: u.id,
+      name: `${u.firstname} ${u.lastname}`.trim(),
+      phone: u.phone,
+      lastPlan: u.memberTickets[0]?.plan?.name ?? null,
+      lastPlanExpiredOn: u.memberTickets[0]?.expireDate.toISOString().slice(0, 10) ?? null,
+    })),
+  };
+}
+
+/**
+ * Top members by total spend (sum of payments) in a date range.
+ * Used by AI tool get_top_spenders_in_range to answer "who's our top customer"
+ * or "top 5 members by spend this year" questions.
+ *
+ * Limit defaults to 10; caller can request 1-100.
+ */
+export async function getTopSpendersInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  limit: number = 10,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+  const clampedLimit = Math.min(Math.max(limit, 1), 100);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
+    userId: { not: null },
+  };
+  if (locationId) where.locationId = locationId;
+
+  // Aggregate sum by userId, take top N
+  const grouped = await prisma.payment.groupBy({
+    by: ["userId"],
+    where,
+    _sum: { amount: true },
+    _count: { id: true },
+    orderBy: { _sum: { amount: "desc" } },
+    take: clampedLimit,
+  });
+
+  const userIds = grouped.map((g) => g.userId!).filter((id): id is number => id != null);
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, firstname: true, lastname: true, phone: true, email: true },
+  });
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    limit: clampedLimit,
+    topSpenders: grouped.map((g, idx) => {
+      const u = g.userId != null ? userMap.get(g.userId) : null;
+      return {
+        rank: idx + 1,
+        memberId: g.userId,
+        name: u ? `${u.firstname} ${u.lastname}`.trim() : "(unknown)",
+        phone: u?.phone ?? null,
+        email: u?.email ?? null,
+        totalSpent: Number(g._sum.amount ?? 0),
+        paymentCount: g._count.id,
+      };
+    }),
+  };
+}
+
+/**
+ * PT plan revenue split by trainer over a date range.
+ * "PT" plans = plan names containing PT or OPT (case-insensitive whole-word).
+ * Returns each trainer's total PT collections from member payments tied to PT plans.
+ * Used by AI tool get_pt_revenue_by_trainer.
+ */
+export async function getPTRevenueByTrainer(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const payments = await prisma.payment.findMany({
+    where,
+    select: {
+      amount: true,
+      trainerId: true,
+      trainer: { select: { id: true, firstname: true, lastname: true } },
+      memberTicket: {
+        select: { plan: { select: { name: true } } },
+      },
+    },
+  });
+
+  const byTrainer = new Map<
+    number | null,
+    { trainerId: number | null; name: string; ptTotal: number; ptCount: number }
+  >();
+  let totalPt = 0;
+  let totalPtCount = 0;
+
+  for (const p of payments) {
+    const planName = (p.memberTicket?.plan?.name ?? "").trim();
+    if (!/\bP(?:T|OT)\b|\bOPT\b/i.test(planName)) continue;
+    const amt = Number(p.amount);
+    totalPt += amt;
+    totalPtCount += 1;
+    const t = p.trainer;
+    const key = t?.id ?? null;
+    const entry =
+      byTrainer.get(key) ?? {
+        trainerId: key,
+        name: t ? `${t.firstname} ${t.lastname}`.trim() : "(no trainer)",
+        ptTotal: 0,
+        ptCount: 0,
+      };
+    entry.ptTotal += amt;
+    entry.ptCount += 1;
+    byTrainer.set(key, entry);
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    totalPtRevenue: totalPt,
+    totalPtTransactions: totalPtCount,
+    byTrainer: Array.from(byTrainer.values()).sort((a, b) => b.ptTotal - a.ptTotal),
+  };
+}
+
 export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
   const [workers, paymentsByWorker, distinctTicketRows, attendance] = await Promise.all([
     prisma.worker.findMany({

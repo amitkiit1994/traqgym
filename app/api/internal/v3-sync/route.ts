@@ -55,16 +55,24 @@ export async function POST(req: NextRequest) {
         await markStatus(`ok: ${result.inserted} payments inserted, ${result.skipped} skipped`);
         return NextResponse.json({ success: true, dataset, ...result });
       }
+      case "balance": {
+        const result = await upsertBalances(rows);
+        await markStatus(`ok: ${result.updated} balances updated, ${result.skipped} skipped`);
+        return NextResponse.json({ success: true, dataset, ...result });
+      }
+      case "attendance": {
+        const result = await upsertAttendance(rows);
+        await markStatus(`ok: ${result.inserted} attendance inserted, ${result.skipped} skipped`);
+        return NextResponse.json({ success: true, dataset, ...result });
+      }
       case "members":
       case "memberships":
-      case "balance":
       case "memberDetails":
-      case "attendance":
       case "invoices":
         return NextResponse.json(
           {
             error: `Dataset '${dataset}' is not yet implemented in the v3-sync API`,
-            hint: "v1 only supports dataset=payment. Add an upsert handler in app/api/internal/v3-sync/route.ts.",
+            hint: "v1 supports dataset=payment, balance, attendance.",
           },
           { status: 501 }
         );
@@ -136,9 +144,37 @@ async function upsertPayments(rows: unknown[]): Promise<{
       const fbInvoice = `FB-${billNo}`;
       const existing = await prisma.invoice.findFirst({
         where: { invoiceNumber: fbInvoice },
-        select: { id: true },
+        select: { id: true, paymentId: true, payment: { select: { id: true, trainerId: true } } },
       });
       if (existing) {
+        // Payment already inserted on a prior sync — but back-fill trainerId
+        // if it's still null (earlier sync versions didn't write trainerId).
+        if (existing.payment && existing.payment.trainerId == null) {
+          const trainerName = String(row.Trainer ?? "").trim();
+          if (trainerName) {
+            const tokens = trainerName.split(/\s+/).filter((t) => t.length > 0);
+            const trainerWorker = await prisma.worker.findFirst({
+              where: {
+                isActive: true,
+                AND: tokens.map((t) => ({
+                  OR: [
+                    { firstname: { equals: t, mode: "insensitive" as const } },
+                    { lastname: { equals: t, mode: "insensitive" as const } },
+                    { firstname: { contains: t, mode: "insensitive" as const } },
+                    { lastname: { contains: t, mode: "insensitive" as const } },
+                  ],
+                })),
+              },
+              select: { id: true },
+            });
+            if (trainerWorker) {
+              await prisma.payment.update({
+                where: { id: existing.payment.id },
+                data: { trainerId: trainerWorker.id },
+              });
+            }
+          }
+        }
         skippedAlreadyExists++;
         continue;
       }
@@ -212,6 +248,30 @@ async function upsertPayments(rows: unknown[]): Promise<{
       const paymentDate = parseV3Date(row.PaymentDate);
       const mode = mapPaymentMode(row.PaymentMode);
 
+      // Resolve v3's Trainer string ("afzal", "Floor Trainers", etc.) to a
+      // Worker row by full-name match. Falls back to null so payment goes
+      // through without a trainer rather than being dropped.
+      const trainerName = String(row.Trainer ?? "").trim();
+      let trainerId: number | null = null;
+      if (trainerName) {
+        const tokens = trainerName.split(/\s+/).filter((t) => t.length > 0);
+        const trainerWorker = await prisma.worker.findFirst({
+          where: {
+            isActive: true,
+            AND: tokens.map((t) => ({
+              OR: [
+                { firstname: { equals: t, mode: "insensitive" as const } },
+                { lastname: { equals: t, mode: "insensitive" as const } },
+                { firstname: { contains: t, mode: "insensitive" as const } },
+                { lastname: { contains: t, mode: "insensitive" as const } },
+              ],
+            })),
+          },
+          select: { id: true },
+        });
+        trainerId = trainerWorker?.id ?? null;
+      }
+
       const payment = await prisma.payment.create({
         data: {
           userId: user.id,
@@ -222,6 +282,7 @@ async function upsertPayments(rows: unknown[]): Promise<{
           paymentNote: stringOrNull(row.Remarks),
           paymentFor: stringOrNull(row.PaymentFor),
           collectedById: fallback.id,
+          trainerId,
           createdAt: paymentDate ?? undefined,
         },
       });
@@ -264,6 +325,223 @@ async function upsertPayments(rows: unknown[]): Promise<{
     createdUsers,
     errors,
   };
+}
+
+/**
+ * Upsert outstanding balance data from v3's balance report into the
+ * member's most-recent ticket. We don't track historic balance snapshots
+ * (yet) — this just overwrites MemberTicket.balanceDue with v3's
+ * current authoritative value.
+ *
+ * Rows expected:
+ *   { MemberId?, ContactNo, MemberName?, BalanceAmount, ... }
+ */
+async function upsertBalances(rows: unknown[]): Promise<{
+  updated: number;
+  skipped: number;
+  errors: number;
+  skippedBreakdown: { noPhone: number; userNotFound: number; noTicket: number };
+}> {
+  let updated = 0;
+  let errors = 0;
+  let skippedNoPhone = 0;
+  let skippedUserNotFound = 0;
+  let skippedNoTicket = 0;
+
+  for (const raw of rows) {
+    try {
+      const row = raw as Record<string, unknown>;
+      const phone = normalisePhone(row.ContactNo ?? row.Mobile);
+      if (!phone) {
+        skippedNoPhone++;
+        continue;
+      }
+      const user = await prisma.user.findFirst({
+        where: { phone },
+        select: { id: true },
+      });
+      if (!user) {
+        skippedUserNotFound++;
+        continue;
+      }
+      const ticket = await prisma.memberTicket.findFirst({
+        where: { userId: user.id },
+        orderBy: { buyDate: "desc" },
+        select: { id: true, balanceDue: true },
+      });
+      if (!ticket) {
+        skippedNoTicket++;
+        continue;
+      }
+      const newBalance = parseDecimal(row.BalanceAmount);
+      // Only update if value actually changed (avoid no-op write churn).
+      if (Number(ticket.balanceDue) === newBalance) {
+        continue;
+      }
+      await prisma.memberTicket.update({
+        where: { id: ticket.id },
+        data: { balanceDue: newBalance },
+      });
+      updated++;
+    } catch (err) {
+      errors++;
+      console.error("[v3-sync balance] row error:", err);
+    }
+  }
+
+  const skipped = skippedNoPhone + skippedUserNotFound + skippedNoTicket;
+  return {
+    updated,
+    skipped,
+    errors,
+    skippedBreakdown: {
+      noPhone: skippedNoPhone,
+      userNotFound: skippedUserNotFound,
+      noTicket: skippedNoTicket,
+    },
+  };
+}
+
+/**
+ * Upsert v3 attendance rows into AttendanceLog. Idempotent — dedupe key
+ * is (userId, attendanceDate, checkIn-minute) since v3 only gives us minute
+ * resolution on check-in time.
+ *
+ * Rows expected: { MemberId?, ContactNo, MemberName, CheckIn, CheckOut, AttendanceDate }
+ *   CheckIn / CheckOut / AttendanceDate may be in various v3 formats.
+ */
+async function upsertAttendance(rows: unknown[]): Promise<{
+  inserted: number;
+  skipped: number;
+  errors: number;
+  skippedBreakdown: { noPhone: number; userNotFound: number; dateParseFailed: number; duplicate: number };
+}> {
+  let inserted = 0;
+  let errors = 0;
+  let skippedNoPhone = 0;
+  let skippedUserNotFound = 0;
+  let skippedDateParseFailed = 0;
+  let skippedDuplicate = 0;
+
+  // Pick a default location (only one for now per gym; we'll attach there)
+  const defaultLocation = await prisma.location.findFirst({
+    orderBy: { id: "asc" },
+    select: { id: true },
+  });
+  if (!defaultLocation) {
+    return {
+      inserted: 0,
+      skipped: rows.length,
+      errors: 0,
+      skippedBreakdown: { noPhone: 0, userNotFound: 0, dateParseFailed: 0, duplicate: rows.length },
+    };
+  }
+
+  for (const raw of rows) {
+    try {
+      const row = raw as Record<string, unknown>;
+      const phone = normalisePhone(row.ContactNo ?? row.Mobile);
+      if (!phone) {
+        skippedNoPhone++;
+        continue;
+      }
+      const user = await prisma.user.findFirst({
+        where: { phone },
+        select: { id: true, locationId: true },
+      });
+      if (!user) {
+        skippedUserNotFound++;
+        continue;
+      }
+      const checkInStr = String(row.CheckIn ?? "").trim();
+      const checkOutStr = String(row.CheckOut ?? "").trim();
+      const dateStr = String(row.AttendanceDate ?? "").trim();
+
+      // Date may come either as part of the CheckIn string ("17-05-2026 10:30 AM")
+      // or separately. Combine into best-effort timestamps.
+      const checkInDt = parseV3DateTime(checkInStr) ?? parseV3Date(dateStr);
+      if (!checkInDt) {
+        skippedDateParseFailed++;
+        continue;
+      }
+      const checkOutDt = checkOutStr ? parseV3DateTime(checkOutStr) : null;
+      // Date portion only, truncated to UTC midnight
+      const attDate = new Date(Date.UTC(checkInDt.getUTCFullYear(), checkInDt.getUTCMonth(), checkInDt.getUTCDate()));
+
+      // Dedupe: same user + same date + same check-in minute
+      const minuteFloor = new Date(checkInDt);
+      minuteFloor.setSeconds(0, 0);
+      const minuteCeil = new Date(minuteFloor);
+      minuteCeil.setMinutes(minuteCeil.getMinutes() + 1);
+
+      const existing = await prisma.attendanceLog.findFirst({
+        where: {
+          userId: user.id,
+          attendanceDate: attDate,
+          checkIn: { gte: minuteFloor, lt: minuteCeil },
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        skippedDuplicate++;
+        continue;
+      }
+
+      await prisma.attendanceLog.create({
+        data: {
+          userId: user.id,
+          locationId: user.locationId ?? defaultLocation.id,
+          attendanceDate: attDate,
+          checkIn: checkInDt,
+          checkOut: checkOutDt,
+          source: "v3-sync",
+          scanSource: "v3_fitnessboard",
+        },
+      });
+      inserted++;
+    } catch (err) {
+      errors++;
+      console.error("[v3-sync attendance] row error:", err);
+    }
+  }
+
+  const skipped = skippedNoPhone + skippedUserNotFound + skippedDateParseFailed + skippedDuplicate;
+  return {
+    inserted,
+    skipped,
+    errors,
+    skippedBreakdown: {
+      noPhone: skippedNoPhone,
+      userNotFound: skippedUserNotFound,
+      dateParseFailed: skippedDateParseFailed,
+      duplicate: skippedDuplicate,
+    },
+  };
+}
+
+/**
+ * Parse v3 datetime strings: 'dd-mm-yyyy hh:mm AM/PM', 'dd-mm-yyyy hh:mm:ss',
+ * 'dd Mon yyyy hh:mm:ss', etc.
+ */
+function parseV3DateTime(s: string): Date | null {
+  if (!s) return null;
+  const trimmed = s.trim();
+  // Try the standard date format first
+  const dateOnly = parseV3Date(trimmed);
+  if (dateOnly && !/[:]/.test(trimmed)) return dateOnly;
+  // dd-mm-yyyy hh:mm AM/PM
+  const ampm = trimmed.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?$/);
+  if (ampm) {
+    const [, d, m, y, hh, mm, ss, ap] = ampm;
+    let hour = parseInt(hh!, 10);
+    if (ap?.toUpperCase() === "PM" && hour < 12) hour += 12;
+    if (ap?.toUpperCase() === "AM" && hour === 12) hour = 0;
+    return new Date(Date.UTC(parseInt(y!, 10), parseInt(m!, 10) - 1, parseInt(d!, 10), hour, parseInt(mm!, 10), ss ? parseInt(ss, 10) : 0));
+  }
+  // Fallback: try Date.parse
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) return new Date(parsed);
+  return null;
 }
 
 async function markStatus(status: string): Promise<void> {

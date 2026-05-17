@@ -33,7 +33,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 
 V3_BASE = "https://v3.fitnessboard.in"
@@ -309,14 +309,245 @@ def run(base_url: str, secret: str) -> int:
     cookie = v3_login(mobile, password)
 
     payments = fetch_payments(cookie)
-    if not payments:
+    if payments:
+        log(f"pushing {len(payments)} payment rows to {base_url}")
+        result = push_dataset(base_url, secret, "payment", payments)
+        log(f"sync result (payment): {json.dumps(result)}")
+    else:
         log("no payment rows to push")
-        return 0
 
-    log(f"pushing {len(payments)} payment rows to {base_url}")
-    result = push_dataset(base_url, secret, "payment", payments)
-    log(f"sync result: {json.dumps(result)}")
+    balances = fetch_balances(cookie)
+    if balances:
+        log(f"pushing {len(balances)} balance rows to {base_url}")
+        result = push_dataset(base_url, secret, "balance", balances)
+        log(f"sync result (balance): {json.dumps(result)}")
+    else:
+        log("no balance rows to push")
+
+    attendance = fetch_attendance(cookie, days=30)
+    if attendance:
+        log(f"pushing {len(attendance)} attendance rows to {base_url}")
+        result = push_dataset(base_url, secret, "attendance", attendance)
+        log(f"sync result (attendance): {json.dumps(result)}")
+    else:
+        log("no attendance rows to push")
+
     return 0
+
+
+def fetch_attendance(cookie: str, days: int = 30) -> list[dict]:
+    """Fetch the last N days of attendance from v3 via FilterAttendanceReport.
+
+    AJAX endpoint, JSON-wrapped HTML table response. We chunk by month to
+    avoid v3 server 500s on wide ranges, capped to `days` calendar days
+    back from today.
+    """
+    # Set session context first — server-side filter state lives in the page.
+    try:
+        v3_get("/Dashboard/AttendanceReport", cookie, referer=f"{V3_BASE}/Dashboard/Index")
+    except Exception:
+        pass  # best-effort warm-up
+
+    today = date.today()
+    start_date = today - timedelta(days=days)
+    rows: list[dict] = []
+
+    # Walk month-by-month from start_date to today
+    cur_year, cur_month = start_date.year, start_date.month
+    end_year, end_month = today.year, today.month
+    while (cur_year, cur_month) <= (end_year, end_month):
+        last_day = 28 if cur_month == 2 else (30 if cur_month in (4, 6, 9, 11) else 31)
+        month_start = max(date(cur_year, cur_month, 1), start_date)
+        month_end = min(date(cur_year, cur_month, last_day), today)
+        start_enc = month_start.strftime("%d%%2F%m%%2F%Y")
+        end_enc = month_end.strftime("%d%%2F%m%%2F%Y")
+        path = (
+            f"/Dashboard/FilterAttendanceReport?Start={start_enc}&End={end_enc}"
+            f"&_={int(date.today().toordinal())}"  # cache buster
+        )
+        try:
+            raw = v3_get(
+                path,
+                cookie,
+                referer=f"{V3_BASE}/Dashboard/AttendanceReport",
+                ajax=True,
+            )
+        except urllib.error.HTTPError as e:
+            log(f"  attendance v3 HTTP {e.code} for {month_start}..{month_end} — skipping")
+            cur_month += 1
+            if cur_month > 12:
+                cur_month = 1
+                cur_year += 1
+            continue
+        except Exception as e:
+            log(f"  attendance error for {month_start}..{month_end}: {type(e).__name__} — skipping")
+            cur_month += 1
+            if cur_month > 12:
+                cur_month = 1
+                cur_year += 1
+            continue
+        month_rows = _parse_attendance_json(raw)
+        if month_rows:
+            log(f"    {month_start.strftime('%Y-%m')}: {len(month_rows)} rows")
+            rows.extend(month_rows)
+        cur_month += 1
+        if cur_month > 12:
+            cur_month = 1
+            cur_year += 1
+
+    log(f"  parsed {len(rows)} attendance rows from v3 (last {days} days)")
+    return _normalise_attendance(rows)
+
+
+def _parse_attendance_json(raw: bytes) -> list[dict]:
+    """v3's FilterAttendanceReport response shape varies by gym setup.
+
+    Observed responses (May 2026):
+      - Direct HTML table: '<table id=...>...</table>~0' (most common,
+        the '~0' suffix is a row-count trailer)
+      - JSON-wrapped: '{"Data1":"<table>..."}' (other endpoints — older
+        servers / some configs)
+
+    We try both.
+    """
+    try:
+        text = raw.decode("utf-8", errors="replace").strip()
+    except Exception:
+        return []
+    if not text:
+        return []
+    if text.startswith("<"):
+        # Direct HTML — strip the trailing '~<count>' if present
+        if "~" in text[-10:]:
+            text = text.rsplit("~", 1)[0]
+        try:
+            return parse_html_table(text.encode("utf-8"))
+        except Exception:
+            return []
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+        all_rows: list[dict] = []
+        for key in sorted(data.keys()):
+            v = data[key]
+            if v and isinstance(v, str) and "<t" in v.lower():
+                try:
+                    rows = parse_html_table(v.encode("utf-8"))
+                    all_rows.extend(rows)
+                except Exception:
+                    continue
+        return all_rows
+    return []
+
+
+def _normalise_attendance(rows: list[dict]) -> list[dict]:
+    """Map v3 attendance columns to consistent keys.
+
+    Observed v3 column headers (May 2026):
+      SR. NO, Member Id, Name, Start Date, End DAte, Check In Date,
+      Check Out Date, In/Out Time
+
+    Member Id is the gym's v3 member id (not phone). Some older v3
+    deployments use 'Check In' / 'Check Out' or 'In Time' / 'Out Time' —
+    aliases accepted.
+    """
+    normalised: list[dict] = []
+    for r in rows:
+        member_id = (r.get("Member Id") or r.get("MemberId") or "").strip()
+        contact = (r.get("Contact No") or r.get("ContactNo") or "").strip()
+        check_in = (
+            r.get("Check In Date")
+            or r.get("CheckInDate")
+            or r.get("Check In")
+            or r.get("CheckIn")
+            or r.get("In Time")
+            or ""
+        ).strip()
+        check_out = (
+            r.get("Check Out Date")
+            or r.get("CheckOutDate")
+            or r.get("Check Out")
+            or r.get("CheckOut")
+            or r.get("Out Time")
+            or ""
+        ).strip()
+        att_date = (
+            r.get("Date")
+            or r.get("Attendance Date")
+            or r.get("AttendanceDate")
+            or ""
+        ).strip()
+        # Many v3 attendance dumps lack Contact No — we'll fall back to
+        # MemberId lookup at the API side once that path exists.
+        if not (member_id or contact):
+            continue
+        if not check_in:
+            continue
+        normalised.append(
+            {
+                "MemberId": member_id,
+                "ContactNo": contact,
+                "MemberName": (r.get("Name") or r.get("Member Name") or "").strip(),
+                "CheckIn": check_in,
+                "CheckOut": check_out,
+                "AttendanceDate": att_date,
+            }
+        )
+    return normalised
+
+
+def fetch_balances(cookie: str) -> list[dict]:
+    """Fetch the v3 'balance' report — members with outstanding balances."""
+    today = date.today().strftime("%d-%m-%Y")
+    url = (
+        f"/Dashboard/ExportToExcel?exportfor=balance"
+        f"&StartDate={DEFAULT_START}&EndDate={today}&mstat=0"
+    )
+    try:
+        raw = v3_get(url, cookie, referer=f"{V3_BASE}/Dashboard/DataReport")
+    except urllib.error.HTTPError as e:
+        log(f"  balance v3 HTTP {e.code} — skipping")
+        return []
+    if raw.startswith(b"PK\x03\x04"):
+        log("  balance returned XLSX binary — skipping (can't decode)")
+        return []
+    rows = parse_html_table(raw)
+    log(f"  parsed {len(rows)} balance rows from v3")
+    return _normalise_balances(rows)
+
+
+def _normalise_balances(rows: list[dict]) -> list[dict]:
+    """Map v3 balance columns to the keys the sync API expects.
+
+    v3 export headers:
+      Sr No., Reg. Id, Branch Name, Member Id, Member Name, Contact No,
+      Balance Amt., Next FollowUp Date, Email Id, Sales Rep., Trainer,
+      Membership, Billing Owner, External No., Prospect Stat, Purchased Date,
+      Pending Since
+    """
+    normalised: list[dict] = []
+    for r in rows:
+        member_id = (r.get("Member Id") or r.get("MemberId") or "").strip()
+        contact = (r.get("Contact No") or r.get("ContactNo") or "").strip()
+        if not member_id and not contact:
+            continue
+        normalised.append(
+            {
+                "MemberId": member_id,
+                "ContactNo": contact,
+                "MemberName": (r.get("Member Name") or r.get("Name") or "").strip(),
+                "BalanceAmount": (r.get("Balance Amt.") or r.get("BalanceAmount") or "0").strip(),
+                "Membership": (r.get("Membership") or "").strip(),
+                "PurchasedDate": (r.get("Purchased Date") or "").strip(),
+                "PendingSince": (r.get("Pending Since") or "").strip(),
+                "NextFollowUpDate": (r.get("Next FollowUp Date") or "").strip(),
+                "Trainer": (r.get("Trainer") or "").strip(),
+                "SalesRep": (r.get("Sales Rep.") or r.get("SalesRep") or "").strip(),
+            }
+        )
+    return normalised
 
 
 def main() -> int:
