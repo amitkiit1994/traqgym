@@ -31,7 +31,7 @@ type Notification = {
 const channelIcons: Record<string, React.ReactNode> = {
   whatsapp: <MessageSquare className="size-4 text-green-600" />,
   sms: <Smartphone className="size-4 text-blue-600" />,
-  email: <Mail className="size-4 text-purple-600" />,
+  email: <Mail className="size-4 text-red-600" />,
 };
 
 function formatTemplate(name: string) {
