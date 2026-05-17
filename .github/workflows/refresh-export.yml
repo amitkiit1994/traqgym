@@ -1,4 +1,4 @@
-name: refresh-fitnessboard-export
+name: refresh-gym-data
 on:
   schedule:
     - cron: "30 0 * * *"
