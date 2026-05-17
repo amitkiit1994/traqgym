@@ -3,6 +3,9 @@
   "functions": {
     "api/webhook.ts": {
       "maxDuration": 60
+    },
+    "api/digest.ts": {
+      "maxDuration": 60
     }
   }
 }
