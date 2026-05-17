@@ -60,15 +60,19 @@ export async function POST(req: NextRequest) {
         await markStatus(`ok: ${result.updated} balances updated, ${result.skipped} skipped`);
         return NextResponse.json({ success: true, dataset, ...result });
       }
+      case "attendance": {
+        const result = await upsertAttendance(rows);
+        await markStatus(`ok: ${result.inserted} attendance inserted, ${result.skipped} skipped`);
+        return NextResponse.json({ success: true, dataset, ...result });
+      }
       case "members":
       case "memberships":
       case "memberDetails":
-      case "attendance":
       case "invoices":
         return NextResponse.json(
           {
             error: `Dataset '${dataset}' is not yet implemented in the v3-sync API`,
-            hint: "v1 supports dataset=payment and dataset=balance. Add an upsert handler in app/api/internal/v3-sync/route.ts.",
+            hint: "v1 supports dataset=payment, balance, attendance.",
           },
           { status: 501 }
         );
@@ -396,6 +400,148 @@ async function upsertBalances(rows: unknown[]): Promise<{
       noTicket: skippedNoTicket,
     },
   };
+}
+
+/**
+ * Upsert v3 attendance rows into AttendanceLog. Idempotent — dedupe key
+ * is (userId, attendanceDate, checkIn-minute) since v3 only gives us minute
+ * resolution on check-in time.
+ *
+ * Rows expected: { MemberId?, ContactNo, MemberName, CheckIn, CheckOut, AttendanceDate }
+ *   CheckIn / CheckOut / AttendanceDate may be in various v3 formats.
+ */
+async function upsertAttendance(rows: unknown[]): Promise<{
+  inserted: number;
+  skipped: number;
+  errors: number;
+  skippedBreakdown: { noPhone: number; userNotFound: number; dateParseFailed: number; duplicate: number };
+}> {
+  let inserted = 0;
+  let errors = 0;
+  let skippedNoPhone = 0;
+  let skippedUserNotFound = 0;
+  let skippedDateParseFailed = 0;
+  let skippedDuplicate = 0;
+
+  // Pick a default location (only one for now per gym; we'll attach there)
+  const defaultLocation = await prisma.location.findFirst({
+    orderBy: { id: "asc" },
+    select: { id: true },
+  });
+  if (!defaultLocation) {
+    return {
+      inserted: 0,
+      skipped: rows.length,
+      errors: 0,
+      skippedBreakdown: { noPhone: 0, userNotFound: 0, dateParseFailed: 0, duplicate: rows.length },
+    };
+  }
+
+  for (const raw of rows) {
+    try {
+      const row = raw as Record<string, unknown>;
+      const phone = normalisePhone(row.ContactNo ?? row.Mobile);
+      if (!phone) {
+        skippedNoPhone++;
+        continue;
+      }
+      const user = await prisma.user.findFirst({
+        where: { phone },
+        select: { id: true, locationId: true },
+      });
+      if (!user) {
+        skippedUserNotFound++;
+        continue;
+      }
+      const checkInStr = String(row.CheckIn ?? "").trim();
+      const checkOutStr = String(row.CheckOut ?? "").trim();
+      const dateStr = String(row.AttendanceDate ?? "").trim();
+
+      // Date may come either as part of the CheckIn string ("17-05-2026 10:30 AM")
+      // or separately. Combine into best-effort timestamps.
+      const checkInDt = parseV3DateTime(checkInStr) ?? parseV3Date(dateStr);
+      if (!checkInDt) {
+        skippedDateParseFailed++;
+        continue;
+      }
+      const checkOutDt = checkOutStr ? parseV3DateTime(checkOutStr) : null;
+      // Date portion only, truncated to UTC midnight
+      const attDate = new Date(Date.UTC(checkInDt.getUTCFullYear(), checkInDt.getUTCMonth(), checkInDt.getUTCDate()));
+
+      // Dedupe: same user + same date + same check-in minute
+      const minuteFloor = new Date(checkInDt);
+      minuteFloor.setSeconds(0, 0);
+      const minuteCeil = new Date(minuteFloor);
+      minuteCeil.setMinutes(minuteCeil.getMinutes() + 1);
+
+      const existing = await prisma.attendanceLog.findFirst({
+        where: {
+          userId: user.id,
+          attendanceDate: attDate,
+          checkIn: { gte: minuteFloor, lt: minuteCeil },
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        skippedDuplicate++;
+        continue;
+      }
+
+      await prisma.attendanceLog.create({
+        data: {
+          userId: user.id,
+          locationId: user.locationId ?? defaultLocation.id,
+          attendanceDate: attDate,
+          checkIn: checkInDt,
+          checkOut: checkOutDt,
+          source: "v3-sync",
+          scanSource: "v3_fitnessboard",
+        },
+      });
+      inserted++;
+    } catch (err) {
+      errors++;
+      console.error("[v3-sync attendance] row error:", err);
+    }
+  }
+
+  const skipped = skippedNoPhone + skippedUserNotFound + skippedDateParseFailed + skippedDuplicate;
+  return {
+    inserted,
+    skipped,
+    errors,
+    skippedBreakdown: {
+      noPhone: skippedNoPhone,
+      userNotFound: skippedUserNotFound,
+      dateParseFailed: skippedDateParseFailed,
+      duplicate: skippedDuplicate,
+    },
+  };
+}
+
+/**
+ * Parse v3 datetime strings: 'dd-mm-yyyy hh:mm AM/PM', 'dd-mm-yyyy hh:mm:ss',
+ * 'dd Mon yyyy hh:mm:ss', etc.
+ */
+function parseV3DateTime(s: string): Date | null {
+  if (!s) return null;
+  const trimmed = s.trim();
+  // Try the standard date format first
+  const dateOnly = parseV3Date(trimmed);
+  if (dateOnly && !/[:]/.test(trimmed)) return dateOnly;
+  // dd-mm-yyyy hh:mm AM/PM
+  const ampm = trimmed.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?$/);
+  if (ampm) {
+    const [, d, m, y, hh, mm, ss, ap] = ampm;
+    let hour = parseInt(hh!, 10);
+    if (ap?.toUpperCase() === "PM" && hour < 12) hour += 12;
+    if (ap?.toUpperCase() === "AM" && hour === 12) hour = 0;
+    return new Date(Date.UTC(parseInt(y!, 10), parseInt(m!, 10) - 1, parseInt(d!, 10), hour, parseInt(mm!, 10), ss ? parseInt(ss, 10) : 0));
+  }
+  // Fallback: try Date.parse
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) return new Date(parsed);
+  return null;
 }
 
 async function markStatus(status: string): Promise<void> {
