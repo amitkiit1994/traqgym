@@ -13,12 +13,16 @@ Phases:
   6. Form data, feedbacks, diet, appointments, lockers, classes
 """
 import csv
+import http.cookiejar
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -40,11 +44,66 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def _login_and_get_cookie(mobile: str, password: str) -> str:
+    """POST FB credentials to /Account/Login, return the cookie header string.
+
+    The reCAPTCHA `token` field is enforced client-side only — submitting
+    empty works. After login the server 302s to /Account/Branchlist (which
+    urllib auto-follows), establishing the gym-scoped .ASPXAUTH cookie.
+    """
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    opener.addheaders = [
+        ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"),
+    ]
+    body = urllib.parse.urlencode(
+        {"Mobile": mobile, "Password": password, "token": ""}
+    ).encode()
+    req = urllib.request.Request(
+        f"{BASE}/Account/Login",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        opener.open(req, timeout=30)
+    except urllib.error.HTTPError as e:
+        if e.code not in (200, 302):
+            raise RuntimeError(
+                f"FB login HTTP {e.code}: check FB_MOBILE/FB_PASSWORD"
+            ) from e
+    cookies = "; ".join(f"{c.name}={c.value}" for c in jar)
+    if "ASPXAUTH" not in cookies:
+        raise RuntimeError(
+            "FB login: no .ASPXAUTH in response — credentials likely wrong"
+        )
+    return cookies
+
+
+_cached_cookie: str | None = None
+
+
 def cookie():
+    global _cached_cookie
+    if _cached_cookie:
+        return _cached_cookie
+
+    # Preferred path: log in fresh on every run using stable credentials.
+    mobile = os.environ.get("FB_MOBILE", "").strip()
+    password = os.environ.get("FB_PASSWORD", "").strip()
+    if mobile and password:
+        log(f"Logging in to v3.fitnessboard.in as {mobile}...")
+        _cached_cookie = _login_and_get_cookie(mobile, password)
+        log("  login OK — session cookie acquired")
+        return _cached_cookie
+
+    # Fallbacks for local dev / manual cookie injection.
     env = os.environ.get("FB_COOKIE", "").strip()
     if env:
+        _cached_cookie = env
         return env
-    return Path(COOKIE_FILE).read_text().strip()
+    _cached_cookie = Path(COOKIE_FILE).read_text().strip()
+    return _cached_cookie
 
 
 def curl(url, method="GET", referer=None, ajax=False, body=None, timeout=120):
