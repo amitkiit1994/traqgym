@@ -462,6 +462,91 @@ export async function getDailyCollection(locationId?: number) {
   };
 }
 
+/**
+ * Total collections in an arbitrary date range — broken down per day, by
+ * payment mode, and by PT vs non-PT plan. Used by the AI agent's
+ * `get_collections_in_range` tool to answer "how much did we collect from X
+ * to Y?" questions.
+ *
+ * Range is inclusive on both ends (whole days).
+ * Complimentary payments are EXCLUDED (matches getDailyCollection behaviour).
+ */
+export async function getCollectionsInRange(
+  fromInclusive: Date,
+  toInclusive: Date,
+  locationId?: number,
+) {
+  const endExclusive = new Date(toInclusive);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const where: Record<string, unknown> = {
+    createdAt: { gte: fromInclusive, lt: endExclusive },
+    NOT: { paymentMode: { equals: "complimentary", mode: "insensitive" } },
+  };
+  if (locationId) where.locationId = locationId;
+
+  const payments = await prisma.payment.findMany({
+    where,
+    select: {
+      amount: true,
+      paymentMode: true,
+      createdAt: true,
+      memberTicket: { select: { plan: { select: { name: true } } } },
+    },
+  });
+
+  let total = 0;
+  let cash = 0;
+  let upi = 0;
+  let card = 0;
+  let cheque = 0;
+  let other = 0;
+  let ptTotal = 0;
+  let ptCount = 0;
+
+  const byDay = new Map<string, { date: string; total: number; pt: number; nonPt: number; count: number }>();
+
+  for (const p of payments) {
+    const amt = Number(p.amount);
+    total += amt;
+    const day = p.createdAt.toISOString().slice(0, 10);
+    const entry = byDay.get(day) ?? { date: day, total: 0, pt: 0, nonPt: 0, count: 0 };
+    entry.total += amt;
+    entry.count += 1;
+
+    const planName = (p.memberTicket?.plan?.name ?? "").trim();
+    const isPt = /\bP(?:T|OT)\b|\bOPT\b/i.test(planName);
+    if (isPt) {
+      ptTotal += amt;
+      ptCount += 1;
+      entry.pt += amt;
+    } else {
+      entry.nonPt += amt;
+    }
+    byDay.set(day, entry);
+
+    const mode = p.paymentMode.toLowerCase();
+    if (mode === "cash") cash += amt;
+    else if (mode === "upi" || mode === "gpay") upi += amt;
+    else if (mode === "card" || mode.includes("credit") || mode.includes("debit")) card += amt;
+    else if (mode === "cheque") cheque += amt;
+    else other += amt;
+  }
+
+  return {
+    range: {
+      from: fromInclusive.toISOString().slice(0, 10),
+      to: toInclusive.toISOString().slice(0, 10),
+    },
+    transactionCount: payments.length,
+    total,
+    byMode: { cash, upi, card, cheque, other },
+    pt: { total: ptTotal, count: ptCount },
+    nonPt: { total: total - ptTotal, count: payments.length - ptCount },
+    byDay: Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
 export async function getStaffPerformance(monthStart: Date, monthEnd: Date) {
   const [workers, paymentsByWorker, distinctTicketRows, attendance] = await Promise.all([
     prisma.worker.findMany({
