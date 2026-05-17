@@ -9,6 +9,7 @@ import {
   getCollectionsInRange,
   getExpiredMembershipsInRange,
   getPTRevenueByTrainer,
+  getTopSpendersInRange,
   getUpgradeStats,
 } from "@/lib/services/dashboard";
 import { getActivityFeed } from "@/lib/actions/activity";
@@ -91,6 +92,27 @@ export const dashboardTools = [
         return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
       }
       const result = await getExpiredMembershipsInRange(from, to, input.locationId ?? undefined);
+      return JSON.stringify(result);
+    },
+  }),
+
+  tool({
+    name: "get_top_spenders_in_range",
+    description:
+      "Top members by total spend (sum of payments) in a date range. Returns each member's name, phone, email, total spent, and payment count. Use for 'who's our top customer', 'VIP list', 'top 5 spenders this year' type questions.",
+    parameters: z.object({
+      from: z.string().describe("Start date inclusive, YYYY-MM-DD"),
+      to: z.string().describe("End date inclusive, YYYY-MM-DD"),
+      limit: z.number().nullable().describe("How many to return (default 10, max 100)"),
+      locationId: z.number().nullable().describe("Filter by location ID"),
+    }),
+    async execute(input) {
+      const from = new Date(`${input.from}T00:00:00.000Z`);
+      const to = new Date(`${input.to}T00:00:00.000Z`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return JSON.stringify({ error: `Invalid date — expected YYYY-MM-DD, got from=${input.from} to=${input.to}` });
+      }
+      const result = await getTopSpendersInRange(from, to, input.limit ?? 10, input.locationId ?? undefined);
       return JSON.stringify(result);
     },
   }),
