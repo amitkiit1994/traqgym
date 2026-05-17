@@ -50,6 +50,7 @@ import { extensionTools } from "./tools/extension";
 import { feedbackTools } from "./tools/feedback";
 import { appointmentTools } from "./tools/appointments";
 import { compTools } from "./tools/comp-tools";
+import { insightTools } from "./tools/insights";
 
 // Tools that require admin role — tool executor will deny access for staff
 const ADMIN_ONLY_TOOLS = new Set([
@@ -159,6 +160,7 @@ const allTools = [
   ...extensionTools,
   ...appointmentTools,
   ...compTools,
+  ...insightTools,
 ];
 
 export { allTools };
