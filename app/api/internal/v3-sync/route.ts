@@ -55,16 +55,20 @@ export async function POST(req: NextRequest) {
         await markStatus(`ok: ${result.inserted} payments inserted, ${result.skipped} skipped`);
         return NextResponse.json({ success: true, dataset, ...result });
       }
+      case "balance": {
+        const result = await upsertBalances(rows);
+        await markStatus(`ok: ${result.updated} balances updated, ${result.skipped} skipped`);
+        return NextResponse.json({ success: true, dataset, ...result });
+      }
       case "members":
       case "memberships":
-      case "balance":
       case "memberDetails":
       case "attendance":
       case "invoices":
         return NextResponse.json(
           {
             error: `Dataset '${dataset}' is not yet implemented in the v3-sync API`,
-            hint: "v1 only supports dataset=payment. Add an upsert handler in app/api/internal/v3-sync/route.ts.",
+            hint: "v1 supports dataset=payment and dataset=balance. Add an upsert handler in app/api/internal/v3-sync/route.ts.",
           },
           { status: 501 }
         );
@@ -316,6 +320,81 @@ async function upsertPayments(rows: unknown[]): Promise<{
     },
     createdUsers,
     errors,
+  };
+}
+
+/**
+ * Upsert outstanding balance data from v3's balance report into the
+ * member's most-recent ticket. We don't track historic balance snapshots
+ * (yet) — this just overwrites MemberTicket.balanceDue with v3's
+ * current authoritative value.
+ *
+ * Rows expected:
+ *   { MemberId?, ContactNo, MemberName?, BalanceAmount, ... }
+ */
+async function upsertBalances(rows: unknown[]): Promise<{
+  updated: number;
+  skipped: number;
+  errors: number;
+  skippedBreakdown: { noPhone: number; userNotFound: number; noTicket: number };
+}> {
+  let updated = 0;
+  let errors = 0;
+  let skippedNoPhone = 0;
+  let skippedUserNotFound = 0;
+  let skippedNoTicket = 0;
+
+  for (const raw of rows) {
+    try {
+      const row = raw as Record<string, unknown>;
+      const phone = normalisePhone(row.ContactNo ?? row.Mobile);
+      if (!phone) {
+        skippedNoPhone++;
+        continue;
+      }
+      const user = await prisma.user.findFirst({
+        where: { phone },
+        select: { id: true },
+      });
+      if (!user) {
+        skippedUserNotFound++;
+        continue;
+      }
+      const ticket = await prisma.memberTicket.findFirst({
+        where: { userId: user.id },
+        orderBy: { buyDate: "desc" },
+        select: { id: true, balanceDue: true },
+      });
+      if (!ticket) {
+        skippedNoTicket++;
+        continue;
+      }
+      const newBalance = parseDecimal(row.BalanceAmount);
+      // Only update if value actually changed (avoid no-op write churn).
+      if (Number(ticket.balanceDue) === newBalance) {
+        continue;
+      }
+      await prisma.memberTicket.update({
+        where: { id: ticket.id },
+        data: { balanceDue: newBalance },
+      });
+      updated++;
+    } catch (err) {
+      errors++;
+      console.error("[v3-sync balance] row error:", err);
+    }
+  }
+
+  const skipped = skippedNoPhone + skippedUserNotFound + skippedNoTicket;
+  return {
+    updated,
+    skipped,
+    errors,
+    skippedBreakdown: {
+      noPhone: skippedNoPhone,
+      userNotFound: skippedUserNotFound,
+      noTicket: skippedNoTicket,
+    },
   };
 }
 
