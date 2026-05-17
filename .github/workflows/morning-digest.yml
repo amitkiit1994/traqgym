@@ -1,0 +1,18 @@
+name: morning-digest
+on:
+  schedule:
+    - cron: "0 1 * * *"     # 01:00 UTC = 06:30 IST, after CSV refresh
+  workflow_dispatch:
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger digest endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DIGEST_URL: https://freeform-telegram-bot.vercel.app/api/digest
+        run: |
+          curl --fail-with-body -sS -X POST "$DIGEST_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json"

@@ -3,6 +3,8 @@ import { loadConfig } from "../src/config.js";
 import { isAllowed, checkSecretToken } from "../src/auth.js";
 import { createRateLimiter } from "../src/rate-limit.js";
 import { sendTelegramMessage, withTypingIndicator } from "../src/telegram/send-message.js";
+import { downloadTelegramFile, toDataUrl } from "../src/telegram/get-file.js";
+import { transcribeAudio } from "../src/telegram/transcribe.js";
 import { handleSlashCommand } from "../src/commands.js";
 import { createBlobStore } from "../src/data/blob-store.js";
 import { createAllowlistStore } from "../src/data/allowlist-store.js";
@@ -138,11 +140,22 @@ const dispatcher = createGithubDispatcher({
 // OpenAI Agents SDK auto-reads OPENAI_API_KEY from env.
 process.env.OPENAI_API_KEY = config.openaiApiKey;
 
+interface TgPhotoSize {
+  file_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
 interface TelegramUpdate {
   message?: {
     chat: { id: number; type: string };
     from?: { first_name?: string; username?: string };
     text?: string;
+    caption?: string;                     // present on photo/document messages
+    voice?: { file_id: string; mime_type?: string; duration?: number };
+    photo?: TgPhotoSize[];                // array of resolutions; last = largest
+    document?: { file_id: string; mime_type?: string; file_name?: string };
   };
 }
 
@@ -166,14 +179,24 @@ export default async function handler(req: any, res: any) {
 
   const update = req.body as TelegramUpdate;
   const msg = update?.message;
-  if (!msg || !msg.text) {
+  if (!msg) {
+    res.status(200).end();
+    return;
+  }
+  // Accept text OR voice OR photo (with optional caption). Document upload
+  // is treated as no-op for now.
+  if (!msg.text && !msg.voice && !(msg.photo && msg.photo.length > 0)) {
     res.status(200).end();
     return;
   }
 
   const chatId = msg.chat.id;
   const firstName = msg.from?.first_name ?? "there";
-  const text = msg.text;
+  // Resolve final text + optional image data URLs from whichever input shape
+  // arrived. Voice → transcribe; photo → attach image; text → as-is.
+  let text = msg.text ?? msg.caption ?? "";
+  const imageUrls: string[] = [];
+  let inputKind: "text" | "voice" | "photo" = "text";
 
   // Combine env owner-set with the dynamic /approve-d set.
   let dynamicApproved: Set<number> = new Set();
@@ -204,6 +227,43 @@ export default async function handler(req: any, res: any) {
     });
     res.status(200).end();
     return;
+  }
+
+  // Voice → Whisper. Replace text with the transcription.
+  if (msg.voice) {
+    try {
+      inputKind = "voice";
+      const file = await downloadTelegramFile({ token: config.telegramBotToken, fileId: msg.voice.file_id });
+      const transcript = await transcribeAudio({ apiKey: config.openaiApiKey, file });
+      text = transcript || "(empty voice transcription)";
+    } catch (e) {
+      await sendTelegramMessage({
+        token: config.telegramBotToken,
+        chatId,
+        text: `Couldn't transcribe voice message: ${(e as Error).message}`,
+      });
+      res.status(200).end();
+      return;
+    }
+  }
+
+  // Photo → attach the largest resolution as image content for GPT vision.
+  if (msg.photo && msg.photo.length > 0) {
+    try {
+      inputKind = "photo";
+      const largest = msg.photo[msg.photo.length - 1]!;
+      const file = await downloadTelegramFile({ token: config.telegramBotToken, fileId: largest.file_id });
+      imageUrls.push(toDataUrl(file, file.mimeType ?? "image/jpeg"));
+      if (!text) text = "Look at this image and tell me what's relevant given the gym data.";
+    } catch (e) {
+      await sendTelegramMessage({
+        token: config.telegramBotToken,
+        chatId,
+        text: `Couldn't process image: ${(e as Error).message}`,
+      });
+      res.status(200).end();
+      return;
+    }
   }
 
   // /reset, /new, /forget — clear conversation memory before handling.
@@ -244,6 +304,7 @@ export default async function handler(req: any, res: any) {
           model: config.openaiModel,
           store: blobStore,
           history: historyByChat.get(chatId) ?? [],
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
         }),
       );
       reply = llm.text;
@@ -263,7 +324,9 @@ export default async function handler(req: any, res: any) {
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
       chat_id: chatId,
+      input_kind: inputKind,
       q: text.slice(0, 200),
+      n_images: imageUrls.length,
       n_tool_calls: toolCalls,
       model: config.openaiModel,
       latency_ms: Date.now() - started,

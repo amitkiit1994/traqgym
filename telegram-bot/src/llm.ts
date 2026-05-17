@@ -12,6 +12,11 @@ export interface RunLlmInput {
   store: BlobStore;
   history?: AgentInputItem[];
   maxIterations?: number;
+  /**
+   * Optional image data URLs (data:image/jpeg;base64,...) to attach to the
+   * user turn. The model sees them as image content alongside the text.
+   */
+  imageUrls?: string[];
 }
 
 export interface RunLlmResult {
@@ -177,7 +182,20 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
 
   // Combine prior conversation history (if any) with the new user turn.
   const priorHistory = input.history ?? [];
-  const turnInput: AgentInputItem[] = [...priorHistory, user(question)];
+  const userTurn: AgentInputItem = input.imageUrls && input.imageUrls.length > 0
+    ? {
+        role: "user",
+        content: [
+          { type: "input_text", text: question },
+          ...input.imageUrls.map(url => ({
+            type: "input_image" as const,
+            image_url: url,
+            detail: "auto" as const,
+          })),
+        ],
+      }
+    : user(question);
+  const turnInput: AgentInputItem[] = [...priorHistory, userTurn];
 
   try {
     const result = await run(agent, turnInput, { maxTurns });
