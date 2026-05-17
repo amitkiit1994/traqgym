@@ -16,10 +16,12 @@ const sampleCsv =
 describe("buildListCsvsResult", () => {
   it("returns csv metadata using hints for date/number columns", async () => {
     const store: BlobStore = {
+      gym: "freeform",
       fetchLatest: vi.fn().mockResolvedValue(pointer),
       fetchCsv: vi.fn().mockResolvedValue(sampleCsv),
     };
     const out = await buildListCsvsResult(store);
+    expect(out.gym).toBe("freeform");
     expect(out.snapshot_date).toBe("2026-05-16");
     const payments = out.csvs.find(c => c.name === "payments")!;
     expect(payments.columns).toContain("Billing Name");

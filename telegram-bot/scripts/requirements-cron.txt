@@ -1,3 +1,6 @@
-# Python deps for fetch_complete.py (GitHub Actions side)
+# Python deps for fetch_complete.py (GitHub Actions side).
+# XLSX parsing uses stdlib (zipfile + xml.etree) — no third-party dep needed.
+# requests/beautifulsoup4 kept for legacy compat; the fetcher itself uses
+# urllib + curl-via-subprocess so these are noop today but cheap to keep.
 requests>=2.31
 beautifulsoup4>=4.12

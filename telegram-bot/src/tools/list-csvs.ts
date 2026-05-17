@@ -11,6 +11,9 @@ export interface CsvMeta {
 }
 
 export interface ListCsvsResult {
+  /** Gym slug this listing belongs to. Echoes the store's gym so the model
+   * sees which gym's data it just got back. */
+  gym: string;
   snapshot_date: string;
   snapshot_ist: string;
   csvs: CsvMeta[];
@@ -74,6 +77,7 @@ export async function buildListCsvsResult(store: BlobStore): Promise<ListCsvsRes
     });
   }
   return {
+    gym: store.gym,
     snapshot_date: pointer.snapshot_date,
     snapshot_ist: pointer.snapshot_ist,
     csvs,

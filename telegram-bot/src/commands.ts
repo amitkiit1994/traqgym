@@ -1,11 +1,12 @@
-import type { BlobStore } from "./data/blob-store.js";
+import type { BlobStoreRegistry } from "./data/blob-store.js";
 import type { AllowlistStore, AllowlistEntry } from "./data/allowlist-store.js";
+import { listGyms } from "./gyms.js";
 
 export interface SlashContext {
   text: string;
   chatId: number;
   firstName: string;
-  store: BlobStore;
+  registry: BlobStoreRegistry;
   dispatchRefresh?: () => Promise<void>;
   // For approval flow:
   allowlistStore?: AllowlistStore;
@@ -34,15 +35,24 @@ export async function handleSlashCommand(ctx: SlashContext): Promise<string | nu
     case "/ping":
       return "pong";
     case "/snapshot": {
-      const p = await ctx.store.fetchLatest();
-      const lines = [
-        `Last refresh: ${p.snapshot_ist}`,
-        `Snapshot date: ${p.snapshot_date}`,
-        "",
-        "Row counts:",
-        ...Object.entries(p.row_counts).map(([k, v]) => `  • ${k}: ${v}`),
-      ];
-      return lines.join("\n");
+      // Per-gym snapshot. Missing gyms (e.g. EGYM before first scrape) get
+      // a "no snapshot yet" line instead of blowing up the whole reply.
+      const sections: string[] = [];
+      for (const gym of listGyms()) {
+        try {
+          const p = await ctx.registry.for(gym.slug).fetchLatest();
+          sections.push(
+            `${gym.name}`,
+            `  Last refresh: ${p.snapshot_ist}`,
+            `  Snapshot date: ${p.snapshot_date}`,
+            `  Rows: ${Object.entries(p.row_counts).map(([k, v]) => `${k}=${v}`).join(", ")}`,
+          );
+        } catch (e) {
+          sections.push(`${gym.name}`, `  (no snapshot yet: ${(e as Error).message.slice(0, 80)})`);
+        }
+        sections.push("");
+      }
+      return sections.join("\n").trim();
     }
     case "/refresh":
       if (!ctx.dispatchRefresh) return "Refresh is not configured (GITHUB_PAT missing).";

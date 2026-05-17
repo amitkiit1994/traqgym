@@ -6,7 +6,7 @@ import { sendTelegramMessage, withTypingIndicator } from "../src/telegram/send-m
 import { downloadTelegramFile, toDataUrl } from "../src/telegram/get-file.js";
 import { transcribeAudio } from "../src/telegram/transcribe.js";
 import { handleSlashCommand } from "../src/commands.js";
-import { createBlobStore } from "../src/data/blob-store.js";
+import { BlobStoreRegistry } from "../src/data/blob-store.js";
 import { createAllowlistStore } from "../src/data/allowlist-store.js";
 import { createGithubDispatcher } from "../src/github-dispatch.js";
 import { runLlm } from "../src/llm.js";
@@ -124,9 +124,10 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
   };
 }
 
-const blobStore = createBlobStore({ latestUrl: config.blobLatestUrl });
-// Allowlist lives alongside latest.json in the same Blob store.
-const allowlistUrl = config.blobLatestUrl.replace(/\/csv\/latest\.json$/, "/allowlist.json");
+// Per-gym Blob stores share one base URL; the registry caches them.
+const blobRegistry = new BlobStoreRegistry(config.blobBaseUrl);
+// Allowlist lives at the Blob root (same for all gyms — bot is owner-only).
+const allowlistUrl = `${config.blobBaseUrl}/allowlist.json`;
 const allowlistStore = createAllowlistStore({
   url: allowlistUrl,
   token: config.blobReadWriteToken,
@@ -283,7 +284,7 @@ export default async function handler(req: any, res: any) {
       text,
       chatId,
       firstName,
-      store: blobStore,
+      registry: blobRegistry,
       dispatchRefresh: dispatcher,
       allowlistStore,
       isOwner,
@@ -291,25 +292,25 @@ export default async function handler(req: any, res: any) {
 
     let reply: string;
     let toolCalls = 0;
-    let snapshotDate = "?";
+    let snapshotInfo = "";
     if (slash !== null) {
       reply = slash;
     } else {
-      // Show "typing..." in Telegram while the LLM works (40s on gpt-5).
+      // Show "typing..." in Telegram while the LLM works.
       const llm = await withTypingIndicator(
         config.telegramBotToken,
         chatId,
         () => runLlm({
           question: text,
           model: config.openaiModel,
-          store: blobStore,
+          registry: blobRegistry,
           history: historyByChat.get(chatId) ?? [],
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
         }),
       );
       reply = llm.text;
       toolCalls = llm.toolCalls;
-      snapshotDate = llm.snapshotDate;
+      snapshotInfo = Object.entries(llm.snapshotDates).map(([g, d]) => `${g}=${d}`).join(",");
       // Persist updated history, capped to last MAX_HISTORY items.
       const trimmed = llm.history.slice(-MAX_HISTORY);
       historyByChat.set(chatId, trimmed);
@@ -330,7 +331,7 @@ export default async function handler(req: any, res: any) {
       n_tool_calls: toolCalls,
       model: config.openaiModel,
       latency_ms: Date.now() - started,
-      snapshot_date: snapshotDate,
+      snapshots: snapshotInfo,
       answer_preview: reply.slice(0, 200),
     }));
     res.status(200).end();
