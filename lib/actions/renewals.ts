@@ -32,22 +32,50 @@ export async function searchMembers(query: string) {
   try { await requireWorker(); } catch { return []; }
   if (!query || query.length < 2) return [];
 
+  // Tokenise on whitespace so "zuber qureshi" matches firstname="zuber"
+  // AND lastname="qureshi", not just `firstname contains "zuber qureshi"`.
+  const tokens = query.trim().split(/\s+/).filter((t) => t.length > 0);
+  if (tokens.length === 0) return [];
+
+  const select = {
+    id: true,
+    firstname: true,
+    lastname: true,
+    email: true,
+    phone: true,
+  } as const;
+
+  // Single-token: keep original OR-across-fields semantics so phone-number
+  // and email lookups still work.
+  if (tokens.length === 1) {
+    const q = tokens[0]!;
+    return prisma.user.findMany({
+      where: {
+        OR: [
+          { firstname: { contains: q, mode: "insensitive" } },
+          { lastname: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          { phone: { contains: q } },
+        ],
+      },
+      select,
+      take: 10,
+    });
+  }
+
+  // Multi-token: AND across tokens; each token must hit at least one of
+  // firstname / lastname / email.
   return prisma.user.findMany({
     where: {
-      OR: [
-        { firstname: { contains: query, mode: "insensitive" } },
-        { lastname: { contains: query, mode: "insensitive" } },
-        { email: { contains: query, mode: "insensitive" } },
-        { phone: { contains: query } },
-      ],
+      AND: tokens.map((token) => ({
+        OR: [
+          { firstname: { contains: token, mode: "insensitive" as const } },
+          { lastname: { contains: token, mode: "insensitive" as const } },
+          { email: { contains: token, mode: "insensitive" as const } },
+        ],
+      })),
     },
-    select: {
-      id: true,
-      firstname: true,
-      lastname: true,
-      email: true,
-      phone: true,
-    },
+    select,
     take: 10,
   });
 }
