@@ -578,22 +578,38 @@ def phase5_member_details():
         except Exception:
             return mid, None
 
-    # Parallelism: 16 concurrent member fetches. EGYM's 11k members go from
-    # ~90 min (sequential, 0.3s sleep each) to ~5-7 min. FFF's 370 → ~30s.
-    # Server tolerates this well; we ditch the per-call sleep since we're
-    # already spreading load across many connections.
+    # Wall-clock budget for Phase 5. The upload step MUST run, so we cap
+    # this phase well under the GH Action timeout. Anything not fetched in
+    # time is skipped; what we have still ships.
+    BUDGET_SEC = int(os.environ.get("PHASE5_BUDGET_SEC", "1500"))  # 25 min
+    deadline = time.time() + BUDGET_SEC
+
+    # Parallelism: 32 concurrent member fetches (was 16). EGYM has ~11k
+    # members so we need every bit of throughput. FFF's ~370 finishes in
+    # well under a minute either way.
     from concurrent.futures import ThreadPoolExecutor, as_completed
     written = 0
     rows_by_id = {}
-    with ThreadPoolExecutor(max_workers=16) as ex:
+    skipped = 0
+    with ThreadPoolExecutor(max_workers=32) as ex:
         futures = {ex.submit(fetch_one, mid): mid for mid in member_ids}
         for i, fut in enumerate(as_completed(futures), 1):
+            if time.time() > deadline:
+                # Budget blown. Cancel everything still pending so the
+                # process can exit and the upload step can run.
+                skipped = len(member_ids) - i
+                log(f"    Phase 5 budget ({BUDGET_SEC}s) hit at {i}/{len(member_ids)}; "
+                    f"cancelling {skipped} pending fetches and moving on.")
+                for f in futures:
+                    f.cancel()
+                break
             mid, row = fut.result()
             if row is not None:
                 rows_by_id[mid] = row
                 written += 1
             if i % 100 == 0:
-                log(f"    {i}/{len(member_ids)} done ({written} successful)")
+                log(f"    {i}/{len(member_ids)} done ({written} successful, "
+                    f"{int(deadline - time.time())}s budget left)")
     # Write in original Member Id order for stable output.
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -601,7 +617,10 @@ def phase5_member_details():
         for mid in member_ids:
             if mid in rows_by_id:
                 w.writerow(rows_by_id[mid])
-    log(f"  -> member_details_all.csv: {written} rows")
+    if skipped:
+        log(f"  -> member_details_all.csv: {written} rows (skipped {skipped} for time)")
+    else:
+        log(f"  -> member_details_all.csv: {written} rows")
 
 
 def main():
