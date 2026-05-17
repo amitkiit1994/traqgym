@@ -324,11 +324,36 @@ def parse_json_response(raw_bytes, prefix):
 def phase1_exports():
     log("=== PHASE 1: ExportToExcel (end=today) ===")
     types = ["database", "balance", "activeinactive", "memberenrollment", "payment"]
+    # Cascading date-range fallback: large tenants (EGYM) time out at the
+    # server when asked for 14 years. Try full range → last 5 years → last
+    # 2 years. The data we care about (active/inactive members, recent
+    # enrollments) doesn't need ancient history anyway.
+    today = TODAY
+    def year_window(years_back):
+        start_y = today.year - years_back
+        return f"01-01-{start_y}", today.strftime("%d-%m-%Y")
+    ranges = [
+        (START_DASH, TODAY_DASH),     # 14yr
+        year_window(5),               # 5yr fallback
+        year_window(2),               # 2yr fallback
+    ]
+    timeout_per_call = 360
     for t in types:
-        log(f"  fetching {t} {START_DASH} to {TODAY_DASH}")
-        url = f"{BASE}/Dashboard/ExportToExcel?exportfor={t}&StartDate={START_DASH}&EndDate={TODAY_DASH}&mstat=0"
-        data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=120)
-        parse_html_response(data, f"export_{t}_all.csv")
+        rows_extracted = 0
+        for attempt, (sd, ed) in enumerate(ranges, 1):
+            log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)})")
+            url = f"{BASE}/Dashboard/ExportToExcel?exportfor={t}&StartDate={sd}&EndDate={ed}&mstat=0"
+            data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=timeout_per_call)
+            if data and len(data) > 100:
+                rows_extracted = parse_html_response(data, f"export_{t}_all.csv")
+                if rows_extracted > 0:
+                    break
+                log(f"    response={len(data)} bytes but 0 rows parsed; trying smaller range")
+            else:
+                log(f"    empty response ({len(data) if data else 0} bytes); trying smaller range")
+            time.sleep(3)
+        if rows_extracted == 0:
+            log(f"  {t}: gave up after {len(ranges)} attempts")
         time.sleep(2)
 
 
@@ -409,16 +434,19 @@ def phase2_ajax():
         # Visit parent first to set session-side filter context
         curl(f"{BASE}/Dashboard/{parent}", timeout=20)
         time.sleep(0.5)
-        # Now hit the AJAX endpoint
+        # Now hit the AJAX endpoint. Bumped 60 → 240s — EGYM tenant has
+        # huge result sets that the server takes minutes to render.
         url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}" if "?" in path else f"{BASE}/Dashboard/{path}?_={int(time.time()*1000)}"
-        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/{parent}", timeout=60)
+        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/{parent}", timeout=240)
         if data:
             saved = parse_json_response(data, prefix)
             if saved == 0:
                 # try parsing as raw HTML
                 saved = parse_html_response(data, f"{prefix}.csv")
             if saved == 0:
-                log(f"    (no usable data)")
+                log(f"    (no usable data, response={len(data)} bytes)")
+        else:
+            log(f"    (empty response — likely server timeout)")
         time.sleep(1.5)
 
 
@@ -479,7 +507,7 @@ def phase5_member_details():
             if mid and mid.isdigit():
                 member_ids.append(mid)
 
-    log(f"  fetching details for {len(member_ids)} members...")
+    log(f"  fetching details for {len(member_ids)} members (parallel)...")
     out_csv = OUT_DIR / "member_details_all.csv"
     fields = ["MemberId","Name","Gender","EmailId","ContactNo","DOB",
               "MarriedStatus","EmerContactNo","BloodGroup","Occupation",
@@ -496,23 +524,39 @@ def phase5_member_details():
                 return v
         return v
 
+    def fetch_one(mid):
+        """Fetch and parse one member. Returns (mid, row|None)."""
+        url = f"{BASE}/Dashboard/GetMemberDetails?Id={mid}&_={int(time.time()*1000)}"
+        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/MemberProfile?id={mid}", timeout=20)
+        try:
+            obj = json.loads(data.decode("utf-8", errors="replace"))
+            return mid, [fix_date(obj.get(k, "")) for k in fields]
+        except Exception:
+            return mid, None
+
+    # Parallelism: 16 concurrent member fetches. EGYM's 11k members go from
+    # ~90 min (sequential, 0.3s sleep each) to ~5-7 min. FFF's 370 → ~30s.
+    # Server tolerates this well; we ditch the per-call sleep since we're
+    # already spreading load across many connections.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     written = 0
+    rows_by_id = {}
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        futures = {ex.submit(fetch_one, mid): mid for mid in member_ids}
+        for i, fut in enumerate(as_completed(futures), 1):
+            mid, row = fut.result()
+            if row is not None:
+                rows_by_id[mid] = row
+                written += 1
+            if i % 100 == 0:
+                log(f"    {i}/{len(member_ids)} done ({written} successful)")
+    # Write in original Member Id order for stable output.
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(fields)
-        for i, mid in enumerate(member_ids):
-            url = f"{BASE}/Dashboard/GetMemberDetails?Id={mid}&_={int(time.time()*1000)}"
-            data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/MemberProfile?id={mid}", timeout=20)
-            try:
-                obj = json.loads(data.decode("utf-8", errors="replace"))
-                row = [fix_date(obj.get(k, "")) for k in fields]
-                w.writerow(row)
-                written += 1
-            except Exception:
-                pass
-            if (i+1) % 50 == 0:
-                log(f"    {i+1}/{len(member_ids)} done ({written} successful)")
-            time.sleep(0.3)
+        for mid in member_ids:
+            if mid in rows_by_id:
+                w.writerow(rows_by_id[mid])
     log(f"  -> member_details_all.csv: {written} rows")
 
 
