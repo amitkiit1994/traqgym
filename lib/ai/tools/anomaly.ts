@@ -84,7 +84,7 @@ export const anomalyTools = [
   tool({
     name: "detect_comp_abuse_patterns",
     description:
-      "Who issues free / complimentary memberships and who keeps receiving them. Built from comp.issue + comp_pass.issue audit logs. Surfaces staff issuing too many comps + members appearing repeatedly as comp recipients.",
+      "Who issues free / complimentary memberships and who keeps receiving them. Use for: 'top comp issuers', 'who got multiple comps', 'comps in a row', 'repeat comp recipients', 'is anyone abusing the comp system'. Built from comp.issue + comp_pass.issue audit logs — returns topIssuers and repeatRecipients (members with 2+ comps in the window).",
     parameters: dateRange,
     async execute(input) {
       const r = parseRange(input);
