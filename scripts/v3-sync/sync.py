@@ -309,14 +309,74 @@ def run(base_url: str, secret: str) -> int:
     cookie = v3_login(mobile, password)
 
     payments = fetch_payments(cookie)
-    if not payments:
+    if payments:
+        log(f"pushing {len(payments)} payment rows to {base_url}")
+        result = push_dataset(base_url, secret, "payment", payments)
+        log(f"sync result (payment): {json.dumps(result)}")
+    else:
         log("no payment rows to push")
-        return 0
 
-    log(f"pushing {len(payments)} payment rows to {base_url}")
-    result = push_dataset(base_url, secret, "payment", payments)
-    log(f"sync result: {json.dumps(result)}")
+    balances = fetch_balances(cookie)
+    if balances:
+        log(f"pushing {len(balances)} balance rows to {base_url}")
+        result = push_dataset(base_url, secret, "balance", balances)
+        log(f"sync result (balance): {json.dumps(result)}")
+    else:
+        log("no balance rows to push")
+
     return 0
+
+
+def fetch_balances(cookie: str) -> list[dict]:
+    """Fetch the v3 'balance' report — members with outstanding balances."""
+    today = date.today().strftime("%d-%m-%Y")
+    url = (
+        f"/Dashboard/ExportToExcel?exportfor=balance"
+        f"&StartDate={DEFAULT_START}&EndDate={today}&mstat=0"
+    )
+    try:
+        raw = v3_get(url, cookie, referer=f"{V3_BASE}/Dashboard/DataReport")
+    except urllib.error.HTTPError as e:
+        log(f"  balance v3 HTTP {e.code} — skipping")
+        return []
+    if raw.startswith(b"PK\x03\x04"):
+        log("  balance returned XLSX binary — skipping (can't decode)")
+        return []
+    rows = parse_html_table(raw)
+    log(f"  parsed {len(rows)} balance rows from v3")
+    return _normalise_balances(rows)
+
+
+def _normalise_balances(rows: list[dict]) -> list[dict]:
+    """Map v3 balance columns to the keys the sync API expects.
+
+    v3 export headers:
+      Sr No., Reg. Id, Branch Name, Member Id, Member Name, Contact No,
+      Balance Amt., Next FollowUp Date, Email Id, Sales Rep., Trainer,
+      Membership, Billing Owner, External No., Prospect Stat, Purchased Date,
+      Pending Since
+    """
+    normalised: list[dict] = []
+    for r in rows:
+        member_id = (r.get("Member Id") or r.get("MemberId") or "").strip()
+        contact = (r.get("Contact No") or r.get("ContactNo") or "").strip()
+        if not member_id and not contact:
+            continue
+        normalised.append(
+            {
+                "MemberId": member_id,
+                "ContactNo": contact,
+                "MemberName": (r.get("Member Name") or r.get("Name") or "").strip(),
+                "BalanceAmount": (r.get("Balance Amt.") or r.get("BalanceAmount") or "0").strip(),
+                "Membership": (r.get("Membership") or "").strip(),
+                "PurchasedDate": (r.get("Purchased Date") or "").strip(),
+                "PendingSince": (r.get("Pending Since") or "").strip(),
+                "NextFollowUpDate": (r.get("Next FollowUp Date") or "").strip(),
+                "Trainer": (r.get("Trainer") or "").strip(),
+                "SalesRep": (r.get("Sales Rep.") or r.get("SalesRep") or "").strip(),
+            }
+        )
+    return normalised
 
 
 def main() -> int:
