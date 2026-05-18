@@ -208,14 +208,27 @@ export default async function handler(req: any, res: any) {
 
   // Combine env owner-set with the dynamic /approve-d set.
   let dynamicApproved: Set<number> = new Set();
+  let allowlistReadFailed = false;
   try {
     const al = await allowlistStore.read();
     dynamicApproved = new Set(al.approved.map((e: { chatId: number }) => e.chatId));
   } catch (e) {
+    allowlistReadFailed = true;
     console.warn("allowlist read failed", e);
   }
   const isOwner = isAllowed(chatId, config.allowedChatIds);
   const isApproved = isOwner || dynamicApproved.has(chatId);
+  // If the env owner set is empty AND the dynamic allowlist failed to
+  // load (or is empty), every user is silently locked out — the bot is
+  // effectively down. Surface this as a distinct log so the operator
+  // can fix the misconfig.
+  if (config.allowedChatIds.size === 0 && dynamicApproved.size === 0) {
+    console.error(
+      `[bot] LOCKOUT: TELEGRAM_ALLOWED_CHAT_IDS is empty and dynamic allowlist is ${
+        allowlistReadFailed ? "unreachable" : "empty"
+      } — every user will be rejected. Fix env or restore allowlist.json.`
+    );
+  }
 
   if (!isApproved) {
     await sendTelegramMessage({

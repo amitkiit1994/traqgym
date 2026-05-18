@@ -233,31 +233,55 @@ function buildTools(registry: BlobStoreRegistry, counter: { n: number }, snapsho
 
 /**
  * Pre-warm snapshot dates so the system prompt can advertise per-gym
- * snapshot freshness. Best-effort — if a gym's pointer is missing,
- * we silently omit it (caller will see the error on first tool call).
+ * snapshot freshness. Distinguishes "no snapshot uploaded yet" from
+ * "snapshot upload exists but we couldn't read it (transient error)"
+ * so the system prompt can tell the model which gyms are safe to query
+ * vs. which ones it should refuse with a clear error.
  */
-async function loadSnapshotDates(registry: BlobStoreRegistry): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
+type SnapshotLoad =
+  | { status: "ok"; date: string }
+  | { status: "missing" }            // pointer 404 — gym not yet seeded
+  | { status: "error"; reason: string };  // anything else (auth, network, 5xx)
+
+async function loadSnapshotDates(registry: BlobStoreRegistry): Promise<Record<string, SnapshotLoad>> {
+  const out: Record<string, SnapshotLoad> = {};
   await Promise.all(
     listGyms().map(async g => {
       try {
         const pointer = await registry.for(g.slug).fetchLatest();
-        out[g.slug] = pointer.snapshot_date;
-      } catch {
-        // Gym snapshot may not exist yet (e.g. EGYM before first scrape).
-        // The system prompt simply won't mention its date.
+        out[g.slug] = { status: "ok", date: pointer.snapshot_date };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const looksMissing = /404|not\s*found|no such/i.test(message);
+        out[g.slug] = looksMissing
+          ? { status: "missing" }
+          : { status: "error", reason: message.slice(0, 120) };
+        // Surface non-404s in logs so an outage doesn't go unnoticed.
+        if (!looksMissing) {
+          console.warn(`[bot] snapshot load failed for gym=${g.slug}: ${message}`);
+        }
       }
     }),
   );
   return out;
 }
 
-function snapshotsLine(snapshots: Record<string, string>): string {
-  const entries = listGyms()
-    .filter(g => snapshots[g.slug])
-    .map(g => `  ${g.name}: ${snapshots[g.slug]}`);
-  if (entries.length === 0) return "SNAPSHOTS: (none loaded yet)";
-  return `SNAPSHOTS:\n${entries.join("\n")}`;
+function snapshotsLine(snapshots: Record<string, SnapshotLoad>): string {
+  const lines = listGyms().map(g => {
+    const s = snapshots[g.slug];
+    if (!s || s.status === "missing") return `  ${g.name}: (no snapshot yet — refuse data queries for this gym)`;
+    if (s.status === "error") return `  ${g.name}: UNAVAILABLE (${s.reason}) — refuse data queries for this gym and tell user the snapshot is unreachable`;
+    return `  ${g.name}: ${s.date}`;
+  });
+  return `SNAPSHOTS:\n${lines.join("\n")}`;
+}
+
+function snapshotDatesOnly(snapshots: Record<string, SnapshotLoad>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [slug, s] of Object.entries(snapshots)) {
+    if (s.status === "ok") out[slug] = s.date;
+  }
+  return out;
 }
 
 export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
@@ -265,13 +289,18 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
   const maxTurns = input.maxIterations ?? 12;
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  // Snapshots populated by both pre-warm + observed-during-tool-calls.
-  const snapshots = await loadSnapshotDates(registry);
+  // Pre-warm with structured load (status + reason), so the system prompt
+  // can tell the model which gyms are unavailable today and to refuse
+  // queries for them instead of inventing answers.
+  const snapshotsStructured = await loadSnapshotDates(registry);
+  // Tools-side dict holds only successful dates; tools mutate it as they
+  // observe fresh snapshots, and the result envelope returns this dict.
+  const snapshots = snapshotDatesOnly(snapshotsStructured);
 
   const counter = { n: 0 };
   const agent = new Agent({
     name: "TraqGym data analyst",
-    instructions: systemPrompt(snapshotsLine(snapshots), todayIso),
+    instructions: systemPrompt(snapshotsLine(snapshotsStructured), todayIso),
     model,
     tools: buildTools(registry, counter, snapshots),
   });

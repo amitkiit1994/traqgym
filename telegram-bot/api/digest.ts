@@ -63,33 +63,69 @@ function normalize(f: FlatFilter): import("../src/tools/query-csv.js").Filter {
   }
 }
 
-async function loadSnapshots(): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
+type SnapshotLoad =
+  | { status: "ok"; date: string }
+  | { status: "missing" }
+  | { status: "error"; reason: string };
+
+async function loadSnapshots(): Promise<Record<string, SnapshotLoad>> {
+  const out: Record<string, SnapshotLoad> = {};
   await Promise.all(
     listGyms().map(async g => {
       try {
         const p = await blobRegistry.for(g.slug).fetchLatest();
-        out[g.slug] = p.snapshot_date;
-      } catch { /* gym not yet seeded — digest will note "(no snapshot yet)" */ }
+        out[g.slug] = { status: "ok", date: p.snapshot_date };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const looksMissing = /404|not\s*found|no such/i.test(message);
+        out[g.slug] = looksMissing
+          ? { status: "missing" }
+          : { status: "error", reason: message.slice(0, 120) };
+        if (!looksMissing) {
+          console.warn(`[digest] snapshot load failed for gym=${g.slug}: ${message}`);
+        }
+      }
     }),
   );
   return out;
 }
 
-function snapshotsLine(snapshots: Record<string, string>): string {
-  const lines = listGyms().map(g =>
-    snapshots[g.slug]
-      ? `  ${g.name}: snapshot ${snapshots[g.slug]}`
-      : `  ${g.name}: (no snapshot yet)`
-  );
+function snapshotsLine(snapshots: Record<string, SnapshotLoad>): string {
+  const lines = listGyms().map(g => {
+    const s = snapshots[g.slug];
+    if (!s || s.status === "missing") return `  ${g.name}: (no snapshot yet)`;
+    if (s.status === "error") return `  ${g.name}: UNAVAILABLE (${s.reason})`;
+    return `  ${g.name}: snapshot ${s.date}`;
+  });
   return `SNAPSHOTS:\n${lines.join("\n")}`;
+}
+
+function snapshotDatesOnly(snapshots: Record<string, SnapshotLoad>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [slug, s] of Object.entries(snapshots)) {
+    if (s.status === "ok") out[slug] = s.date;
+  }
+  return out;
+}
+
+function anySnapshotLoaded(snapshots: Record<string, SnapshotLoad>): boolean {
+  return Object.values(snapshots).some(s => s.status === "ok");
 }
 
 async function buildBrief(): Promise<{
   text: string; toolCalls: number; snapshots: Record<string, string>; model: string;
 }> {
   const todayIso = new Date().toISOString().slice(0, 10);
-  const snapshots = await loadSnapshots();
+  const snapshotsStructured = await loadSnapshots();
+  if (!anySnapshotLoaded(snapshotsStructured)) {
+    // Every gym's pointer failed — refuse rather than send a useless brief.
+    // The cron's non-200 alert will surface the outage.
+    const reasons = Object.entries(snapshotsStructured)
+      .map(([slug, s]) => `${slug}: ${s.status === "error" ? s.reason : s.status}`)
+      .join(" | ");
+    throw new Error(`No snapshots loaded for any gym: ${reasons}`);
+  }
+  const snapshots = snapshotDatesOnly(snapshotsStructured);
   let toolCalls = 0;
 
   const listGymsTool = tool({
@@ -155,7 +191,7 @@ async function buildBrief(): Promise<{
 
   const agent = new Agent({
     name: "TraqGym morning digest",
-    instructions: digestSystemPrompt(snapshotsLine(snapshots), todayIso),
+    instructions: digestSystemPrompt(snapshotsLine(snapshotsStructured), todayIso),
     model: DIGEST_MODEL,
     tools: [listGymsTool, listTool, queryTool],
   });
@@ -207,13 +243,22 @@ export default async function handler(req: any, res: any) {
         }),
       );
     }
+    const recipientList = [...recipients];
     const results = await Promise.allSettled(sends);
     const failed = results.filter(r => r.status === "rejected").length;
+    // Log each rejected send with chatId + reason so a consistently-failing
+    // recipient (blocked bot, deactivated account) is visible in logs.
+    results.forEach((r, i) => {
+      if (r.status === "rejected") {
+        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        console.warn(`[digest] send failed for chat=${recipientList[i]}: ${reason}`);
+      }
+    });
 
     console.log(JSON.stringify({
       kind: "digest",
       ts: new Date().toISOString(),
-      recipients: [...recipients],
+      recipients: recipientList,
       n_sent: recipients.size - failed,
       n_failed: failed,
       n_tool_calls: toolCalls,
