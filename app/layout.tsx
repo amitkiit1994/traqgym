@@ -18,6 +18,17 @@ const jetbrainsMono = JetBrains_Mono({
 
 const gymName = process.env.NEXT_PUBLIC_GYM_NAME || "TraqGym";
 
+// Brand hue is injected as a CSS variable on :root at request time so the
+// same byte-identical CSS bundle serves FFF (default 275 / purple) and
+// EGYM (25 / red) — each Vercel project sets NEXT_PUBLIC_GYM_THEME_HUE
+// to the desired OKLCh hue degree. Validated as a finite number 0-360
+// so a bad env var can't inject arbitrary CSS.
+const rawBrandHue = Number(process.env.NEXT_PUBLIC_GYM_THEME_HUE);
+const brandHue =
+  Number.isFinite(rawBrandHue) && rawBrandHue >= 0 && rawBrandHue <= 360
+    ? rawBrandHue
+    : 275;
+
 export const metadata: Metadata = {
   title: {
     default: gymName,
@@ -50,6 +61,7 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      style={{ ["--brand-hue" as string]: String(brandHue) }}
     >
       <body className="min-h-full flex flex-col overflow-x-hidden">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
