@@ -94,22 +94,38 @@ def cookie():
     mobile = os.environ.get("FB_MOBILE", "").strip()
     password = os.environ.get("FB_PASSWORD", "").strip()
     if mobile and password:
-        log(f"Logging in to source system as {mobile}...")
+        log(f"Logging in to source system as {mobile} (source: FB_MOBILE+FB_PASSWORD)...")
         _cached_cookie = _login_and_get_cookie(mobile, password)
         log("  login OK — session cookie acquired")
         return _cached_cookie
 
-    # Fallbacks for local dev / manual cookie injection.
+    # Fallbacks for local dev / manual cookie injection. Log which source
+    # we took so a stale on-disk cookie shipping login-page HTML can be
+    # traced (this has bitten us before — silent failure mode).
     env = os.environ.get("FB_COOKIE", "").strip()
     if env:
+        log(f"  cookie source: FB_COOKIE env var ({len(env)} chars)")
         _cached_cookie = env
         return env
+    log(f"  cookie source: {COOKIE_FILE} (on-disk fallback — likely stale, prefer FB_MOBILE/FB_PASSWORD)")
     _cached_cookie = Path(COOKIE_FILE).read_text().strip()
     return _cached_cookie
 
 
+class CurlTimeout(Exception):
+    """Raised when curl's subprocess exceeds its timeout. Distinguished from
+    other curl failures so retry loops can actually retry instead of seeing
+    every error as 'response was empty, gym has no data'."""
+
+
 def curl(url, method="GET", referer=None, ajax=False, body=None, timeout=120):
-    """Run a curl request and return stdout bytes."""
+    """Run a curl request and return stdout bytes.
+
+    Raises CurlTimeout on subprocess timeout. Returns b"" on other failures
+    (network, decode) AFTER logging the error class — previous behavior
+    swallowed every exception, which made stale-cookie or DNS issues
+    indistinguishable from legitimate empty responses.
+    """
     cmd = ["curl", "-s", "-m", str(timeout),
            "-H", f"Cookie: {cookie()}",
            "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"]
@@ -124,20 +140,21 @@ def curl(url, method="GET", referer=None, ajax=False, body=None, timeout=120):
     cmd += [url]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=timeout + 5)
-        body_bytes = r.stdout
-        # Login-redirect detection: if response is HTML containing the login form,
-        # the cookie has expired and downstream parsing will produce junk.
-        sample = body_bytes[:2000].decode("utf-8", errors="ignore").lower()
-        if ("name=\"loginid\"" in sample or "name=\"password\"" in sample
-                or "/account/login" in sample):
-            log("FATAL: source-system session expired — response is the login page.")
-            sys.exit(3)
-        return body_bytes
-    except SystemExit:
-        raise
+    except subprocess.TimeoutExpired:
+        log(f"  curl TIMEOUT after {timeout}s: {url[:120]}")
+        raise CurlTimeout(f"curl timeout after {timeout}s")
     except Exception as e:
-        log(f"  curl error: {e}")
+        log(f"  curl error ({type(e).__name__}): {e} — url={url[:120]}")
         return b""
+    body_bytes = r.stdout
+    # Login-redirect detection: if response is HTML containing the login form,
+    # the cookie has expired and downstream parsing will produce junk.
+    sample = body_bytes[:2000].decode("utf-8", errors="ignore").lower()
+    if ("name=\"loginid\"" in sample or "name=\"password\"" in sample
+            or "/account/login" in sample):
+        log("FATAL: source-system session expired — response is the login page.")
+        sys.exit(3)
+    return body_bytes
 
 
 class T(HTMLParser):
@@ -328,7 +345,14 @@ def _fetch_phase1_endpoint(t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT):
         t_out = SLOW_TIMEOUT if attempt == 1 else FAST_TIMEOUT
         log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)}, timeout={t_out}s)")
         url = f"{BASE}/Dashboard/ExportToExcel?exportfor={t}&StartDate={sd}&EndDate={ed}&mstat=0"
-        data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=t_out)
+        try:
+            data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=t_out)
+        except CurlTimeout:
+            # Server timed out — the whole point of the cascade is to try
+            # a smaller window next, so treat timeout like an empty response.
+            log(f"    timeout after {t_out}s; trying smaller range")
+            time.sleep(1)
+            continue
         if data and len(data) > 100:
             rows = parse_html_response(data, f"export_{t}_all.csv")
             if rows > 0:
@@ -448,15 +472,38 @@ def phase2_ajax():
          "Classes", "ajax_classes", "classes"),
     ]
 
+    # Wall-clock budget so a single misbehaving endpoint can't burn the
+    # whole CI job. The phase is intentionally sequential (each endpoint
+    # needs its parent page visited first to set server-side filter
+    # context — parallelism races on that shared state).
+    PHASE2_BUDGET_SEC = int(os.environ.get("PHASE2_BUDGET_SEC", "1500"))  # 25 min
+    deadline = time.time() + PHASE2_BUDGET_SEC
+    timeouts = 0
+    failures = 0
+
     for path, parent, prefix, label in endpoints:
+        if time.time() > deadline:
+            log(f"  Phase 2 budget ({PHASE2_BUDGET_SEC}s) hit — skipping remaining endpoints starting at {label}")
+            break
         log(f"  [{label}] visit parent /{parent} then /{path[:60]}...")
-        # Visit parent first to set session-side filter context
-        curl(f"{BASE}/Dashboard/{parent}", timeout=20)
+        try:
+            curl(f"{BASE}/Dashboard/{parent}", timeout=20)
+        except CurlTimeout:
+            log(f"    [{label}] parent visit timed out — skipping endpoint")
+            timeouts += 1
+            continue
         time.sleep(0.5)
-        # Now hit the AJAX endpoint. Bumped 60 → 240s — EGYM tenant has
-        # huge result sets that the server takes minutes to render.
+        # Per-endpoint timeout. Bumped 60 → 240s historically because EGYM
+        # tenant has huge result sets that the server takes minutes to
+        # render. Override with PHASE2_CALL_TIMEOUT_SEC if needed.
+        per_call = int(os.environ.get("PHASE2_CALL_TIMEOUT_SEC", "240"))
         url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}" if "?" in path else f"{BASE}/Dashboard/{path}?_={int(time.time()*1000)}"
-        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/{parent}", timeout=240)
+        try:
+            data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/{parent}", timeout=per_call)
+        except CurlTimeout:
+            log(f"    [{label}] endpoint timed out after {per_call}s — skipping")
+            timeouts += 1
+            continue
         if data:
             saved = parse_json_response(data, prefix)
             if saved == 0:
@@ -464,9 +511,14 @@ def phase2_ajax():
                 saved = parse_html_response(data, f"{prefix}.csv")
             if saved == 0:
                 log(f"    (no usable data, response={len(data)} bytes)")
+                failures += 1
         else:
-            log(f"    (empty response — likely server timeout)")
+            log(f"    (empty response — likely network failure)")
+            failures += 1
         time.sleep(1.5)
+
+    if timeouts or failures:
+        log(f"Phase 2 finished with {timeouts} timeouts and {failures} empty/unusable responses")
 
 
 # ─── PHASE 3: Attendance month-by-month ────────────────────────────
@@ -490,20 +542,40 @@ def phase3_attendance():
         end = f"{last:02d}%2F{month:02d}%2F{year}"
         path = f"FilterAttendanceReport?Start={start}&End={end}"
         url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}"
-        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/AttendanceReport", timeout=45)
+        try:
+            data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/AttendanceReport", timeout=45)
+        except CurlTimeout:
+            return (year, month, "timeout")
         saved = parse_json_response(data, f"ajax_attendance_{year}_{month:02d}")
         return (year, month, saved)
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    timeouts_by_month = []
+    errors_by_month = []
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = [ex.submit(fetch_month, y, m, l) for (y, m, l) in months]
         for fut in as_completed(futures):
             try:
                 y, m, saved = fut.result()
-                if saved:
+                if saved == "timeout":
+                    timeouts_by_month.append(f"{y}-{m:02d}")
+                elif saved:
                     log(f"    {y}-{m:02d}: {saved} rows")
             except Exception as e:
+                errors_by_month.append(str(e))
                 log(f"    month fetch error: {e}")
+    # Months that fully failed (timeout or exception) are indistinguishable
+    # from zero-check-in months unless we log them. Fail the phase if more
+    # than 20% of months errored — silent attendance gaps corrupt later
+    # analytics ("Q3 attendance dropped" when really the scrape missed it).
+    total = len(months)
+    failed = len(timeouts_by_month) + len(errors_by_month)
+    if total and failed / total > 0.2:
+        log(f"Phase 3 FAILED: {failed}/{total} months errored (timeouts={len(timeouts_by_month)}, errors={len(errors_by_month)})")
+        log(f"  failed timeouts: {', '.join(timeouts_by_month[:10])}{'…' if len(timeouts_by_month) > 10 else ''}")
+        sys.exit(4)
+    elif failed:
+        log(f"Phase 3 finished with {failed}/{total} months errored (below 20% threshold)")
 
 
 # ─── PHASE 4: Invoices year-by-year ────────────────────────────────
@@ -518,20 +590,28 @@ def phase4_invoices():
         end = f"31%2F12%2F{year}" if year < TODAY.year else TODAY_SLASH_ENC
         path = f"FilterInvoiceList?Start={start}&End={end}"
         url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}"
-        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/InvoiceList", timeout=60)
+        try:
+            data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/InvoiceList", timeout=60)
+        except CurlTimeout:
+            return (year, "timeout")
         saved = parse_json_response(data, f"ajax_invoices_{year}")
         return (year, saved)
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    year_timeouts = []
     with ThreadPoolExecutor(max_workers=4) as ex:
         futures = [ex.submit(fetch_year, y) for y in years]
         for fut in as_completed(futures):
             try:
                 y, saved = fut.result()
-                if saved:
+                if saved == "timeout":
+                    year_timeouts.append(y)
+                elif saved:
                     log(f"    {y}: {saved} rows")
             except Exception as e:
                 log(f"    year fetch error: {e}")
+    if year_timeouts:
+        log(f"Phase 4: {len(year_timeouts)} year(s) timed out: {sorted(year_timeouts)}")
 
 
 # ─── PHASE 5: Per-member details ───────────────────────────────────
@@ -660,15 +740,24 @@ def phase5_member_details():
     per_call_timeout = int(os.environ.get("PHASE5_CALL_TIMEOUT_SEC", "6"))
 
     def fetch_one(mid):
-        """Fetch and parse one member. Returns (mid, row|None)."""
+        """Fetch and parse one member. Returns (mid, row|outcome-string).
+        outcome-string is "timeout" / "empty" / "parse_error" — separated so
+        a stale-cookie storm or a server outage doesn't masquerade as
+        "all those members are just dead phantoms".
+        """
         url = f"{BASE}/Dashboard/GetMemberDetails?Id={mid}&_={int(time.time()*1000)}"
-        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/MemberProfile?id={mid}",
-                    timeout=per_call_timeout)
+        try:
+            data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/MemberProfile?id={mid}",
+                        timeout=per_call_timeout)
+        except CurlTimeout:
+            return mid, "timeout"
+        if not data:
+            return mid, "empty"
         try:
             obj = json.loads(data.decode("utf-8", errors="replace"))
             return mid, [fix_date(obj.get(k, "")) for k in fields]
         except Exception:
-            return mid, None
+            return mid, "parse_error"
 
     # Wall-clock budget for Phase 5. The upload step MUST run, so we cap
     # this phase well under the GH Action timeout. Anything not fetched in
@@ -683,25 +772,41 @@ def phase5_member_details():
     written = 0
     rows_by_id = {}
     skipped = 0
-    with ThreadPoolExecutor(max_workers=32) as ex:
+    timeout_count = 0
+    empty_count = 0
+    parse_error_count = 0
+    ex = ThreadPoolExecutor(max_workers=32)
+    try:
         futures = {ex.submit(fetch_one, mid): mid for mid in member_ids}
         for i, fut in enumerate(as_completed(futures), 1):
             if time.time() > deadline:
-                # Budget blown. Cancel everything still pending so the
-                # process can exit and the upload step can run.
+                # Budget blown. shutdown(cancel_futures=True) actually
+                # cancels queued futures (the bare fut.cancel() loop only
+                # cancelled not-yet-started ones — running threads kept
+                # burning per-call timeout, masking the "moving on" log).
                 skipped = len(member_ids) - i
                 log(f"    Phase 5 budget ({BUDGET_SEC}s) hit at {i}/{len(member_ids)}; "
                     f"cancelling {skipped} pending fetches and moving on.")
-                for f in futures:
-                    f.cancel()
                 break
             mid, row = fut.result()
-            if row is not None:
+            if isinstance(row, list):
                 rows_by_id[mid] = row
                 written += 1
+            elif row == "timeout":
+                timeout_count += 1
+            elif row == "empty":
+                empty_count += 1
+            else:
+                parse_error_count += 1
             if i % 100 == 0:
                 log(f"    {i}/{len(member_ids)} done ({written} successful, "
                     f"{int(deadline - time.time())}s budget left)")
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+    # Surface the failure-mode split so a stale-cookie storm or DNS issue
+    # isn't masked as "the members just don't exist anymore".
+    if timeout_count + empty_count + parse_error_count > 0:
+        log(f"    Phase 5 failures by class: timeout={timeout_count}, empty={empty_count}, parse_error={parse_error_count}")
     # Write in original Member Id order for stable output.
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
