@@ -106,4 +106,61 @@ describe("keepConversationalOnly", () => {
     ];
     expect(keepConversationalOnly(items)).toHaveLength(1);
   });
+
+  // Round-5 regression: gpt-5 assistant messages carry `id` (msg_…) and
+  // `providerData.reasoning_id` (rs_…) referencing server-side state.
+  // Preserving those refs and replaying without the reasoning blob trips:
+  //   "Item 'msg_…' of type 'message' was provided without its required
+  //    'reasoning' item: 'rs_…'"
+  // History must REBUILD items with text-only content, dropping ALL
+  // metadata, to fully decouple from server-side reasoning state.
+  it("STRIPS id and providerData from assistant messages (gpt-5 reasoning crash)", () => {
+    const items: AgentInputItem[] = [
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "how much in april?" }],
+        id: "msg_user_xyz",
+        providerData: { request_id: "req_123" },
+      } as any,
+      {
+        role: "assistant",
+        status: "completed",
+        id: "msg_091c7b53e90b933e006a0b69b9632c81909d6ab23f7e302740",
+        providerData: { reasoning_id: "rs_091c7b53e90b933e006a0b69b1d404819096e9fd6a415bc7ea" },
+        content: [{ type: "output_text", text: "₹5,67,297" }],
+      } as any,
+    ];
+    const out = keepConversationalOnly(items);
+    expect(out).toHaveLength(2);
+    for (const item of out) {
+      const o = item as any;
+      expect(o.id).toBeUndefined();
+      expect(o.providerData).toBeUndefined();
+      expect(o.status).toBeUndefined();
+      // Content is preserved as a clean text array.
+      expect(Array.isArray(o.content)).toBe(true);
+      expect(o.content[0]?.text).toBeTruthy();
+    }
+    expect((out[0] as any).content[0].text).toContain("april");
+    expect((out[1] as any).content[0].text).toContain("₹5,67,297");
+  });
+
+  it("rebuilds user item from plain string content", () => {
+    const items: AgentInputItem[] = [
+      { role: "user", content: "plain string question", id: "msg_x" } as any,
+    ];
+    const out = keepConversationalOnly(items);
+    expect(out).toHaveLength(1);
+    const o = out[0] as any;
+    expect(o.id).toBeUndefined();
+    expect(o.content[0].text).toBe("plain string question");
+  });
+
+  it("drops items whose text content is empty after stripping", () => {
+    const items: AgentInputItem[] = [
+      { role: "user", content: [] } as any,
+      { role: "assistant", status: "completed", content: [{ type: "refusal", refusal: "..." }] } as any,
+    ];
+    expect(keepConversationalOnly(items)).toEqual([]);
+  });
 });

@@ -206,6 +206,77 @@ describe("webhook: /reset clears history and responds", () => {
   });
 });
 
+describe("webhook: auto-retries on gpt-5 reasoning-pairing crash", () => {
+  // Round-5 regression: when the LLM call throws the "message ↔ reasoning"
+  // 400, the handler must wipe history and retry once silently so the
+  // owner gets an answer, not a scary "lost the thread" message.
+  it("first call throws reasoning-pairing 400 → second call (empty history) succeeds", async () => {
+    const llmMod: any = await import("../../src/llm.js");
+    llmMod.runLlm.mockReset();
+    const reasoningErr = new Error(
+      "400 Item 'msg_091c7b53e90b933e006a0b69b9632c81909d6ab23f7e302740' of type 'message' was provided without its required 'reasoning' item: 'rs_091c7b53e90b933e006a0b69b1d404819096e9fd6a415bc7ea'",
+    );
+    llmMod.runLlm
+      .mockImplementationOnce(async () => { throw reasoningErr; })
+      .mockImplementationOnce(async () => ({
+        text: "retry answer",
+        toolCalls: 1,
+        snapshotDates: {},
+        history: [],
+      }));
+    const { req, res, getStatus } = mockReqRes({
+      secret: "test-webhook-secret",
+      body: {
+        update_id: Date.now() + 10,
+        message: {
+          chat: { id: 100, type: "private" },
+          from: { first_name: "Robin" },
+          text: "what's the april number?",
+        },
+      },
+    });
+    await handler(req, res);
+    expect(getStatus()).toBe(200);
+    // User sees the retry answer, NOT the "lost the thread" message.
+    expect(sentMessages.some(m => m.text === "retry answer")).toBe(true);
+    expect(sentMessages.some(m => m.text.includes("Lost the conversation"))).toBe(false);
+    // runLlm called twice: original (failed) + retry with empty history.
+    expect(llmMod.runLlm).toHaveBeenCalledTimes(2);
+    const retryCall = llmMod.runLlm.mock.calls[1][0];
+    expect(retryCall.history).toEqual([]);
+  });
+
+  it("when even the retry fails, falls through to the named user-facing error", async () => {
+    const llmMod: any = await import("../../src/llm.js");
+    llmMod.runLlm.mockReset();
+    const reasoningErr = new Error(
+      "Item 'msg_xxx' was provided without its required 'reasoning' item: 'rs_yyy'",
+    );
+    llmMod.runLlm
+      .mockImplementationOnce(async () => { throw reasoningErr; })
+      .mockImplementationOnce(async () => { throw reasoningErr; });
+    const { req, res, getStatus } = mockReqRes({
+      secret: "test-webhook-secret",
+      body: {
+        update_id: Date.now() + 11,
+        message: {
+          chat: { id: 100, type: "private" },
+          from: { first_name: "Robin" },
+          text: "another question",
+        },
+      },
+    });
+    await handler(req, res);
+    expect(getStatus()).toBe(200);
+    // User sees the friendly memory-cleared message — not the raw "msg_..."
+    // OpenAI error.
+    const sent = sentMessages[sentMessages.length - 1]!;
+    expect(sent.text).toContain("Lost the conversation");
+    expect(sent.text).not.toContain("msg_");
+    expect(sent.text).not.toContain("rs_");
+  });
+});
+
 describe("webhook: ping always returns pong", () => {
   it("/ping from authorized owner returns pong", async () => {
     const { req, res } = mockReqRes({

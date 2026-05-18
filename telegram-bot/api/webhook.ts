@@ -109,16 +109,23 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
   const status = err?.status;
 
   // History pairing corruption — clear memory and tell user.
-  // Covers the older "tool_call not found" and the gpt-5 reasoning-pairing 400
-  // ("function_call … was provided without its required 'reasoning' item").
-  // We strip scratchpad before persisting, so this should not fire — but keep
-  // it as defense-in-depth in case the SDK ever leaks an unpaired item.
+  // Covers:
+  //   - "No tool call found for function call output" (older SDK)
+  //   - "tool_call … not found"
+  //   - "function_call … was provided without its required 'reasoning' item"
+  //   - "type 'message' was provided without its required 'reasoning' item"  ← gpt-5 message ↔ reasoning ref leak (round-5 fix)
+  //   - "reasoning … required …" generic
+  // history.ts rebuilds items from text only, which should prevent these.
+  // Keep these patterns as a backstop AND so the auto-retry loop in the
+  // handler can detect the class and retry with empty history.
   if (/No tool call found for function call output/i.test(msg) ||
       /tool_call.*not found/i.test(msg) ||
       /function_call.*required.*reasoning/i.test(msg) ||
-      /reasoning.*required.*following item/i.test(msg)) {
+      /reasoning.*required.*following item/i.test(msg) ||
+      /type ['"]message['"].*required.*reasoning/i.test(msg) ||
+      /without its required ['"]reasoning['"]\s+item/i.test(msg)) {
     return {
-      text: "Lost the conversation thread (tool-call pairing broke in OpenAI). I've cleared this chat's memory — ask again and I'll start fresh.",
+      text: "Lost the conversation thread (memory got out of sync with OpenAI). I've cleared this chat's memory — ask again and I'll start fresh.",
       resetMemory: true,
     };
   }
@@ -422,25 +429,41 @@ export default async function handler(req: any, res: any) {
       reply = slash;
     } else {
       // Show "typing..." in Telegram while the LLM works.
-      const llm = await withTypingIndicator(
-        config.telegramBotToken,
-        chatId,
-        () => runLlm({
+      const runOnce = (history: AgentInputItem[]) =>
+        runLlm({
           question: text,
           model: config.openaiModel,
           registry: blobRegistry,
-          history: historyByChat.get(chatId) ?? [],
+          history,
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-        }),
-      );
+        });
+      let llm;
+      try {
+        llm = await withTypingIndicator(
+          config.telegramBotToken, chatId,
+          () => runOnce(historyByChat.get(chatId) ?? []),
+        );
+      } catch (firstErr) {
+        // Auto-recovery: if the failure is a history-corruption class
+        // (gpt-5 message↔reasoning pairing, tool_call/reasoning mismatch),
+        // wipe this chat's history and retry ONCE with empty context.
+        // The user shouldn't have to see a "lost the thread" message and
+        // type the same question again — we silently rebuild from zero.
+        const { resetMemory } = describeError(firstErr);
+        if (!resetMemory) throw firstErr;
+        console.warn("[bot] history-corruption detected; auto-retrying with empty history", firstErr);
+        historyByChat.delete(chatId);
+        llm = await withTypingIndicator(
+          config.telegramBotToken, chatId,
+          () => runOnce([]),
+        );
+      }
       reply = llm.text;
       toolCalls = llm.toolCalls;
       snapshotInfo = Object.entries(llm.snapshotDates).map(([g, d]) => `${g}=${d}`).join(",");
-      // Persist only conversational turns (user + assistant text). Scratchpad
-      // (reasoning, function_call, function_call_output) is dropped — replaying
-      // it across turns trips the Responses API's reasoning↔function_call
-      // pairing constraint on gpt-5. The model can re-derive tool calls fresh
-      // on the next turn from the user-visible exchange.
+      // Persist only conversational turns (user + assistant TEXT). All
+      // metadata (id, providerData) is stripped by keepConversationalOnly
+      // — replaying it would trip gpt-5's reasoning-pairing constraint.
       const conversational = keepConversationalOnly(llm.history);
       const trimmed = conversational.slice(-MAX_HISTORY);
       historyByChat.set(chatId, trimmed);
