@@ -44,9 +44,10 @@ describe("loadSnapshotsWith", () => {
 
   it("returns status=error with the reason for non-404 failures", async () => {
     const out = await loadSnapshotsWith(networkFail, gyms);
-    expect(out.freeform.status).toBe("error");
-    if (out.freeform.status === "error") {
-      expect(out.freeform.reason).toContain("ETIMEDOUT");
+    const fresh = out.freeform!;
+    expect(fresh.status).toBe("error");
+    if (fresh.status === "error") {
+      expect(fresh.reason).toContain("ETIMEDOUT");
     }
   });
 
@@ -61,9 +62,9 @@ describe("loadSnapshotsWith", () => {
       { slug: "egym" },
       { slug: "third" },
     ]);
-    expect(out.freeform.status).toBe("ok");
-    expect(out.egym.status).toBe("missing");
-    expect(out.third.status).toBe("error");
+    expect(out.freeform!.status).toBe("ok");
+    expect(out.egym!.status).toBe("missing");
+    expect(out.third!.status).toBe("error");
   });
 });
 

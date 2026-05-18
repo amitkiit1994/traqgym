@@ -10,7 +10,7 @@
 
 import { Agent, run, tool, user } from "@openai/agents";
 import { z } from "zod";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, type Config } from "../src/config.js";
 import { BlobStoreRegistry } from "../src/data/blob-store.js";
 import { createAllowlistStore } from "../src/data/allowlist-store.js";
 import { parseCsv } from "../src/data/csv-parse.js";
@@ -18,15 +18,39 @@ import { buildListCsvsResult, CSV_HINTS } from "../src/tools/list-csvs.js";
 import { applyQuery } from "../src/tools/query-csv.js";
 import { sendTelegramMessage } from "../src/telegram/send-message.js";
 import { digestSystemPrompt } from "../src/digest-prompt.js";
-import { listGyms, isValidGymSlug } from "../src/gyms.js";
+import { listGyms, isValidGymSlug, getGym } from "../src/gyms.js";
 
-const config = loadConfig();
-const blobRegistry = new BlobStoreRegistry(config.blobBaseUrl);
-const allowlistStore = createAllowlistStore({
-  url: `${config.blobBaseUrl}/allowlist.json`,
-  token: config.blobReadWriteToken,
-});
-process.env.OPENAI_API_KEY = config.openaiApiKey;
+// Lazy config + singletons. Module-top-level throw would let Vercel return
+// 500 to the cron caller, masking which env var is missing.
+interface DigestDeps {
+  config: Config;
+  blobRegistry: BlobStoreRegistry;
+  allowlistStore: ReturnType<typeof createAllowlistStore>;
+}
+let cachedDeps: DigestDeps | null = null;
+let cachedConfigError: Error | null = null;
+
+function getDeps(): DigestDeps {
+  if (cachedConfigError) throw cachedConfigError;
+  if (cachedDeps) return cachedDeps;
+  try {
+    const config = loadConfig();
+    const deps: DigestDeps = {
+      config,
+      blobRegistry: new BlobStoreRegistry(config.blobBaseUrl),
+      allowlistStore: createAllowlistStore({
+        url: `${config.blobBaseUrl}/allowlist.json`,
+        token: config.blobReadWriteToken,
+      }),
+    };
+    process.env.OPENAI_API_KEY = config.openaiApiKey;
+    cachedDeps = deps;
+    return deps;
+  } catch (e) {
+    cachedConfigError = e as Error;
+    throw e;
+  }
+}
 
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
 // gpt-5 is too slow for the 60s function cap when computing per-gym briefs;
@@ -96,12 +120,12 @@ export async function loadSnapshotsWith(
   return out;
 }
 
-async function loadSnapshots(): Promise<Record<string, SnapshotLoad>> {
+async function loadSnapshots(registry: BlobStoreRegistry): Promise<Record<string, SnapshotLoad>> {
   const out: Record<string, SnapshotLoad> = {};
   await Promise.all(
     listGyms().map(async g => {
       try {
-        const p = await blobRegistry.for(g.slug).fetchLatest();
+        const p = await registry.for(g.slug).fetchLatest();
         out[g.slug] = { status: "ok", date: p.snapshot_date };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -140,11 +164,104 @@ export function anySnapshotLoaded(snapshots: Record<string, SnapshotLoad>): bool
   return Object.values(snapshots).some(s => s.status === "ok");
 }
 
-async function buildBrief(): Promise<{
+// Compute yesterday's collection per gym from the raw CSV (no LLM in the
+// loop). Used by post-LLM verification to confirm the brief's headlines
+// don't silently lie about real numbers. Returns null per-gym when the
+// payments CSV is unhealthy (parser misalignment).
+async function computeYesterdayCollectionPerGym(
+  registry: BlobStoreRegistry,
+  snapshots: Record<string, SnapshotLoad>,
+  todayIso: string,
+): Promise<Record<string, number | null>> {
+  const yesterday = new Date(todayIso + "T00:00:00Z");
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const yIso = yesterday.toISOString().slice(0, 10);
+  const out: Record<string, number | null> = {};
+  await Promise.all(
+    Object.entries(snapshots).map(async ([slug, s]) => {
+      if (s.status !== "ok") return;
+      try {
+        const store = registry.for(slug);
+        const text = await store.fetchCsv("payments");
+        const hint = CSV_HINTS.payments ?? { date: [], number: [] };
+        const { rows, columns, column_diagnostics, parse_errors } = parseCsv(text, {
+          dateColumns: hint.date,
+          numberColumns: hint.number,
+        });
+        const res = applyQuery(
+          rows,
+          {
+            filters: [{ col: "Payment Date", op: "between", val: [yIso, yIso] }],
+            agg: { col: "Paid Amount", fn: "sum" },
+          },
+          { columns, diagnostics: column_diagnostics, parse_errors },
+        );
+        if (res.warnings && res.warnings.length > 0) {
+          // Misaligned column → can't trust the number, treat as unknown.
+          out[slug] = null;
+          return;
+        }
+        out[slug] = typeof res.agg_result === "number" ? res.agg_result : null;
+      } catch (e) {
+        console.warn(`[digest] yesterday-verify failed for gym=${slug}: ${(e as Error).message}`);
+        out[slug] = null;
+      }
+    }),
+  );
+  return out;
+}
+
+// Format INR with Indian-style grouping commas (e.g. 305700 -> "3,05,700").
+function inrFormat(n: number): string {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
+}
+
+// Verifier: returns appended warning text if the brief's headline numbers
+// don't line up with the computed ground-truth per gym. Heuristic — looks
+// for the gym's name + a number that's within 1% of the computed value
+// (allows for rounding in the LLM's output). Misses are reported as
+// "verification failed for <gym>".
+function verifyBriefAgainstGroundTruth(
+  brief: string,
+  computed: Record<string, number | null>,
+): string | null {
+  const failures: string[] = [];
+  for (const [slug, expected] of Object.entries(computed)) {
+    if (expected === null) continue; // Snapshot unhealthy; not verifying.
+    const gym = getGym(slug);
+    // Find the gym's section in the brief (=== Gym Name ===).
+    const sectionMatch = brief.split("===").find(s => s.toUpperCase().includes(gym.name.toUpperCase()));
+    if (!sectionMatch) {
+      failures.push(`${gym.name}: section missing from brief`);
+      continue;
+    }
+    // Pull all rupee-formatted numbers from the section.
+    const nums: number[] = [];
+    for (const m of sectionMatch.matchAll(/₹\s*([\d,]+)/g)) {
+      const n = Number(m[1]!.replace(/,/g, ""));
+      if (Number.isFinite(n)) nums.push(n);
+    }
+    if (nums.length === 0) {
+      failures.push(`${gym.name}: no rupee figures present in section (expected ₹${inrFormat(expected)})`);
+      continue;
+    }
+    const tolerance = Math.max(expected * 0.02, 1);
+    const matched = nums.some(n => Math.abs(n - expected) <= tolerance);
+    if (!matched) {
+      failures.push(
+        `${gym.name}: brief shows ${nums.map(n => `₹${inrFormat(n)}`).join(", ")} but yesterday's collection was ₹${inrFormat(expected)}`,
+      );
+    }
+  }
+  if (failures.length === 0) return null;
+  return `\n\n[VERIFICATION WARNING — brief may be inaccurate]\n${failures.map(f => `- ${f}`).join("\n")}`;
+}
+
+async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
   text: string; toolCalls: number; snapshots: Record<string, string>; model: string;
 }> {
   const todayIso = new Date().toISOString().slice(0, 10);
-  const snapshotsStructured = await loadSnapshots();
+  const snapshotsStructured = await loadSnapshots(blobRegistry);
   if (!anySnapshotLoaded(snapshotsStructured)) {
     // Every gym's pointer failed — refuse rather than send a useless brief.
     // The cron's non-200 alert will surface the outage.
@@ -202,15 +319,21 @@ async function buildBrief(): Promise<{
         const store = blobRegistry.for(args.gym);
         const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
         const text = await store.fetchCsv(args.csv);
-        const { rows } = parseCsv(text, { dateColumns: hint.date, numberColumns: hint.number });
-        return applyQuery(rows, {
-          filters: args.filters?.map(normalize),
-          group_by: args.group_by ?? undefined,
-          agg: args.agg ?? undefined,
-          select: args.select ?? undefined,
-          order_by: args.order_by ?? undefined,
-          limit: args.limit ?? undefined,
+        const { columns, rows, parse_errors, column_diagnostics } = parseCsv(text, {
+          dateColumns: hint.date, numberColumns: hint.number,
         });
+        return applyQuery(
+          rows,
+          {
+            filters: args.filters?.map(normalize),
+            group_by: args.group_by ?? undefined,
+            agg: args.agg ?? undefined,
+            select: args.select ?? undefined,
+            order_by: args.order_by ?? undefined,
+            limit: args.limit ?? undefined,
+          },
+          { columns, diagnostics: column_diagnostics, parse_errors },
+        );
       } catch (e) {
         return { error: `query_csv failed for ${args.gym}/${args.csv}: ${(e as Error).message}` };
       }
@@ -229,8 +352,32 @@ async function buildBrief(): Promise<{
     [user("Generate today's owner brief covering every gym.")],
     { maxTurns: 30 },
   );
+  const briefRaw = result.finalOutput?.toString().trim() ?? "(no brief generated)";
+
+  // Post-LLM verification: independently compute yesterday's collection
+  // per gym from the raw CSV and assert the brief's text contains a number
+  // within 2% of that. If a gym section is missing OR carries the wrong
+  // number, append a clearly-marked warning so the owner sees we suspect
+  // the brief. Verification skips gyms whose payments CSV is unhealthy
+  // (parser misalignment) — there's no ground truth to check against.
+  let briefText = briefRaw;
+  try {
+    const expected = await computeYesterdayCollectionPerGym(
+      blobRegistry,
+      snapshotsStructured,
+      todayIso,
+    );
+    const warning = verifyBriefAgainstGroundTruth(briefRaw, expected);
+    if (warning) {
+      console.warn(`[digest] verification mismatch: ${warning.replace(/\n/g, " | ")}`);
+      briefText = briefRaw + warning;
+    }
+  } catch (e) {
+    console.warn(`[digest] verification step itself failed: ${(e as Error).message}`);
+  }
+
   return {
-    text: result.finalOutput?.toString().trim() ?? "(no brief generated)",
+    text: briefText,
     toolCalls,
     snapshots,
     model: DIGEST_MODEL,
@@ -250,6 +397,16 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  let deps: ReturnType<typeof getDeps>;
+  try {
+    deps = getDeps();
+  } catch (e) {
+    console.error("[digest] config init failed", e);
+    res.status(500).json({ ok: false, error: (e as Error).message });
+    return;
+  }
+  const { config, blobRegistry, allowlistStore } = deps;
+
   try {
     const recipients = new Set<number>(config.allowedChatIds);
     try {
@@ -259,7 +416,7 @@ export default async function handler(req: any, res: any) {
       console.warn("digest: allowlist read failed; sending to env owners only", e);
     }
 
-    const { text, toolCalls, snapshots, model: usedModel } = await buildBrief();
+    const { text, toolCalls, snapshots, model: usedModel } = await buildBrief(blobRegistry);
 
     const sends: Promise<void>[] = [];
     for (const chatId of recipients) {

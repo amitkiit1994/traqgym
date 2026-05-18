@@ -33,9 +33,9 @@ jobs:
           node-version: '20'
       - name: Install Python deps
         run: pip install -r telegram-bot/scripts/requirements-cron.txt
-      - name: Install Node deps (Blob SDK only)
+      - name: Install Node deps (Blob SDK + papaparse for upload integrity check)
         working-directory: telegram-bot
-        run: npm install --omit=dev @vercel/blob
+        run: npm install --omit=dev @vercel/blob papaparse
       - name: Fetch fresh CSVs for ${{ matrix.gym }}
         env:
           GYM: ${{ matrix.gym }}

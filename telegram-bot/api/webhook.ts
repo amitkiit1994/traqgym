@@ -1,5 +1,5 @@
 import type { AgentInputItem } from "@openai/agents";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, type Config } from "../src/config.js";
 import { isAllowed, checkSecretToken } from "../src/auth.js";
 import { createRateLimiter } from "../src/rate-limit.js";
 import { sendTelegramMessage, withTypingIndicator } from "../src/telegram/send-message.js";
@@ -12,8 +12,73 @@ import { createGithubDispatcher } from "../src/github-dispatch.js";
 import { runLlm } from "../src/llm.js";
 import { keepConversationalOnly } from "../src/history.js";
 
-const config = loadConfig();
-const rateLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
+// Cap on base64-encoded image payloads (roughly 4MB base64 = 3MB raw).
+// Larger photos blow up OpenAI vision cost AND can exceed the API's
+// per-message input limit, producing a confusing BadRequest the user
+// can't act on.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+// Idempotency window: Telegram retries unanswered webhook deliveries for
+// ~75 seconds. Without this, a cold-start + LLM run that brushes 60s can
+// trigger a duplicate that re-spends OpenAI credits, double-fires GitHub
+// dispatch, and confuses the conversation history. Bounded FIFO keeps
+// memory tiny (200 × ~24-byte numbers = <5KB).
+const DEDUP_MAX = 200;
+const seenUpdateIds: number[] = [];
+const seenUpdateSet = new Set<number>();
+function rememberUpdate(id: number): boolean {
+  if (seenUpdateSet.has(id)) return false;
+  seenUpdateSet.add(id);
+  seenUpdateIds.push(id);
+  if (seenUpdateIds.length > DEDUP_MAX) {
+    const evicted = seenUpdateIds.shift();
+    if (evicted !== undefined) seenUpdateSet.delete(evicted);
+  }
+  return true;
+}
+
+// Lazy config: throwing at module top-level produces a 500 from Vercel
+// BEFORE the secret-token check runs, which makes Telegram retry the
+// same update for up to an hour. Wrapping config in a lazy cache lets
+// the handler return a clean 200 with a logged error instead.
+interface WebhookDeps {
+  config: Config;
+  rateLimiter: ReturnType<typeof createRateLimiter>;
+  blobRegistry: BlobStoreRegistry;
+  allowlistStore: ReturnType<typeof createAllowlistStore>;
+  dispatcher: ReturnType<typeof createGithubDispatcher>;
+}
+let cachedDeps: WebhookDeps | null = null;
+let cachedConfigError: Error | null = null;
+
+function getDeps(): WebhookDeps {
+  if (cachedConfigError) throw cachedConfigError;
+  if (cachedDeps) return cachedDeps;
+  try {
+    const config = loadConfig();
+    const deps: WebhookDeps = {
+      config,
+      rateLimiter: createRateLimiter({ windowMs: 60_000, max: 20 }),
+      blobRegistry: new BlobStoreRegistry(config.blobBaseUrl),
+      allowlistStore: createAllowlistStore({
+        url: `${config.blobBaseUrl}/allowlist.json`,
+        token: config.blobReadWriteToken,
+      }),
+      dispatcher: createGithubDispatcher({
+        pat: config.githubPat,
+        repo: config.githubRepo,
+        workflow: "refresh-export.yml",
+      }),
+    };
+    // OpenAI Agents SDK auto-reads OPENAI_API_KEY from env.
+    process.env.OPENAI_API_KEY = config.openaiApiKey;
+    cachedDeps = deps;
+    return deps;
+  } catch (e) {
+    cachedConfigError = e as Error;
+    throw e;
+  }
+}
 
 // Per-chat conversation history. In-memory means it resets on each Vercel
 // cold start, which is fine for a low-volume 2-user bot: warm container
@@ -131,23 +196,6 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
   };
 }
 
-// Per-gym Blob stores share one base URL; the registry caches them.
-const blobRegistry = new BlobStoreRegistry(config.blobBaseUrl);
-// Allowlist lives at the Blob root (same for all gyms — bot is owner-only).
-const allowlistUrl = `${config.blobBaseUrl}/allowlist.json`;
-const allowlistStore = createAllowlistStore({
-  url: allowlistUrl,
-  token: config.blobReadWriteToken,
-});
-const dispatcher = createGithubDispatcher({
-  pat: config.githubPat,
-  repo: config.githubRepo,
-  workflow: "refresh-export.yml",
-});
-
-// OpenAI Agents SDK auto-reads OPENAI_API_KEY from env.
-process.env.OPENAI_API_KEY = config.openaiApiKey;
-
 interface TgPhotoSize {
   file_id: string;
   width: number;
@@ -156,6 +204,7 @@ interface TgPhotoSize {
 }
 
 interface TelegramUpdate {
+  update_id?: number;
   message?: {
     chat: { id: number; type: string };
     from?: { first_name?: string; username?: string };
@@ -174,6 +223,19 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  // Resolve config lazily. A misconfigured deploy throws here; we return
+  // 200 with a logged error instead of letting Vercel return 500 (which
+  // Telegram interprets as transient and retries forever).
+  let deps: ReturnType<typeof getDeps>;
+  try {
+    deps = getDeps();
+  } catch (e) {
+    console.error("[webhook] config init failed; returning 200 to suppress Telegram retry storm", e);
+    res.status(200).end();
+    return;
+  }
+  const { config, rateLimiter, blobRegistry, allowlistStore, dispatcher } = deps;
+
   const tokenHeader = req.headers["x-telegram-bot-api-secret-token"];
   if (
     !checkSecretToken(
@@ -186,6 +248,11 @@ export default async function handler(req: any, res: any) {
   }
 
   const update = req.body as TelegramUpdate;
+  // Idempotency: Telegram retries on >75s response. Drop duplicates.
+  if (typeof update?.update_id === "number" && !rememberUpdate(update.update_id)) {
+    res.status(200).end();
+    return;
+  }
   const msg = update?.message;
   if (!msg) {
     res.status(200).end();
@@ -268,12 +335,29 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // Photo → attach the largest resolution as image content for GPT vision.
+  // Photo → attach the largest resolution that fits MAX_IMAGE_BYTES.
+  // Telegram's photo array is small→large; pick the largest whose declared
+  // file_size fits, or fall back to the smallest if even that exceeds the
+  // cap (vision API will still likely refuse — we surface a clear message).
   if (msg.photo && msg.photo.length > 0) {
     try {
       inputKind = "photo";
-      const largest = msg.photo[msg.photo.length - 1]!;
-      const file = await downloadTelegramFile({ token: config.telegramBotToken, fileId: largest.file_id });
+      const sorted = [...msg.photo].sort(
+        (a, b) => (b.file_size ?? b.width * b.height) - (a.file_size ?? a.width * a.height),
+      );
+      const pick =
+        sorted.find(s => (s.file_size ?? 0) > 0 && (s.file_size ?? 0) <= MAX_IMAGE_BYTES)
+        ?? sorted[sorted.length - 1]!;
+      const file = await downloadTelegramFile({ token: config.telegramBotToken, fileId: pick.file_id });
+      if (file.bytes.byteLength > MAX_IMAGE_BYTES) {
+        await sendTelegramMessage({
+          token: config.telegramBotToken,
+          chatId,
+          text: `Image is too large (${(file.bytes.byteLength / 1024 / 1024).toFixed(1)}MB > ${MAX_IMAGE_BYTES / 1024 / 1024}MB). Resize and resend.`,
+        });
+        res.status(200).end();
+        return;
+      }
       imageUrls.push(toDataUrl(file, file.mimeType ?? "image/jpeg"));
       if (!text) text = "Look at this image and tell me what's relevant given the gym data.";
     } catch (e) {

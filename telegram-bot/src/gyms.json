@@ -1,0 +1,7 @@
+{
+  "$schema": "Single source of truth for gym registry. Both gyms.ts (bot) and migrate-blob-layout.mjs (one-shot script) read this so adding a gym is a one-line change. passwordEnv is optional metadata used by the scraper, not the bot.",
+  "gyms": [
+    { "slug": "freeform", "name": "Free Form Fitness", "passwordEnv": "FB_PASSWORD_FREEFORM" },
+    { "slug": "egym",     "name": "EGYM Lokhandwala",  "passwordEnv": "FB_PASSWORD_EGYM" }
+  ]
+}

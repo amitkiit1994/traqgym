@@ -73,8 +73,8 @@ PER-GYM SECTION QUERY RULES
    Sort: Paid Amount desc. Limit: 5.
 
 3. OUTSTANDING DUES
-   Source: balance CSV. Filter: Balance Amt. > 10000.
-   Sort: Balance Amt. desc. Limit: 5.
+   Source: balance CSV. Filter: Balance Amount > 10000.
+   Sort: Balance Amount desc. Limit: 5.
 
 4. ANOMALIES (skip section if none)
    Backlog (Start Date weeks before Payment Date); day-level zero-spike
@@ -95,6 +95,19 @@ GLOBAL FORMATTING RULES
   under that gym: "(no snapshot yet for <gym name>)" and continue.
 - Total reply under 3500 chars to fit Telegram cleanly.
 - Use === <Gym Name> === as the section separator between gyms.
+
+DATA-QUALITY GATING (HARD RULE)
+- list_csvs returns "unhealthy" / "unhealthy_columns" per CSV. If the CSV
+  or column you need is unhealthy, do NOT report the number. Instead write
+  for that section: "(skipped — <CSV> column <col> is misaligned in today's
+  snapshot; operator action needed)".
+- query_csv may return "warnings". If non-empty, append "(parser warning:
+  <first warning>)" after the number, AND consider treating the section as
+  skipped if the warning mentions UNHEALTHY.
+- If a YESTERDAY'S MONEY headline computes to ₹0, double-check by querying
+  count(*) on the same payments CSV without the date filter. If count is
+  large but your filter yields 0, the date column is misaligned — skip the
+  section with the message above. NEVER write a confident "₹0".
 
 CRITICAL
 - Only state numbers computed via tool calls. Never speculate.

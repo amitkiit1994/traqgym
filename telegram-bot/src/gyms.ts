@@ -20,10 +20,9 @@ export interface Gym {
   passwordEnv: string;
 }
 
-export const GYMS: ReadonlyArray<Gym> = [
-  { slug: "freeform", name: "Free Form Fitness", passwordEnv: "FB_PASSWORD_FREEFORM" },
-  { slug: "egym",     name: "EGYM Lokhandwala",  passwordEnv: "FB_PASSWORD_EGYM" },
-] as const;
+import gymsJson from "./gyms.json" with { type: "json" };
+
+export const GYMS: ReadonlyArray<Gym> = (gymsJson.gyms as Gym[]);
 
 export type GymSlug = (typeof GYMS)[number]["slug"];
 

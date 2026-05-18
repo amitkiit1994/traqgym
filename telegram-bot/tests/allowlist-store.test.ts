@@ -63,4 +63,46 @@ describe("allowlist store", () => {
     const al = await s.read();
     expect(al.approved).toEqual([]);
   });
+
+  // Original bug: add()/remove() went through the 30s read-cache, so a
+  // stale read could write a payload missing a newly-added entry from a
+  // concurrent /approve. add() and remove() now force-fresh the read.
+  it("add() bypasses the read cache so concurrent mutations see latest", async () => {
+    // First read returns empty (gets cached). Then someone else adds chat 7.
+    // Our add(8) should fetch fresh and see {7}, then write {7, 8} — not
+    // overwrite to just {8} based on the cached empty value.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ approved: [] })))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          approved: [{ chatId: 7, addedAt: "z", addedBy: 1 }],
+        })),
+      );
+    const s = createAllowlistStore({ url: "u", token: "t", fetch: fetchMock });
+    await s.read(); // warms cache with []
+    const next = await s.add({ chatId: 8, addedAt: "now", addedBy: 1 });
+    const ids = next.approved.map(e => e.chatId).sort();
+    expect(ids).toEqual([7, 8]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("remove() bypasses the read cache so concurrent mutations see latest", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ approved: [{ chatId: 7, addedAt: "x", addedBy: 1 }] })))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          approved: [
+            { chatId: 7, addedAt: "x", addedBy: 1 },
+            { chatId: 9, addedAt: "y", addedBy: 1 },
+          ],
+        })),
+      );
+    const s = createAllowlistStore({ url: "u", token: "t", fetch: fetchMock });
+    await s.read(); // warm cache
+    const next = await s.remove(7);
+    expect(next.approved.map(e => e.chatId)).toEqual([9]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

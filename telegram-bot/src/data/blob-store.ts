@@ -31,10 +31,20 @@ export interface BlobStoreOptions {
   cacheTtlMs?: number;
 }
 
+// Cap on per-store CSV cache entries. A warm Vercel container queries the
+// same handful of CSVs repeatedly within the 60s pointer-cache window; an
+// LRU bounded to MAX_CSV_CACHE keeps memory predictable on large tenants
+// (EGYM payments alone is ~5MB).
+const MAX_CSV_CACHE = 8;
+
 export function createBlobStore(opts: BlobStoreOptions): BlobStore {
   const fetcher = opts.fetch ?? globalThis.fetch;
   const ttl = opts.cacheTtlMs ?? 60_000;
   let cached: { pointer: LatestPointer; at: number } | null = null;
+  // Map iteration is insertion-order in JS → poor-man's LRU via re-insert
+  // on hit. Cleared on pointer rotation AND every fetchLatest (even if the
+  // pointer didn't change) to make sure a warm container can't serve a
+  // 5-minute-stale CSV after another container rotated the pointer.
   const csvCache = new Map<string, string>();
 
   async function fetchLatest(): Promise<LatestPointer> {
@@ -56,11 +66,21 @@ export function createBlobStore(opts: BlobStoreOptions): BlobStore {
       );
     }
     const hit = csvCache.get(name);
-    if (hit) return hit;
+    if (hit !== undefined) {
+      // Re-insert to mark as MRU for the LRU eviction policy.
+      csvCache.delete(name);
+      csvCache.set(name, hit);
+      return hit;
+    }
     const res = await fetcher(url, { cache: "no-store" });
     if (!res.ok) throw new Error(`CSV ${name} fetch failed for gym '${opts.gym}': ${res.status}`);
     const text = await res.text();
     csvCache.set(name, text);
+    while (csvCache.size > MAX_CSV_CACHE) {
+      const oldest = csvCache.keys().next().value;
+      if (oldest === undefined) break;
+      csvCache.delete(oldest);
+    }
     return text;
   }
 

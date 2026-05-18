@@ -1,4 +1,5 @@
-import { parseCsv } from "../data/csv-parse.js";
+import { parseCsv, unhealthyColumns } from "../data/csv-parse.js";
+import type { ColumnDiagnostic } from "../data/csv-parse.js";
 import type { BlobStore } from "../data/blob-store.js";
 
 export interface CsvMeta {
@@ -8,11 +9,20 @@ export interface CsvMeta {
   date_columns: string[];
   number_columns: string[];
   sample_rows: Record<string, string | number | null>[];
+  /** Per-column parse failure stats. Empty if no hinted typed columns. */
+  column_diagnostics: Record<string, ColumnDiagnostic>;
+  /** Columns whose parse-failure rate exceeds 5% — model MUST refuse to
+   * filter/aggregate on these and surface the misalignment to the user. */
+  unhealthy_columns: string[];
+  /** Structural CSV parse errors from Papa (delimiter/quote issues). */
+  parse_errors: string[];
+  /** True iff any hinted typed column is unhealthy. The agent's prompt
+   * treats unhealthy CSVs as "refuse to answer numeric questions; tell the
+   * user the snapshot is misaligned for column X". */
+  unhealthy: boolean;
 }
 
 export interface ListCsvsResult {
-  /** Gym slug this listing belongs to. Echoes the store's gym so the model
-   * sees which gym's data it just got back. */
   gym: string;
   snapshot_date: string;
   snapshot_ist: string;
@@ -63,10 +73,11 @@ export async function buildListCsvsResult(store: BlobStore): Promise<ListCsvsRes
   for (const name of names) {
     const hint = CSV_HINTS[name] ?? { date: [], number: [] };
     const text = await store.fetchCsv(name);
-    const { columns, rows } = parseCsv(text, {
+    const { columns, rows, parse_errors, column_diagnostics } = parseCsv(text, {
       dateColumns: hint.date,
       numberColumns: hint.number,
     });
+    const unhealthy = unhealthyColumns(column_diagnostics);
     csvs.push({
       name,
       rows: rows.length,
@@ -74,6 +85,10 @@ export async function buildListCsvsResult(store: BlobStore): Promise<ListCsvsRes
       date_columns: hint.date.filter(d => columns.includes(d)),
       number_columns: hint.number.filter(d => columns.includes(d)),
       sample_rows: rows.slice(0, SAMPLE_SIZE),
+      column_diagnostics,
+      unhealthy_columns: unhealthy,
+      parse_errors,
+      unhealthy: unhealthy.length > 0 || parse_errors.length > 0,
     });
   }
   return {

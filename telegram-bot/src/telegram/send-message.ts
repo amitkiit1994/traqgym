@@ -1,3 +1,5 @@
+import { redactSecrets } from "../redact.js";
+
 export const TELEGRAM_MAX_MESSAGE = 3500;
 
 export function chunkText(text: string, max = TELEGRAM_MAX_MESSAGE): string[] {
@@ -60,7 +62,10 @@ export async function withTypingIndicator<T>(
   fetcher?: typeof fetch,
 ): Promise<T> {
   const ping = () => sendChatAction({ token, chatId, action: "typing", fetch: fetcher });
-  ping(); // immediate first ping
+  // Fire-and-forget the first ping. .catch suppresses any rejection so it
+  // can't surface as an unhandled-rejection warning when the function
+  // context tears down before the inflight request resolves.
+  void ping().catch(() => {});
   const interval = setInterval(ping, 4000);
   try {
     return await fn();
@@ -80,7 +85,10 @@ export async function sendTelegramMessage(input: SendMessageInput): Promise<void
       body: JSON.stringify({ chat_id: input.chatId, text: chunk }),
     });
     if (!res.ok) {
-      throw new Error(`Telegram sendMessage failed: ${res.status} ${await res.text()}`);
+      const body = await res.text();
+      throw new Error(
+        `Telegram sendMessage failed: ${res.status} ${redactSecrets(body).slice(0, 200)}`,
+      );
     }
   }
 }

@@ -11,6 +11,15 @@
 import { put, list, del } from "@vercel/blob";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve, basename, extname } from "node:path";
+import Papa from "papaparse";
+
+// Absolute row floors per critical CSV per gym. Catches "two bad days in a
+// row" scenarios where the >50% drop check goes blind (previous count of 0
+// makes the percentage check pass anything). Bypassed for first-ever upload.
+const ROW_FLOORS = {
+  freeform: { payments: 50,  database: 50,  members: 50,  balance: 1,  memberenrollment: 50, activeinactive: 50 },
+  egym:     { payments: 1000, database: 1000, members: 100, balance: 5,  memberenrollment: 1000, activeinactive: 100 },
+};
 
 // FB export filename → canonical CSV name used in latest.json
 const NAME_MAP = {
@@ -61,10 +70,21 @@ for (const file of files) {
   }
   const full = resolve(dir, file);
   const text = await readFile(full, "utf8");
-  rowCounts[canonical] = Math.max(
-    0,
-    text.split(/\r?\n/).filter(l => l.length > 0).length - 1,
-  );
+  // Use Papa.parse to count actual CSV records, not raw newlines.
+  // A multi-line Remarks field would inflate the line-count proxy AND a
+  // misplaced HTML body without commas could squeak past the >50% drop
+  // check. Real parse rejects HTML (parsed.errors fires; data.length=0
+  // or 1 with junk columns).
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: "greedy" });
+  rowCounts[canonical] = parsed.data?.length ?? 0;
+  if (parsed.errors && parsed.errors.length > 0) {
+    // Surface structural problems (delimiter mismatch suggests we got an
+    // HTML login page instead of a CSV). Don't fail here — the floor
+    // check below handles "obviously wrong" cases; but log loudly.
+    console.warn(
+      `::warning::${canonical}: Papa.parse reported ${parsed.errors.length} errors (first: ${parsed.errors[0].type}/${parsed.errors[0].code})`,
+    );
+  }
 
   const result = await put(`csv/${gym}/${datePart}/${canonical}.csv`, text, {
     access: "public",
@@ -145,6 +165,25 @@ if (prevBlob) {
       console.error("Likely cause: stale FB cookie or scraper crash. Per-CSV blobs uploaded but latest.json is unchanged.");
       process.exit(2);
     }
+  }
+}
+
+// Absolute floor check: catches "yesterday was zero too, so % drop check
+// passes anything" — the blindspot that lets two bad days ship in a row.
+// Only enforced when this gym has a floor table; unknown gyms get the
+// historical (relative-only) behavior.
+const floors = ROW_FLOORS[gym];
+if (floors) {
+  const belowFloor = [];
+  for (const [name, floor] of Object.entries(floors)) {
+    const cur = rowCounts[name] ?? 0;
+    if (cur < floor) belowFloor.push(`${name}: ${cur} rows < floor ${floor}`);
+  }
+  if (belowFloor.length > 0) {
+    console.error("REFUSING to swap latest.json — critical CSVs are below absolute row floor:");
+    for (const b of belowFloor) console.error("  " + b);
+    console.error("Likely cause: stale FB cookie, scraper auth failure, or HTML-instead-of-CSV response.");
+    process.exit(2);
   }
 }
 

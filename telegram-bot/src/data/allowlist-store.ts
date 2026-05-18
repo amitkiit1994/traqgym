@@ -66,8 +66,17 @@ export function createAllowlistStore(opts: AllowlistStoreOptions): AllowlistStor
     cached = { value, at: Date.now() };
   }
 
+  // Force a fresh read from the blob (bypass 30s cache) — used by mutate
+  // paths so concurrent /approve and /revoke can't write stale state on
+  // top of each other. Still racy if two writes interleave (Vercel Blob
+  // has no CAS), but at least the read side always sees the latest.
+  async function readFresh(): Promise<Allowlist> {
+    cached = null;
+    return read();
+  }
+
   async function add(entry: AllowlistEntry): Promise<Allowlist> {
-    const current = await read();
+    const current = await readFresh();
     const without = current.approved.filter(e => e.chatId !== entry.chatId);
     const next: Allowlist = { approved: [...without, entry] };
     await write(next);
@@ -75,7 +84,7 @@ export function createAllowlistStore(opts: AllowlistStoreOptions): AllowlistStor
   }
 
   async function remove(chatId: number): Promise<Allowlist> {
-    const current = await read();
+    const current = await readFresh();
     const next: Allowlist = {
       approved: current.approved.filter(e => e.chatId !== chatId),
     };

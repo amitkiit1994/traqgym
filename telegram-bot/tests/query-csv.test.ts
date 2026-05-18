@@ -100,4 +100,46 @@ describe("applyQuery errors", () => {
     const r = applyQuery(rows, { filters: [{ col: "NoSuchCol", op: "eq", val: 1 }] });
     expect(r.error).toMatch(/column/i);
   });
+
+  // Original bug: column-name validation was gated on rows.length > 0, so a
+  // typo'd column on an empty CSV returned { row_count: 0, agg_result: 0 }
+  // with no error — silent zero. Now applyQuery accepts an authoritative
+  // columns list via meta so it can validate even when rows is empty.
+  it("validates columns even on empty CSV when columns list provided via meta", () => {
+    const r = applyQuery(
+      [],
+      { filters: [{ col: "NoSuchCol", op: "eq", val: 1 }] },
+      { columns: ["Payment Date", "Paid Amount"] },
+    );
+    expect(r.error).toMatch(/Unknown column: NoSuchCol/);
+  });
+
+  it("attaches warning when filter column has high parse-failure rate", () => {
+    const r = applyQuery(
+      rows,
+      {
+        filters: [{ col: "Payment Date", op: "between", val: ["2026-04-01", "2026-04-07"] }],
+        agg: { col: "Paid Amount", fn: "sum" },
+      },
+      {
+        columns: Object.keys(rows[0]!),
+        diagnostics: {
+          "Payment Date": { parsed_count: 1, null_count: 4, parse_failed_count: 4, sample_bad_values: ["bad-date"] },
+        },
+      },
+    );
+    expect(r.warnings).toBeDefined();
+    expect(r.warnings!.some(w => w.includes("UNHEALTHY"))).toBe(true);
+    expect(r.warnings!.some(w => w.includes("bad-date"))).toBe(true);
+  });
+
+  it("attaches warning for parse_errors", () => {
+    const r = applyQuery(
+      rows,
+      { filters: [{ col: "Payment Mode", op: "eq", val: "Cash" }] },
+      { columns: Object.keys(rows[0]!), parse_errors: ["Quotes/MissingQuotes @row 3: ..."] },
+    );
+    expect(r.warnings).toBeDefined();
+    expect(r.warnings!.join(" ")).toMatch(/structural parse/i);
+  });
 });

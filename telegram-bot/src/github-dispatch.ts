@@ -1,3 +1,5 @@
+import { redactSecrets } from "./redact.js";
+
 export interface DispatchOptions {
   pat: string | undefined;
   repo: string;
@@ -25,7 +27,10 @@ export function createGithubDispatcher(
       body: JSON.stringify({ ref }),
     });
     if (!res.ok) {
-      throw new Error(`GitHub dispatch failed: ${res.status} ${await res.text()}`);
+      const body = await res.text();
+      throw new Error(
+        `GitHub dispatch failed: ${res.status} ${redactSecrets(body).slice(0, 200)}`,
+      );
     }
   };
 }

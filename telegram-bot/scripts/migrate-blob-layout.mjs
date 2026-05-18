@@ -23,6 +23,15 @@
  */
 
 import { put, list, del, head } from "@vercel/blob";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Read the single source-of-truth gym list (shared with src/gyms.ts) so
+// adding a new gym doesn't require editing this script too.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const GYMS_JSON_PATH = resolve(__dirname, "../src/gyms.json");
+const KNOWN_GYM_SLUGS = JSON.parse(readFileSync(GYMS_JSON_PATH, "utf8")).gyms.map(g => g.slug);
 
 const args = process.argv.slice(2);
 const gym = args.includes("--gym") ? args[args.indexOf("--gym") + 1] : undefined;
@@ -39,9 +48,8 @@ if (!token) { console.error("BLOB_READ_WRITE_TOKEN missing"); process.exit(1); }
 console.log(`Migrating legacy csv/* layout → csv/${gym}/*  (dry-run=${dryRun}, cleanup=${cleanup})`);
 
 // 1. Enumerate legacy blobs under csv/ that AREN'T already under csv/<gym>/.
-//    Gym slugs are alphabetic-only (no digits), so we use that to distinguish
-//    csv/freeform/... (gym-scoped) from csv/2026-05-17/... (legacy date-scoped).
-const KNOWN_GYM_SLUGS = ["freeform", "egym"];
+//    Gym slugs come from the shared gyms.json registry (loaded above) so
+//    a new gym added to gyms.json automatically participates here too.
 const legacy = [];
 let cursor;
 do {

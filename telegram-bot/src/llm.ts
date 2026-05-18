@@ -84,6 +84,23 @@ WORKFLOW RULES
 - For follow-up questions, use conversation history. If the prior turn was
   about a specific gym, "give me details" means details for THAT gym.
 
+DATA-QUALITY GATING (HARD RULE — overrides everything below)
+- list_csvs returns "column_diagnostics" + "unhealthy_columns" + "unhealthy"
+  per CSV. If a CSV is "unhealthy: true" OR the column you intend to filter
+  or aggregate is in "unhealthy_columns", you MUST NOT report a numeric
+  answer. Instead, reply ONE sentence:
+    "Snapshot for <gym> has a misaligned <column> column (samples: <bad>) —
+     numbers would be wrong. Operator needs to check the scraper / parser."
+  and stop. Do not invent a workaround.
+- query_csv may return a "warnings" array. If non-empty, you MUST mention
+  the warning in your reply ("Note: <warning>") AND treat the underlying
+  number as suspect (qualify it: "approximate / parser-flagged").
+- Implausible-zero check: if a filtered aggregate is 0 but the unfiltered
+  row count for that CSV is > 100, your filter is almost certainly wrong.
+  Re-examine column names, date formats, or call list_csvs again to inspect
+  sample_rows. Never confidently report 0 unless the unfiltered row count is
+  also low or the warnings array is empty AND samples confirm zero is real.
+
 WHEN ANSWERING NUMERIC QUESTIONS, ALSO RUN THESE CHECKS AND FLAG (per gym):
 1. Backlog data entry: if many membership Start Dates are weeks before
    their Payment Date, flag as batch catch-up entry.
@@ -177,7 +194,9 @@ function buildTools(
     if (s.status === "error") {
       return {
         error: `Gym '${gym}' snapshot is currently unreachable: ${s.reason}`,
-        hint: `Tell the user: "Snapshot for ${gym} is unreachable — try again later." Do not retry.`,
+        hint:
+          `Tell the user the snapshot is unreachable AND name the cause so the operator (who is the same person) can fix it. ` +
+          `Use this exact shape: "Snapshot for ${gym} is unreachable (${s.reason}). Operator action needed." Do not retry.`,
       };
     }
     return null;
@@ -244,7 +263,7 @@ function buildTools(
         const store = registry.for(args.gym);
         const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
         const text = await store.fetchCsv(args.csv);
-        const { rows } = parseCsv(text, {
+        const { columns, rows, parse_errors, column_diagnostics } = parseCsv(text, {
           dateColumns: hint.date,
           numberColumns: hint.number,
         });
@@ -253,14 +272,18 @@ function buildTools(
           const pointer = await store.fetchLatest();
           snapshots[args.gym] = pointer.snapshot_date;
         }
-        return applyQuery(rows, {
-          filters: args.filters?.map(normalizeFilter),
-          group_by: args.group_by ?? undefined,
-          agg: args.agg ?? undefined,
-          select: args.select ?? undefined,
-          order_by: args.order_by ?? undefined,
-          limit: args.limit ?? undefined,
-        });
+        return applyQuery(
+          rows,
+          {
+            filters: args.filters?.map(normalizeFilter),
+            group_by: args.group_by ?? undefined,
+            agg: args.agg ?? undefined,
+            select: args.select ?? undefined,
+            order_by: args.order_by ?? undefined,
+            limit: args.limit ?? undefined,
+          },
+          { columns, diagnostics: column_diagnostics, parse_errors },
+        );
       } catch (e) {
         return {
           error: `query_csv failed for gym ${args.gym}, csv ${args.csv}: ${(e as Error).message}`,
