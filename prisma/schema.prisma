@@ -1,5 +1,13 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Vercel's serverless runtime is rhel-openssl-3.0.x (Amazon Linux 2023).
+  // Without this, every Prisma call on prod logs:
+  //   "Prisma Client could not locate the Query Engine for runtime
+  //    'rhel-openssl-3.0.x'. Generated for 'debian-openssl-3.0.x'."
+  // and the request 500s — which on NextAuth manifests as a generic
+  // /api/auth/error redirect because the failure happens mid-lookup.
+  // `native` keeps local dev (macOS / linux) working.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
