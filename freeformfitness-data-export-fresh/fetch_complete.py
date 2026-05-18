@@ -535,21 +535,107 @@ def phase4_invoices():
 
 
 # ─── PHASE 5: Per-member details ───────────────────────────────────
+def _parse_date(s):
+    """Try common FB date formats. Returns date or None."""
+    if not s or not isinstance(s, str):
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _collect_active_member_ids(cutoff_date):
+    """Union of Member Ids that show signs of life since cutoff_date.
+    Sources (anything more recent than cutoff is "active"):
+      - payments: any Payment Date >= cutoff
+      - memberenrollment: any Start Date or End Date >= cutoff
+      - balance: present (outstanding dues = active concern, always)
+    """
+    active = set()
+
+    def scan_csv(name, id_cols, date_cols, always_active=False):
+        fp = OUT_DIR / name
+        if not fp.exists():
+            return 0
+        added = 0
+        with open(fp, newline="", encoding="utf-8") as f:
+            rdr = csv.DictReader(f)
+            for r in rdr:
+                mid = ""
+                for c in id_cols:
+                    mid = (r.get(c) or "").strip()
+                    if mid:
+                        break
+                if not mid or not mid.isdigit():
+                    continue
+                if always_active:
+                    if mid not in active:
+                        active.add(mid)
+                        added += 1
+                    continue
+                for c in date_cols:
+                    d = _parse_date(r.get(c, ""))
+                    if d and d >= cutoff_date:
+                        if mid not in active:
+                            active.add(mid)
+                            added += 1
+                        break
+        log(f"    {name}: +{added} member ids")
+        return added
+
+    scan_csv("export_payment_all.csv",
+             id_cols=["Member Id", "MemberId"],
+             date_cols=["Payment Date", "End Date"])
+    scan_csv("export_memberenrollment_all.csv",
+             id_cols=["Member Id", "MemberId"],
+             date_cols=["Start Date", "End Date"])
+    scan_csv("export_balance_all.csv",
+             id_cols=["Member Id", "MemberId"],
+             date_cols=[], always_active=True)
+    return active
+
+
 def phase5_member_details():
     log("=== PHASE 5: Per-member details (GetMemberDetails) ===")
     # Extract member IDs from refreshed database export.
-    member_ids = []
     db_csv = OUT_DIR / "export_database_all.csv"
     if not db_csv.exists():
         log("  database CSV missing — skipping")
         return
+    db_ids = []
     with open(db_csv, newline="", encoding="utf-8") as f:
         rdr = csv.DictReader(f)
         for r in rdr:
             mid = r.get("Prospect Id") or r.get("Member Id") or ""
             mid = mid.strip()
             if mid and mid.isdigit():
-                member_ids.append(mid)
+                db_ids.append(mid)
+
+    # Active-member filter: only fetch details for members who've shown
+    # signs of life in the last ACTIVE_YEARS years. EGYM has ~11k members
+    # in its database CSV but most are years-deactivated phantoms whose
+    # detail endpoint returns nothing. Filtering them out frees the
+    # budget for current members where details actually exist.
+    active_years = int(os.environ.get("PHASE5_ACTIVE_YEARS", "5"))
+    if active_years > 0:
+        cutoff = date.today().replace(year=date.today().year - active_years)
+        log(f"  building active-member set (cutoff: {cutoff})...")
+        active = _collect_active_member_ids(cutoff)
+        if active:
+            member_ids = [m for m in db_ids if m in active]
+            log(f"  filtered {len(db_ids)} → {len(member_ids)} "
+                f"(active in last {active_years}y)")
+        else:
+            log(f"  no signal CSVs — falling back to full database list")
+            member_ids = db_ids
+    else:
+        member_ids = db_ids
 
     log(f"  fetching details for {len(member_ids)} members (parallel)...")
     out_csv = OUT_DIR / "member_details_all.csv"
@@ -568,10 +654,16 @@ def phase5_member_details():
                 return v
         return v
 
+    # Per-call timeout: short. Real successes return in <2s. Dead/stale
+    # IDs (most of the long tail on EGYM) burn the full timeout returning
+    # nothing — cutting it from 20s → 6s lets parallelism actually pay off.
+    per_call_timeout = int(os.environ.get("PHASE5_CALL_TIMEOUT_SEC", "6"))
+
     def fetch_one(mid):
         """Fetch and parse one member. Returns (mid, row|None)."""
         url = f"{BASE}/Dashboard/GetMemberDetails?Id={mid}&_={int(time.time()*1000)}"
-        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/MemberProfile?id={mid}", timeout=20)
+        data = curl(url, ajax=True, referer=f"{BASE}/Dashboard/MemberProfile?id={mid}",
+                    timeout=per_call_timeout)
         try:
             obj = json.loads(data.decode("utf-8", errors="replace"))
             return mid, [fix_date(obj.get(k, "")) for k in fields]
