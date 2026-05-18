@@ -525,7 +525,14 @@ def phase2_ajax():
 def phase3_attendance():
     log("=== PHASE 3: Attendance (month-by-month, 2020-present) [parallel] ===")
     # Prime the parent page once, then fan out the per-month AJAX calls.
-    curl(f"{BASE}/Dashboard/AttendanceReport", timeout=20)
+    # Prime is fire-and-forget: a 20s timeout shouldn't kill the whole phase
+    # since each per-month call also visits the parent as referer. Pre-
+    # CurlTimeout, the bare exception swallow gave us this behaviour for free;
+    # explicit catch preserves it now.
+    try:
+        curl(f"{BASE}/Dashboard/AttendanceReport", timeout=20)
+    except CurlTimeout:
+        log("    parent prime timed out (continuing — per-month calls re-establish referer)")
     time.sleep(0.5)
     months = []
     for year in range(2020, TODAY.year + 1):
@@ -565,15 +572,21 @@ def phase3_attendance():
                 errors_by_month.append(str(e))
                 log(f"    month fetch error: {e}")
     # Months that fully failed (timeout or exception) are indistinguishable
-    # from zero-check-in months unless we log them. Fail the phase if more
-    # than 20% of months errored — silent attendance gaps corrupt later
-    # analytics ("Q3 attendance dropped" when really the scrape missed it).
+    # from zero-check-in months unless we surface them. Emit a workflow-
+    # warning annotation when >20% of months errored so operators see the
+    # gap in the GH Actions UI — but DO NOT exit, because killing the
+    # process here kills Phase 4 + Phase 5 + the upload-blob step too.
+    # Shipping a snapshot with attendance gaps is strictly better than
+    # shipping no snapshot at all (bot would then serve yesterday's
+    # snapshot, which is also stale on the attendance side).
     total = len(months)
     failed = len(timeouts_by_month) + len(errors_by_month)
     if total and failed / total > 0.2:
-        log(f"Phase 3 FAILED: {failed}/{total} months errored (timeouts={len(timeouts_by_month)}, errors={len(errors_by_month)})")
+        log(f"Phase 3 PARTIAL FAIL: {failed}/{total} months errored (timeouts={len(timeouts_by_month)}, errors={len(errors_by_month)})")
         log(f"  failed timeouts: {', '.join(timeouts_by_month[:10])}{'…' if len(timeouts_by_month) > 10 else ''}")
-        sys.exit(4)
+        # GH Actions annotation — fails-loud in the workflow UI without
+        # aborting the run, so Phase 4/5 + upload still proceed.
+        print(f"::warning::Phase 3 attendance scrape: {failed}/{total} months errored. Snapshot will ship with gaps.", flush=True)
     elif failed:
         log(f"Phase 3 finished with {failed}/{total} months errored (below 20% threshold)")
 
@@ -581,7 +594,11 @@ def phase3_attendance():
 # ─── PHASE 4: Invoices year-by-year ────────────────────────────────
 def phase4_invoices():
     log("=== PHASE 4: Invoices (year-by-year, 2020-present) [parallel] ===")
-    curl(f"{BASE}/Dashboard/InvoiceList", timeout=20)
+    # See phase3 comment — prime is fire-and-forget; tolerate timeout.
+    try:
+        curl(f"{BASE}/Dashboard/InvoiceList", timeout=20)
+    except CurlTimeout:
+        log("    parent prime timed out (continuing — per-year calls re-establish referer)")
     time.sleep(0.5)
     years = list(range(2020, TODAY.year + 1))
 
