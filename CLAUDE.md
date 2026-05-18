@@ -116,18 +116,38 @@ Staff can do day-to-day operations: member check-in, renewals, payments, enquiry
 ## Production Data
 
 **Free Form Fitness** (`main` branch, Vercel project `traqgym-app`)
+- Theme: purple (OKLCh hue 275), logo `/traqLogo.png` — set via `NEXT_PUBLIC_GYM_THEME_HUE=275` in Vercel env (defaulted to 275 in `app/layout.tsx` so this can be omitted)
 - Admin: admin@freeformfitness.com / password123
 - Staff: e.g. pooja.singh@staff.freeform.local / password123
 - Members: imported from FitnessBoard — email is `{phone}@imported.local`, password is their phone number
 - ~303 users, ~16 plans, ~570 tickets, ~566 payments, 5 enquiries
 
 **E-GYM Lokhandwala** (`egymlokhandwala` branch, Vercel project `traqgym-egym`, Railway PostgreSQL)
-- Theme: red/black (OKLCh hue 25), logo `/egym-logo.png`
+- Theme: red/black (OKLCh hue 25), logo `/egym-logo.png` — REQUIRES `NEXT_PUBLIC_GYM_THEME_HUE=25` in the Vercel project env (without it the deploy renders FFF purple)
 - Admin: carruthersrobin3@gmail.com / Robin@FFF2026
 - Members: imported from E-Gym CSV exports
 - 10,275 users, 102 plans, 9,803 tickets, 14,771 payments, 3,779 enquiries, 7,701 followups
 - Domain target: `egymlokhandwala.traqgym.com`
 - Bulk data load uses `pg_dump --inserts` + `psql -f` (Prisma migration script drops connections on Railway after ~30 min)
+
+**Brand theming is config-driven, not branch-divergent.** `app/globals.css`
+uses `var(--brand-hue)` everywhere a brand-tinted OKLCh literal previously
+hardcoded hue 25 or 275. `app/layout.tsx` injects `--brand-hue` on `<html>`
+from the `NEXT_PUBLIC_GYM_THEME_HUE` env var (validated 0-360, default 275).
+**Never reintroduce a hardcoded brand hue in CSS or JSX** — it will leak
+across branches on the next merge (this exact mistake produced 4 weeks of
+FFF showing the EGYM red theme before being noticed). The semantic colors
+(destructive 27.325, status-frozen 260, status-info 250, etc.) are NOT brand
+colors and stay hardcoded.
+
+**Branch drift between `main` and `egymlokhandwala` is expected and OK.**
+All TraqGym app code (`app/`, `lib/`, `components/`, `prisma/`, etc.) is byte-identical
+across the two branches. Theme/branding/data differences are set via Vercel env vars
+at deploy time, not in branch code. The drift you'll see in `git log` is entirely
+telegram-bot + scraper + CI files — those run from a *separate* Vercel project that
+deploys from `main`, so they don't need to be in `egymlokhandwala`. Don't bother
+fast-forwarding `egymlokhandwala` unless an actual app-code commit needs to ship to
+the EGYM TraqGym deploy. Check with: `git diff --name-only origin/main origin/egymlokhandwala -- ':!telegram-bot' ':!freeformfitness-data-export-fresh' ':!.github'` — empty output means nothing to merge.
 
 ## Build Configuration
 
