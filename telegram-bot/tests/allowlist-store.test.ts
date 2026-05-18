@@ -57,11 +57,20 @@ describe("allowlist store", () => {
     expect(next.approved.map(e => e.chatId)).toEqual([6]);
   });
 
-  it("treats malformed json as empty", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("{\"approved\":\"oops\"}"));
+  // Previously: silently substituted EMPTY for corrupt data, locking out
+  // every previously-approved user. Now throws so the caller logs + the
+  // operator sees the cause. The webhook + digest both catch the throw
+  // and fall back to env owners (and the digest also surfaces lockout).
+  it("throws when allowlist.json has wrong shape (was silent EMPTY)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(`{"approved":"oops"}`));
     const s = createAllowlistStore({ url: "u", token: "t", fetch: fetchMock });
-    const al = await s.read();
-    expect(al.approved).toEqual([]);
+    await expect(s.read()).rejects.toThrow(/shape invalid/i);
+  });
+
+  it("throws on invalid JSON (not transient — would otherwise silently mask the corruption)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("this is not json {"));
+    const s = createAllowlistStore({ url: "u", token: "t", fetch: fetchMock });
+    await expect(s.read()).rejects.toThrow(/not valid JSON/i);
   });
 
   // Original bug: add()/remove() went through the 30s read-cache, so a

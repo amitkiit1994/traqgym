@@ -44,12 +44,35 @@ export function createAllowlistStore(opts: AllowlistStoreOptions): AllowlistStor
     const res = await fetcher(opts.url, { cache: "no-store" });
     let value: Allowlist;
     if (res.status === 404) {
+      // First-ever bot deploy hasn't had any /approve calls yet — file
+      // genuinely doesn't exist, empty list is correct.
       value = EMPTY;
     } else if (!res.ok) {
       throw new Error(`allowlist.json fetch failed: ${res.status}`);
     } else {
-      value = (await res.json()) as Allowlist;
-      if (!Array.isArray(value.approved)) value = EMPTY;
+      // Distinguish "file is corrupt / wrong shape" from "file is empty
+      // {approved: []}". Silently substituting EMPTY for corrupt data
+      // would lock out every previously-approved user with no signal,
+      // and the next /approve write would erase whatever was actually
+      // there. Throw loudly instead so the caller logs + the operator
+      // sees the cause.
+      let raw: unknown;
+      try {
+        raw = await res.json();
+      } catch (e) {
+        throw new Error(
+          `allowlist.json is not valid JSON at ${opts.url}: ${(e as Error).message}`,
+        );
+      }
+      if (!raw || typeof raw !== "object" || !Array.isArray((raw as Allowlist).approved)) {
+        console.error(
+          `[allowlist] CORRUPT: allowlist.json at ${opts.url} has wrong shape ` +
+          `(expected {approved: [...]}, got ${JSON.stringify(raw).slice(0, 120)}). ` +
+          `Refusing to substitute empty list — previously-approved users would be erased.`,
+        );
+        throw new Error("allowlist.json shape invalid (expected {approved:[...]} object)");
+      }
+      value = raw as Allowlist;
     }
     cached = { value, at: Date.now() };
     return value;

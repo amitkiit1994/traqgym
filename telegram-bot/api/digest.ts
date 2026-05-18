@@ -435,11 +435,28 @@ export default async function handler(req: any, res: any) {
 
   try {
     const recipients = new Set<number>(config.allowedChatIds);
+    let allowlistReadFailed = false;
     try {
       const al = await allowlistStore.read();
       for (const e of al.approved) recipients.add(e.chatId);
     } catch (e) {
+      allowlistReadFailed = true;
       console.warn("digest: allowlist read failed; sending to env owners only", e);
+    }
+
+    // Lockout check BEFORE we run the LLM. Env owners + dynamic allowlist
+    // both empty/unreachable means we'd generate a brief and send it to
+    // nobody — and the previous code returned ok:true on zero recipients,
+    // so the cron's jq -e '.ok' gate passed and the daily brief silently
+    // disappeared. Burning the OpenAI call before discovering this is also
+    // wasteful, so we short-circuit here.
+    if (recipients.size === 0) {
+      const cause = allowlistReadFailed
+        ? "TELEGRAM_ALLOWED_CHAT_IDS is empty AND allowlist.json is unreachable"
+        : "TELEGRAM_ALLOWED_CHAT_IDS is empty AND allowlist.json is empty";
+      console.error(`[digest] LOCKOUT: ${cause} — refusing to generate brief with no recipients`);
+      res.status(200).json({ ok: false, error: `no recipients (${cause})`, sent_to: 0, failed: 0 });
+      return;
     }
 
     const { text, toolCalls, snapshots, model: usedModel } = await buildBrief(blobRegistry);
