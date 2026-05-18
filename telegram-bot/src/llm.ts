@@ -86,12 +86,19 @@ WORKFLOW RULES
 
 DATA-QUALITY GATING (HARD RULE — overrides everything below)
 - list_csvs returns "column_diagnostics" + "unhealthy_columns" + "unhealthy"
-  per CSV. If a CSV is "unhealthy: true" OR the column you intend to filter
-  or aggregate is in "unhealthy_columns", you MUST NOT report a numeric
-  answer. Instead, reply ONE sentence:
+  per CSV. The per-CSV "unhealthy" flag is informational only — it just
+  means SOME column had high parse failures, not necessarily one you'd
+  filter on. The actionable list is "unhealthy_columns".
+- If the column you intend to filter on, aggregate on, group_by on, OR
+  order_by on is in "unhealthy_columns" for that CSV, you MUST NOT report
+  a numeric answer that depends on it. Instead reply ONE sentence:
     "Snapshot for <gym> has a misaligned <column> column (samples: <bad>) —
      numbers would be wrong. Operator needs to check the scraper / parser."
   and stop. Do not invent a workaround.
+- If unhealthy_columns is non-empty but the columns YOU need are NOT in
+  it, you may proceed normally. (E.g. EGYM payments may flag "Created On"
+  as unhealthy but "Payment Date" and "Paid Amount" are fine, so a
+  "collection this month" query is still safe.)
 - query_csv may return a "warnings" array. If non-empty, you MUST mention
   the warning in your reply ("Note: <warning>") AND treat the underlying
   number as suspect (qualify it: "approximate / parser-flagged").

@@ -24,6 +24,15 @@ export interface ParseResult {
 
 const DDMMYYYY = /^(\d{2})-(\d{2})-(\d{4})$/;
 const YYYYMMDD = /^(\d{4})-(\d{2})-(\d{2})$/;
+// "Created On" on EGYM's payments CSV is the only column FB serializes
+// with month names + millis (e.g. "19 May 2025 21:33:15:287"); everything
+// else is DD-MM-YYYY. Capture the day + 3-letter month + year and ignore
+// the time portion.
+const D_MMM_YYYY = /^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/;
+const MONTHS: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
 const NULL_LITERALS = new Set([
   "na", "n/a", "n.a.", "n.a", "--", "-", "—", "none", "null", "nil", "nan",
 ]);
@@ -32,6 +41,18 @@ const CURRENCY_GLYPHS = /[₹$€£¥]/g;
 function coerceDate(v: string): string | null {
   const trimmed = v.trim();
   if (trimmed === "") return null;
+
+  // "19 May 2025 21:33:15:287" — month name form (must match against the
+  // full trimmed string because the month token contains spaces and would
+  // be lost by splitting on whitespace).
+  const named = trimmed.match(D_MMM_YYYY);
+  if (named) {
+    const [, d, monStr, yyyy] = named;
+    const mm = MONTHS[monStr!.slice(0, 3).toLowerCase()];
+    if (mm) return `${yyyy}-${mm}-${d!.padStart(2, "0")}`;
+  }
+
+  // Numeric forms: tolerate trailing time, then match DD-MM-YYYY or ISO.
   const head = trimmed.split(/[\sT]/)[0] ?? trimmed;
   const ddmm = head.match(DDMMYYYY);
   if (ddmm) {
