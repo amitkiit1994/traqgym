@@ -95,36 +95,57 @@ const latest = {
 // indicating a bad scrape.
 const CRITICAL = new Set(["payments", "database", "balance", "members",
                           "memberenrollment", "activeinactive"]);
-try {
-  const head = await list({ token, prefix: `csv/${gym}/latest.json`, limit: 1 });
-  const prevBlob = head.blobs[0];
-  if (prevBlob) {
-    const res = await fetch(prevBlob.url, { cache: "no-store" });
-    if (res.ok) {
-      const prev = await res.json();
-      const drops = [];
-      const partials = [];
-      for (const [name, cur] of Object.entries(rowCounts)) {
-        const prevCount = prev.row_counts?.[name] ?? 0;
-        if (prevCount > 0 && cur < prevCount * 0.5) {
-          if (CRITICAL.has(name)) drops.push(`${name}: ${prevCount} → ${cur}`);
-          else partials.push(`${name}: ${prevCount} → ${cur}`);
-        }
-      }
-      if (partials.length > 0) {
-        console.warn("Partial fetch on non-critical CSVs (proceeding):");
-        for (const p of partials) console.warn("  " + p);
-      }
-      if (drops.length > 0) {
-        console.error("REFUSING to swap latest.json — critical CSVs dropped >50%:");
-        for (const d of drops) console.error("  " + d);
-        console.error("Likely cause: stale FB cookie. Today's per-CSV blobs were uploaded but latest.json is unchanged.");
-        process.exit(2);
+// Run the integrity check. Any failure of THIS step that we can't classify
+// as "first ever upload" (404) is treated as fatal — we used to swallow
+// every error and proceed, which meant a 401 / network blip on the prior
+// pointer could let us swap in a corrupt new one without any check.
+const head = await list({ token, prefix: `csv/${gym}/latest.json`, limit: 1 });
+const prevBlob = head.blobs[0];
+if (prevBlob) {
+  const res = await fetch(prevBlob.url, { cache: "no-store" });
+  if (res.status === 404) {
+    // First upload after blob deletion / new gym slug — nothing to compare to.
+    console.warn(`No previous latest.json found at ${prevBlob.url} (404). Skipping sanity check.`);
+  } else if (!res.ok) {
+    // 401, 403, 5xx — we cannot verify, so do NOT swap. Failing loud beats
+    // silently shipping a possibly-corrupt pointer.
+    console.error(`Sanity check failed: GET previous latest.json returned ${res.status}.`);
+    console.error("Refusing to swap latest.json — would risk overwriting good data with unverified new data.");
+    process.exit(2);
+  } else {
+    const prev = await res.json();
+    const drops = [];
+    const partials = [];
+    const missingCritical = [];
+    // Catches CSVs that were present yesterday but entirely missing today —
+    // a stronger blindspot than the "row count dropped >50%" check, which
+    // can't see a CSV that wasn't produced at all.
+    for (const name of Object.keys(prev.row_counts ?? {})) {
+      if (!(name in rowCounts) && CRITICAL.has(name)) {
+        missingCritical.push(`${name}: present yesterday (${prev.row_counts[name]} rows), missing today`);
       }
     }
+    for (const [name, cur] of Object.entries(rowCounts)) {
+      const prevCount = prev.row_counts?.[name] ?? 0;
+      if (prevCount > 0 && cur < prevCount * 0.5) {
+        if (CRITICAL.has(name)) drops.push(`${name}: ${prevCount} → ${cur}`);
+        else partials.push(`${name}: ${prevCount} → ${cur}`);
+      }
+    }
+    if (partials.length > 0) {
+      console.warn("Partial fetch on non-critical CSVs (proceeding):");
+      for (const p of partials) console.warn("  " + p);
+      // GitHub Actions workflow-warning annotation — surfaces in the run UI.
+      console.log(`::warning::Partial fetch on non-critical CSVs: ${partials.join(", ")}`);
+    }
+    if (drops.length > 0 || missingCritical.length > 0) {
+      console.error("REFUSING to swap latest.json — critical CSVs dropped >50% or went missing:");
+      for (const d of drops) console.error("  " + d);
+      for (const m of missingCritical) console.error("  " + m);
+      console.error("Likely cause: stale FB cookie or scraper crash. Per-CSV blobs uploaded but latest.json is unchanged.");
+      process.exit(2);
+    }
   }
-} catch (e) {
-  console.warn(`Could not fetch previous latest.json for sanity check: ${e.message}`);
 }
 
 const latestRes = await put(`csv/${gym}/latest.json`, JSON.stringify(latest, null, 2), {
