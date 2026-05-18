@@ -13,6 +13,17 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           DIGEST_URL: https://freeform-telegram-bot.vercel.app/api/digest
         run: |
-          curl --fail-with-body -sS -X POST "$DIGEST_URL" \
+          # Capture body separately so we can both fail on non-2xx AND
+          # detect the case where the handler returns HTTP 200 with
+          # { ok: false } (e.g. partial-failure path). Without the jq
+          # check, a "soft failure" would be invisible — the cron would
+          # be green and Robin would silently get no brief.
+          response=$(curl --fail-with-body -sS -X POST "$DIGEST_URL" \
             -H "Authorization: Bearer $CRON_SECRET" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json")
+          echo "$response"
+          # jq -e: exit non-zero if .ok is false / missing / null.
+          echo "$response" | jq -e '.ok == true' >/dev/null || {
+            echo "::error::Digest endpoint returned ok=false or missing"
+            exit 1
+          }
