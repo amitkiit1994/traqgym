@@ -725,3 +725,37 @@ export async function getOpenShiftsCount(): Promise<number> {
     where: { status: { in: ["open", "pending_approval"] } },
   });
 }
+
+/**
+ * Whether the dashboard should show the "no open shift but cash collected
+ * today" banner. Returns the data the banner needs (cash payment count)
+ * along with a `shouldShow` flag; banner renders nothing when false.
+ */
+export async function getCashShiftBannerState(locationId?: number): Promise<{
+  shouldShow: boolean;
+  todayCashCount: number;
+}> {
+  const today = new Date();
+  const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const [openShift, todayCashCount] = await Promise.all([
+    prisma.cashShift.findFirst({
+      where: { status: "open", ...(locationId ? { locationId } : {}) },
+      select: { id: true },
+    }),
+    prisma.payment.count({
+      where: {
+        // Case-insensitive — payment_mode is free-text and arrives as
+        // cash/Cash/CASH/etc. from various source systems.
+        paymentMode: { equals: "cash", mode: "insensitive" },
+        createdAt: { gte: dayStart },
+        ...(locationId ? { locationId } : {}),
+      },
+    }),
+  ]);
+
+  return {
+    shouldShow: !openShift && todayCashCount > 0,
+    todayCashCount,
+  };
+}

@@ -40,6 +40,12 @@ export default async function DashboardPage({
     atRisk: { count: 0, revenue: 0 },
     unlikely: { count: 0, revenue: 0 },
   };
+  // When the forecast service throws, we still want the rest of the
+  // dashboard to render — but the operator MUST see that the forecast
+  // is unavailable instead of staring at "₹0 expiring revenue" and
+  // assuming that's reality. Track the failure separately so the client
+  // can render a visible unavailable badge instead of zeros.
+  let forecastFailed = false;
 
   const [stats, profitLoss, announcements, staffPerf, prevStats, forecast, dailyCollection, posSales, todayCounts, targetProgress, todayAnniversariesRaw, upcomingAnniversariesRaw, overdueFollowupsCount] = await Promise.all([
     getCachedStats(locationId),
@@ -47,7 +53,11 @@ export default async function DashboardPage({
     getAnnouncements("staff", locationId),
     getCachedStaffPerformance(monthStart.toISOString(), monthEnd.toISOString()),
     getCachedPreviousMonthStats(locationId),
-    getRevenueForecast(locationId).catch((e) => { console.error("Revenue forecast failed:", e); return emptyForecast; }),
+    getRevenueForecast(locationId).catch((e) => {
+      console.error("Revenue forecast failed:", e);
+      forecastFailed = true;
+      return emptyForecast;
+    }),
     getDailyCollection(locationId),
     getCachedDailyPOSCollection(locationId),
     getCachedTodayCounts(locationId),
@@ -134,6 +144,7 @@ export default async function DashboardPage({
         upcomingAnniversaries: upcomingAnniversaries,
       }}
       forecast={forecast}
+      forecastFailed={forecastFailed}
       previousMonthStats={prevStats}
       locations={locations}
       currentLocationId={locationId}
