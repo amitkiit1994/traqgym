@@ -16,7 +16,7 @@ export interface ParseResult {
 const DDMMYYYY = /^(\d{2})-(\d{2})-(\d{4})$/;
 
 function coerceDate(v: string): string | null {
-  const m = v.trim().match(DDMMYYYY);
+  const m = v.trim().split(/[\sT]/)[0].match(DDMMYYYY);
   if (!m) return null;
   const [, dd, mm, yyyy] = m;
   return `${yyyy}-${mm}-${dd}`;
