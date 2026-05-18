@@ -1,9 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { requireInternalSecret } from "@/lib/auth-internal";
 import { prisma } from "@/lib/prisma";
 import { setSetting } from "@/lib/services/settings";
+
+// If more than this fraction of rows in a single sync chunk errored
+// per-row, the chunk is treated as a failure (500) instead of being
+// silently reported as a success. The cron alerts on non-200.
+const PER_ROW_ERROR_THRESHOLD = 0.1;
 
 /**
  * POST /api/internal/v3-sync
@@ -52,17 +58,29 @@ export async function POST(req: NextRequest) {
     switch (dataset) {
       case "payment": {
         const result = await upsertPayments(rows);
-        await markStatus(`ok: ${result.inserted} payments inserted, ${result.skipped} skipped`);
+        if (isOverErrorThreshold(result.errors, rows.length)) {
+          await markStatus(`err: ${result.errors}/${rows.length} payment rows errored — failing chunk`);
+          return NextResponse.json({ error: "too many per-row errors", dataset, ...result }, { status: 500 });
+        }
+        await markStatus(`ok: ${result.inserted} payments inserted, ${result.skipped} skipped${result.errors ? `, ${result.errors} errors` : ""}`);
         return NextResponse.json({ success: true, dataset, ...result });
       }
       case "balance": {
         const result = await upsertBalances(rows);
-        await markStatus(`ok: ${result.updated} balances updated, ${result.skipped} skipped`);
+        if (isOverErrorThreshold(result.errors, rows.length)) {
+          await markStatus(`err: ${result.errors}/${rows.length} balance rows errored — failing chunk`);
+          return NextResponse.json({ error: "too many per-row errors", dataset, ...result }, { status: 500 });
+        }
+        await markStatus(`ok: ${result.updated} balances updated, ${result.skipped} skipped${result.errors ? `, ${result.errors} errors` : ""}`);
         return NextResponse.json({ success: true, dataset, ...result });
       }
       case "attendance": {
         const result = await upsertAttendance(rows);
-        await markStatus(`ok: ${result.inserted} attendance inserted, ${result.skipped} skipped`);
+        if (isOverErrorThreshold(result.errors, rows.length)) {
+          await markStatus(`err: ${result.errors}/${rows.length} attendance rows errored — failing chunk`);
+          return NextResponse.json({ error: "too many per-row errors", dataset, ...result }, { status: 500 });
+        }
+        await markStatus(`ok: ${result.inserted} attendance inserted, ${result.skipped} skipped${result.errors ? `, ${result.errors} errors` : ""}`);
         return NextResponse.json({ success: true, dataset, ...result });
       }
       case "members":
@@ -224,9 +242,14 @@ async function upsertPayments(rows: unknown[]): Promise<{
             select: { id: true, locationId: true },
           });
           createdUsers++;
-        } catch {
-          // Most likely a unique-constraint race on email/phone (another row
-          // for the same member created the user just now) — re-fetch.
+        } catch (err) {
+          // Only treat unique-constraint violations as the expected race
+          // (another concurrent row created the user). Anything else
+          // (connection drop, validation, FK violation) is a real failure
+          // and must bubble up so the chunk's error counter fires.
+          if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") {
+            throw err;
+          }
           user = await prisma.user.findFirst({
             where: { phone },
             select: { id: true, locationId: true },
@@ -246,6 +269,10 @@ async function upsertPayments(rows: unknown[]): Promise<{
       // the newest ticket (the old behaviour) silently inflated amountPaid on
       // newest tickets and produced ~₹7Cr of phantom "drift" on egym, which
       // the detect_balance_mismatches detector then surfaced as fake fraud.
+      //
+      // A second pass extends the expireDate window by 30 days to catch
+      // legitimate late renewals (a payment recorded 2 weeks after the
+      // ticket expired, settling balance) before falling back to most-recent.
       let ticket = paymentDate
         ? await prisma.memberTicket.findFirst({
             where: {
@@ -257,6 +284,18 @@ async function upsertPayments(rows: unknown[]): Promise<{
             select: { id: true },
           })
         : null;
+      if (!ticket && paymentDate) {
+        const windowStart = new Date(paymentDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+        ticket = await prisma.memberTicket.findFirst({
+          where: {
+            userId: user.id,
+            buyDate: { lte: paymentDate },
+            expireDate: { gte: windowStart },
+          },
+          orderBy: { buyDate: "desc" },
+          select: { id: true },
+        });
+      }
       if (!ticket) {
         ticket = await prisma.memberTicket.findFirst({
           where: { userId: user.id },
@@ -382,11 +421,30 @@ async function upsertBalances(rows: unknown[]): Promise<{
         skippedUserNotFound++;
         continue;
       }
-      const ticket = await prisma.memberTicket.findFirst({
-        where: { userId: user.id },
+      // V3's BalanceAmount is "current outstanding right now", so prefer
+      // the ticket that's actually active today (the balance applies to
+      // it, not to a future-dated or long-expired ticket). Fall back to
+      // most-recent only if no active ticket. Mirrors the upsertPayments
+      // attribution fix — without this, the balance silently lands on
+      // whichever ticket happens to have the latest buyDate, recreating
+      // the phantom-drift pattern on the balance side.
+      const now = new Date();
+      let ticket = await prisma.memberTicket.findFirst({
+        where: {
+          userId: user.id,
+          buyDate: { lte: now },
+          expireDate: { gte: now },
+        },
         orderBy: { buyDate: "desc" },
         select: { id: true, balanceDue: true },
       });
+      if (!ticket) {
+        ticket = await prisma.memberTicket.findFirst({
+          where: { userId: user.id },
+          orderBy: { buyDate: "desc" },
+          select: { id: true, balanceDue: true },
+        });
+      }
       if (!ticket) {
         skippedNoTicket++;
         continue;
@@ -432,7 +490,7 @@ async function upsertAttendance(rows: unknown[]): Promise<{
   inserted: number;
   skipped: number;
   errors: number;
-  skippedBreakdown: { noPhone: number; userNotFound: number; dateParseFailed: number; duplicate: number };
+  skippedBreakdown: { noPhone: number; userNotFound: number; dateParseFailed: number; duplicate: number; noLocation: number };
 }> {
   let inserted = 0;
   let errors = 0;
@@ -440,6 +498,7 @@ async function upsertAttendance(rows: unknown[]): Promise<{
   let skippedUserNotFound = 0;
   let skippedDateParseFailed = 0;
   let skippedDuplicate = 0;
+  let skippedNoLocation = 0;
 
   // Pick a default location (only one for now per gym; we'll attach there)
   const defaultLocation = await prisma.location.findFirst({
@@ -447,11 +506,15 @@ async function upsertAttendance(rows: unknown[]): Promise<{
     select: { id: true },
   });
   if (!defaultLocation) {
+    // The gym has no Location row yet — every attendance row would be
+    // rejected by the FK. Report it as its own skip reason so the caller
+    // doesn't see "all duplicates" (a lie) and operators can fix the
+    // missing Location before the next sync.
     return {
       inserted: 0,
       skipped: rows.length,
       errors: 0,
-      skippedBreakdown: { noPhone: 0, userNotFound: 0, dateParseFailed: 0, duplicate: rows.length },
+      skippedBreakdown: { noPhone: 0, userNotFound: 0, dateParseFailed: 0, duplicate: 0, noLocation: rows.length },
     };
   }
 
@@ -523,7 +586,7 @@ async function upsertAttendance(rows: unknown[]): Promise<{
     }
   }
 
-  const skipped = skippedNoPhone + skippedUserNotFound + skippedDateParseFailed + skippedDuplicate;
+  const skipped = skippedNoPhone + skippedUserNotFound + skippedDateParseFailed + skippedDuplicate + skippedNoLocation;
   return {
     inserted,
     skipped,
@@ -533,8 +596,14 @@ async function upsertAttendance(rows: unknown[]): Promise<{
       userNotFound: skippedUserNotFound,
       dateParseFailed: skippedDateParseFailed,
       duplicate: skippedDuplicate,
+      noLocation: skippedNoLocation,
     },
   };
+}
+
+function isOverErrorThreshold(errors: number, rowCount: number): boolean {
+  if (rowCount === 0) return false;
+  return errors / rowCount > PER_ROW_ERROR_THRESHOLD;
 }
 
 /**
