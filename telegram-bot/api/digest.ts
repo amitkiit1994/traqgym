@@ -267,8 +267,13 @@ export default async function handler(req: any, res: any) {
       snapshots,
       preview: text.slice(0, 200),
     }));
+    // ok must reflect actual delivery — if every send rejected (Telegram
+    // outage, every owner blocked the bot), this is a real failure that
+    // the morning-digest cron's `jq -e '.ok'` check must catch. Returning
+    // ok:true on 0/N delivery would silently lose the daily brief.
+    const allFailed = failed > 0 && failed >= recipients.size;
     res.status(200).json({
-      ok: true,
+      ok: !allFailed,
       sent_to: recipients.size - failed,
       failed,
       snapshots,
