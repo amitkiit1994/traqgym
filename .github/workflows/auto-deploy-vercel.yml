@@ -61,13 +61,22 @@ jobs:
             echo "project_id=$APP_PROJECT_ID" >> "$GITHUB_OUTPUT"
           fi
 
+      # VERCEL_PROJECT_ID must be set on EVERY step that invokes vercel CLI.
+      # With VERCEL_ORG_ID exposed workflow-wide but PROJECT_ID missing on
+      # Build / Deploy, the CLI refuses with "you forgot to specify
+      # VERCEL_PROJECT_ID" - that mismatch broke 5+ consecutive deploys
+      # before being caught.
       - name: Pull Vercel project settings
         env:
           VERCEL_PROJECT_ID: ${{ steps.target.outputs.project_id }}
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build
+        env:
+          VERCEL_PROJECT_ID: ${{ steps.target.outputs.project_id }}
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy
+        env:
+          VERCEL_PROJECT_ID: ${{ steps.target.outputs.project_id }}
         run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
