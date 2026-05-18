@@ -63,10 +63,38 @@ function normalize(f: FlatFilter): import("../src/tools/query-csv.js").Filter {
   }
 }
 
-type SnapshotLoad =
+export type SnapshotLoad =
   | { status: "ok"; date: string }
   | { status: "missing" }
   | { status: "error"; reason: string };
+
+// Exported so the unit test in tests/digest-snapshots.test.ts can drive
+// it with a mock BlobStoreRegistry. The default export is the bound
+// production version that hits the real registry.
+export async function loadSnapshotsWith(
+  fetchLatestFor: (slug: string) => Promise<{ snapshot_date: string }>,
+  gyms: ReadonlyArray<{ slug: string }> = listGyms(),
+): Promise<Record<string, SnapshotLoad>> {
+  const out: Record<string, SnapshotLoad> = {};
+  await Promise.all(
+    gyms.map(async g => {
+      try {
+        const p = await fetchLatestFor(g.slug);
+        out[g.slug] = { status: "ok", date: p.snapshot_date };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const looksMissing = /404|not\s*found|no such/i.test(message);
+        out[g.slug] = looksMissing
+          ? { status: "missing" }
+          : { status: "error", reason: message.slice(0, 120) };
+        if (!looksMissing) {
+          console.warn(`[digest] snapshot load failed for gym=${g.slug}: ${message}`);
+        }
+      }
+    }),
+  );
+  return out;
+}
 
 async function loadSnapshots(): Promise<Record<string, SnapshotLoad>> {
   const out: Record<string, SnapshotLoad> = {};
@@ -90,7 +118,7 @@ async function loadSnapshots(): Promise<Record<string, SnapshotLoad>> {
   return out;
 }
 
-function snapshotsLine(snapshots: Record<string, SnapshotLoad>): string {
+export function snapshotsLine(snapshots: Record<string, SnapshotLoad>): string {
   const lines = listGyms().map(g => {
     const s = snapshots[g.slug];
     if (!s || s.status === "missing") return `  ${g.name}: (no snapshot yet)`;
@@ -100,7 +128,7 @@ function snapshotsLine(snapshots: Record<string, SnapshotLoad>): string {
   return `SNAPSHOTS:\n${lines.join("\n")}`;
 }
 
-function snapshotDatesOnly(snapshots: Record<string, SnapshotLoad>): Record<string, string> {
+export function snapshotDatesOnly(snapshots: Record<string, SnapshotLoad>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [slug, s] of Object.entries(snapshots)) {
     if (s.status === "ok") out[slug] = s.date;
@@ -108,7 +136,7 @@ function snapshotDatesOnly(snapshots: Record<string, SnapshotLoad>): Record<stri
   return out;
 }
 
-function anySnapshotLoaded(snapshots: Record<string, SnapshotLoad>): boolean {
+export function anySnapshotLoaded(snapshots: Record<string, SnapshotLoad>): boolean {
   return Object.values(snapshots).some(s => s.status === "ok");
 }
 
