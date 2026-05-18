@@ -64,6 +64,18 @@ MULTI-GYM RULES (CRITICAL)
 - Each gym's snapshot may have a different date. Use each gym's actual
   snapshot date in answers about that gym.
 
+UNAVAILABLE GYMS (HARD RULE)
+- Look at the SNAPSHOTS block above. If a gym is marked UNAVAILABLE or
+  (no snapshot yet — refuse data queries for this gym), you MUST NOT call
+  list_csvs or query_csv for that gym. The tools will return an error if
+  you try.
+- If the user's question only names an unavailable gym, reply with one
+  sentence: "Snapshot for <gym name> is unreachable right now — try
+  again later." Do not invent numbers.
+- If the user's question is ambiguous and at least one gym is available,
+  answer only for the available gyms and add one line at the end: "Note:
+  <unavailable gym name> data is unreachable right now."
+
 WORKFLOW RULES
 - NEVER ask a clarifying question. Make the best interpretation and state
   your assumption in one short line if needed.
@@ -145,7 +157,32 @@ function normalizeFilter(f: FlatFilter): import("./tools/query-csv.js").Filter {
   }
 }
 
-function buildTools(registry: BlobStoreRegistry, counter: { n: number }, snapshots: Record<string, string>) {
+function buildTools(
+  registry: BlobStoreRegistry,
+  counter: { n: number },
+  snapshots: Record<string, string>,
+  snapshotsStructured: Record<string, SnapshotLoad>,
+) {
+  // Tool-level guard: if the system prompt's instruction to refuse
+  // unavailable gyms is ignored by the model, this short-circuits the
+  // call cleanly instead of producing an opaque fetch error mid-tool.
+  function gymUnavailableError(gym: string): { error: string; hint: string } | null {
+    const s = snapshotsStructured[gym];
+    if (!s || s.status === "missing") {
+      return {
+        error: `Gym '${gym}' has no snapshot loaded yet.`,
+        hint: `Tell the user: "Snapshot for ${gym} is unreachable — try again later." Do not retry.`,
+      };
+    }
+    if (s.status === "error") {
+      return {
+        error: `Gym '${gym}' snapshot is currently unreachable: ${s.reason}`,
+        hint: `Tell the user: "Snapshot for ${gym} is unreachable — try again later." Do not retry.`,
+      };
+    }
+    return null;
+  }
+
   const listGymsTool = tool({
     name: "list_gyms",
     description: "List all gyms the owner can query. Returns slug + display name for each.",
@@ -170,6 +207,8 @@ function buildTools(registry: BlobStoreRegistry, counter: { n: number }, snapsho
           hint: `Valid: ${listGyms().map(g => g.slug).join(", ")}. Call list_gyms first.`,
         };
       }
+      const unavailable = gymUnavailableError(gym);
+      if (unavailable) return unavailable;
       try {
         const store = registry.for(gym);
         const result = await buildListCsvsResult(store);
@@ -199,6 +238,8 @@ function buildTools(registry: BlobStoreRegistry, counter: { n: number }, snapsho
           hint: `Valid: ${listGyms().map(g => g.slug).join(", ")}.`,
         };
       }
+      const unavailable = gymUnavailableError(args.gym);
+      if (unavailable) return unavailable;
       try {
         const store = registry.for(args.gym);
         const hint = CSV_HINTS[args.csv] ?? { date: [], number: [] };
@@ -302,7 +343,7 @@ export async function runLlm(input: RunLlmInput): Promise<RunLlmResult> {
     name: "TraqGym data analyst",
     instructions: systemPrompt(snapshotsLine(snapshotsStructured), todayIso),
     model,
-    tools: buildTools(registry, counter, snapshots),
+    tools: buildTools(registry, counter, snapshots, snapshotsStructured),
   });
 
   const priorHistory = input.history ?? [];
