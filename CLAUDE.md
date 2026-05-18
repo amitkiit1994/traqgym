@@ -129,6 +129,15 @@ Staff can do day-to-day operations: member check-in, renewals, payments, enquiry
 - Domain target: `egymlokhandwala.traqgym.com`
 - Bulk data load uses `pg_dump --inserts` + `psql -f` (Prisma migration script drops connections on Railway after ~30 min)
 
+**Branch drift between `main` and `egymlokhandwala` is expected and OK.**
+All TraqGym app code (`app/`, `lib/`, `components/`, `prisma/`, etc.) is byte-identical
+across the two branches. Theme/branding/data differences are set via Vercel env vars
+at deploy time, not in branch code. The drift you'll see in `git log` is entirely
+telegram-bot + scraper + CI files — those run from a *separate* Vercel project that
+deploys from `main`, so they don't need to be in `egymlokhandwala`. Don't bother
+fast-forwarding `egymlokhandwala` unless an actual app-code commit needs to ship to
+the EGYM TraqGym deploy. Check with: `git diff --name-only origin/main origin/egymlokhandwala -- ':!telegram-bot' ':!freeformfitness-data-export-fresh' ':!.github'` — empty output means nothing to merge.
+
 ## Build Configuration
 
 - `package.json` build script: `prisma generate && next build`
