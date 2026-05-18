@@ -11,6 +11,21 @@ import { Prisma } from "@prisma/client";
 
 type Range = { from: Date; to: Date; locationId?: number };
 
+// AuditLog has no locationId column — detectors built on it are gym-wide
+// only. Keep the type narrow so the AI can't pass a parameter we'd silently
+// drop. (See detectCompAbusePatterns and detectAuditAnomalies.)
+type AuditRange = { from: Date; to: Date };
+
+// Hard cap to keep a single detector from materialising hundreds of
+// thousands of rows on EGYM-scale data inside a Vercel function. If a
+// detector hits this limit it returns `truncated: true` so the caller
+// knows the answer is partial.
+const MAX_ROWS = 100_000;
+
+// detectDiscountOutliers: don't flag a collector as an outlier off a
+// handful of payments — small samples produce misleading medians.
+const MIN_OUTLIER_PAYMENTS = 5;
+
 function asRupees(d: Prisma.Decimal | number | null | undefined): number {
   if (d == null) return 0;
   if (typeof d === "number") return d;
@@ -25,6 +40,12 @@ function fmtDate(d: Date): string {
 /**
  * Same member + same amount within `windowMinutes` (default 10) — usually
  * a staff hit "Save" twice or recorded a refund by re-posting the original.
+ *
+ * Sorting by (userId, amount, createdAt) so equal-amount payments by the
+ * same member end up adjacent regardless of intermediate non-duplicates.
+ * The previous implementation sorted only by (userId, createdAt) and only
+ * compared the immediately-previous row, so a sequence like
+ * [₹500, ₹2000, ₹500] within window missed the two ₹500s.
  */
 export async function detectDuplicatePayments(opts: Range & { windowMinutes?: number }) {
   const windowMs = (opts.windowMinutes ?? 10) * 60_000;
@@ -40,8 +61,10 @@ export async function detectDuplicatePayments(opts: Range & { windowMinutes?: nu
       user: { select: { firstname: true, lastname: true, phone: true } },
       collectedBy: { select: { firstname: true, lastname: true } },
     },
-    orderBy: [{ userId: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ userId: "asc" }, { amount: "asc" }, { createdAt: "asc" }],
+    take: MAX_ROWS,
   });
+  const truncated = payments.length >= MAX_ROWS;
 
   const dupes: Array<{
     user: string; phone: string; amount: number; mode: string;
@@ -53,7 +76,7 @@ export async function detectDuplicatePayments(opts: Range & { windowMinutes?: nu
     const b = payments[i];
     if (a.userId !== b.userId) continue;
     if (asRupees(a.amount) !== asRupees(b.amount)) continue;
-    const gapMs = b.createdAt.getTime() - a.createdAt.getTime();
+    const gapMs = Math.abs(b.createdAt.getTime() - a.createdAt.getTime());
     if (gapMs > windowMs) continue;
     dupes.push({
       user: `${a.user?.firstname ?? ""} ${a.user?.lastname ?? ""}`.trim(),
@@ -72,6 +95,7 @@ export async function detectDuplicatePayments(opts: Range & { windowMinutes?: nu
     windowMinutes: opts.windowMinutes ?? 10,
     suspectCount: dupes.length,
     suspects: dupes.slice(0, 50),
+    truncated,
   };
 }
 
@@ -86,7 +110,9 @@ export async function detectOffShiftCashPayments(opts: Range) {
     where: {
       createdAt: { gte: opts.from, lte: opts.to },
       ...(opts.locationId != null ? { locationId: opts.locationId } : {}),
-      paymentMode: { in: ["cash", "Cash", "CASH"] },
+      // Case-insensitive — payment_mode is free-text and gets entered as
+      // "cash", "Cash", "CASH" depending on staff / source system.
+      paymentMode: { equals: "cash", mode: "insensitive" },
       shiftId: null,
     },
     select: {
@@ -95,7 +121,9 @@ export async function detectOffShiftCashPayments(opts: Range) {
       collectedBy: { select: { id: true, firstname: true, lastname: true } },
     },
     orderBy: { createdAt: "asc" },
+    take: MAX_ROWS,
   });
+  const truncated = cashPayments.length >= MAX_ROWS;
 
   const byCollector = new Map<string, { name: string; count: number; total: number }>();
   for (const p of cashPayments) {
@@ -121,6 +149,7 @@ export async function detectOffShiftCashPayments(opts: Range) {
       phone: p.user?.phone ?? "",
       collector: `${p.collectedBy.firstname} ${p.collectedBy.lastname}`,
     })),
+    truncated,
   };
 }
 
@@ -128,6 +157,8 @@ export async function detectOffShiftCashPayments(opts: Range) {
 /**
  * Median + max discount per collector. Flag any collector whose median
  * discount is > 1.5x the gym-wide median — usually "sweethearting" friends.
+ * A collector with fewer than MIN_OUTLIER_PAYMENTS discounted payments is
+ * never flagged as an outlier: their median is too noisy to be meaningful.
  */
 export async function detectDiscountOutliers(opts: Range) {
   const payments = await prisma.payment.findMany({
@@ -140,7 +171,9 @@ export async function detectDiscountOutliers(opts: Range) {
       amount: true, discount: true, collectedById: true,
       collectedBy: { select: { firstname: true, lastname: true } },
     },
+    take: MAX_ROWS,
   });
+  const truncated = payments.length >= MAX_ROWS;
 
   const byCollector = new Map<number, { name: string; discounts: number[]; totalDiscount: number; paymentCount: number }>();
   const allDiscounts: number[] = [];
@@ -173,8 +206,15 @@ export async function detectDiscountOutliers(opts: Range) {
       paymentCount: e.paymentCount,
       totalDiscount: Math.round(e.totalDiscount),
       medianDiscount: Math.round(med),
-      maxDiscount: Math.round(Math.max(...e.discounts)),
-      isOutlier: gymMedian > 0 && med > gymMedian * 1.5,
+      // Guard: empty array would make Math.max return -Infinity. The filter
+      // above (discount > 0) plus the `discounts.push` keep this non-empty
+      // today, but a future relaxation of that filter shouldn't silently
+      // poison the report.
+      maxDiscount: e.discounts.length > 0 ? Math.round(Math.max(...e.discounts)) : 0,
+      isOutlier:
+        gymMedian > 0 &&
+        med > gymMedian * 1.5 &&
+        e.paymentCount >= MIN_OUTLIER_PAYMENTS,
     };
   }).sort((a, b) => b.totalDiscount - a.totalDiscount);
 
@@ -184,8 +224,10 @@ export async function detectDiscountOutliers(opts: Range) {
     gymMedianDiscount: Math.round(gymMedian),
     gymTotalDiscount: Math.round(allDiscounts.reduce((s, x) => s + x, 0)),
     discountedPaymentCount: payments.length,
+    minOutlierPaymentCount: MIN_OUTLIER_PAYMENTS,
     byCollector: breakdown,
     outliers: breakdown.filter((b) => b.isOutlier),
+    truncated,
   };
 }
 
@@ -198,6 +240,11 @@ export async function detectRefundRouting(opts: Range) {
   const refunds = await prisma.refund.findMany({
     where: {
       createdAt: { gte: opts.from, lte: opts.to },
+      // Push locationId filter into the query so we don't materialise
+      // every refund just to throw most of them out in JS.
+      ...(opts.locationId != null
+        ? { payment: { is: { locationId: opts.locationId } } }
+        : {}),
     },
     select: {
       id: true, amountRefunded: true, amountRequested: true, refundMode: true,
@@ -212,18 +259,16 @@ export async function detectRefundRouting(opts: Range) {
         },
       },
     },
+    take: MAX_ROWS,
   });
+  const truncated = refunds.length >= MAX_ROWS;
 
-  const filtered = opts.locationId != null
-    ? refunds.filter((r) => r.payment.locationId === opts.locationId)
-    : refunds;
-
-  const sameStaff = filtered.filter((r) => r.requestedById === r.payment.collectedById);
+  const sameStaff = refunds.filter((r) => r.requestedById === r.payment.collectedById);
 
   return {
     rangeFrom: fmtDate(opts.from),
     rangeTo: fmtDate(opts.to),
-    totalRefunds: filtered.length,
+    totalRefunds: refunds.length,
     sameStaffCount: sameStaff.length,
     sameStaffCashCount: sameStaff.filter((r) => r.refundMode === "cash").length,
     sameStaffTotal: sameStaff.reduce((s, r) => s + asRupees(r.amountRefunded || r.amountRequested), 0),
@@ -238,6 +283,7 @@ export async function detectRefundRouting(opts: Range) {
       phone: r.payment.user?.phone ?? "",
       at: r.createdAt.toISOString(),
     })),
+    truncated,
   };
 }
 
@@ -245,8 +291,12 @@ export async function detectRefundRouting(opts: Range) {
 /**
  * Surfaces staff who issue lots of comps + members who receive comps
  * repeatedly. Built on AuditLog actions `comp.issue` and `comp_pass.issue`.
+ *
+ * Location-agnostic: AuditLog has no locationId column. The corresponding
+ * tool intentionally omits a location parameter so the AI can't pass one
+ * we'd silently ignore.
  */
-export async function detectCompAbusePatterns(opts: Range) {
+export async function detectCompAbusePatterns(opts: AuditRange) {
   const logs = await prisma.auditLog.findMany({
     where: {
       action: { in: ["comp.issue", "comp_pass.issue"] },
@@ -254,13 +304,21 @@ export async function detectCompAbusePatterns(opts: Range) {
     },
     select: { id: true, action: true, actorId: true, details: true, createdAt: true },
     orderBy: { createdAt: "desc" },
+    take: MAX_ROWS,
   });
+  const truncated = logs.length >= MAX_ROWS;
 
-  // details is JSON-stringified — extract userId/reason where present
+  // details is JSON-stringified — extract userId/reason where present.
+  // Count parse failures so a tampered or schema-drifted details column
+  // doesn't silently exclude rows from the recipient histogram.
   type Parsed = { userId?: number; reason?: string };
+  let parseFailures = 0;
   function parse(d: string | null): Parsed {
     if (!d) return {};
-    try { return JSON.parse(d) as Parsed; } catch { return {}; }
+    try { return JSON.parse(d) as Parsed; } catch {
+      parseFailures++;
+      return {};
+    }
   }
 
   const byIssuer = new Map<number, { count: number }>();
@@ -279,6 +337,9 @@ export async function detectCompAbusePatterns(opts: Range) {
       if (p.reason) e.reasons.add(p.reason);
       byRecipient.set(p.userId, e);
     }
+  }
+  if (parseFailures > 0) {
+    console.warn(`[anomaly] detectCompAbusePatterns: ${parseFailures} audit-log details rows failed to parse`);
   }
 
   const issuerIds = [...byIssuer.keys()];
@@ -324,8 +385,10 @@ export async function detectCompAbusePatterns(opts: Range) {
     totalCompsIssued: logs.length,
     distinctIssuers: byIssuer.size,
     distinctRecipients: byRecipient.size,
+    parseFailures,
     topIssuers,
     repeatRecipients,
+    truncated,
   };
 }
 
@@ -363,13 +426,15 @@ export async function detectBalanceMismatches(opts: {
       user: { select: { firstname: true, lastname: true, phone: true } },
       plan: { select: { name: true } },
     },
-    take: 50000,
+    take: MAX_ROWS,
   });
+  const truncated = tickets.length >= MAX_ROWS;
 
   if (tickets.length === 0) {
     return {
       ticketsScanned: 0, mismatchCount: 0, totalAbsoluteDrift: 0,
       mismatches: [], recentOnly: !!opts.recentOnly, recentDays,
+      minDriftRupees: minDrift, truncated,
     };
   }
 
@@ -418,6 +483,7 @@ export async function detectBalanceMismatches(opts: {
     recentOnly: !!opts.recentOnly,
     recentDays,
     minDriftRupees: minDrift,
+    truncated,
   };
 }
 
@@ -426,8 +492,11 @@ export async function detectBalanceMismatches(opts: {
  * Per-staff rates for sensitive actions (password_reset, member_transfer,
  * refund.request, comp issuance). Robin asks "is anyone unusually busy in
  * the sensitive areas?".
+ *
+ * Location-agnostic: AuditLog has no locationId column. The corresponding
+ * tool intentionally omits a location parameter.
  */
-export async function detectAuditAnomalies(opts: Range) {
+export async function detectAuditAnomalies(opts: AuditRange) {
   const SENSITIVE = [
     "password_reset",
     "member_transfer",
@@ -446,7 +515,9 @@ export async function detectAuditAnomalies(opts: Range) {
       createdAt: { gte: opts.from, lte: opts.to },
     },
     select: { action: true, actorId: true },
+    take: MAX_ROWS,
   });
+  const truncated = logs.length >= MAX_ROWS;
 
   const byActor = new Map<number, Map<string, number>>();
   const byAction = new Map<string, number>();
@@ -485,6 +556,7 @@ export async function detectAuditAnomalies(opts: Range) {
     totalSensitiveActions: logs.length,
     actionsByType: Object.fromEntries(byAction.entries()),
     byActor: rows.slice(0, 25),
+    truncated,
   };
 }
 
@@ -495,8 +567,10 @@ export async function getOwnerAnomalySummary(opts: Range) {
     detectOffShiftCashPayments(opts),
     detectDiscountOutliers(opts),
     detectRefundRouting(opts),
-    detectCompAbusePatterns(opts),
-    detectAuditAnomalies(opts),
+    // Comp/audit detectors are location-agnostic (AuditLog has no
+    // locationId). Pass only the date range — locationId is ignored.
+    detectCompAbusePatterns({ from: opts.from, to: opts.to }),
+    detectAuditAnomalies({ from: opts.from, to: opts.to }),
     detectBalanceMismatches({
       locationId: opts.locationId,
       limit: 10,

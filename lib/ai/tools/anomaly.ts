@@ -17,6 +17,14 @@ const dateRange = z.object({
   locationId: z.number().nullable().describe("Filter by location ID"),
 });
 
+// Detectors built on AuditLog have no locationId column to filter on.
+// Expose a narrower schema so the AI cannot pass a parameter that would
+// be silently ignored.
+const auditDateRange = z.object({
+  from: z.string().describe("Start date inclusive, YYYY-MM-DD"),
+  to: z.string().describe("End date inclusive, YYYY-MM-DD"),
+});
+
 function parseRange(input: { from: string; to: string; locationId: number | null }) {
   const from = new Date(`${input.from}T00:00:00.000Z`);
   const to = new Date(`${input.to}T23:59:59.999Z`);
@@ -24,6 +32,15 @@ function parseRange(input: { from: string; to: string; locationId: number | null
     return null;
   }
   return { from, to, locationId: input.locationId ?? undefined };
+}
+
+function parseAuditRange(input: { from: string; to: string }) {
+  const from = new Date(`${input.from}T00:00:00.000Z`);
+  const to = new Date(`${input.to}T23:59:59.999Z`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return null;
+  }
+  return { from, to };
 }
 
 export const anomalyTools = [
@@ -84,10 +101,10 @@ export const anomalyTools = [
   tool({
     name: "detect_comp_abuse_patterns",
     description:
-      "Who issues free / complimentary memberships and who keeps receiving them. Use for: 'top comp issuers', 'who got multiple comps', 'comps in a row', 'repeat comp recipients', 'is anyone abusing the comp system'. Built from comp.issue + comp_pass.issue audit logs — returns topIssuers and repeatRecipients (members with 2+ comps in the window).",
-    parameters: dateRange,
+      "Who issues free / complimentary memberships and who keeps receiving them. Use for: 'top comp issuers', 'who got multiple comps', 'comps in a row', 'repeat comp recipients', 'is anyone abusing the comp system'. Built from comp.issue + comp_pass.issue audit logs — returns topIssuers and repeatRecipients (members with 2+ comps in the window). NOTE: gym-wide only — audit log has no location column.",
+    parameters: auditDateRange,
     async execute(input) {
-      const r = parseRange(input);
+      const r = parseAuditRange(input);
       if (!r) return JSON.stringify({ error: "Invalid date range" });
       const out = await detectCompAbusePatterns(r);
       return JSON.stringify(out);
@@ -120,10 +137,10 @@ export const anomalyTools = [
   tool({
     name: "detect_audit_anomalies",
     description:
-      "Per-staff rates of sensitive audit actions (password_reset, member_transfer, refund.*, comp.issue, cash_shift.variance_approve). Tells Robin which staff member is most active in the dangerous areas.",
-    parameters: dateRange,
+      "Per-staff rates of sensitive audit actions (password_reset, member_transfer, refund.*, comp.issue, cash_shift.variance_approve). Tells Robin which staff member is most active in the dangerous areas. NOTE: gym-wide only — audit log has no location column.",
+    parameters: auditDateRange,
     async execute(input) {
-      const r = parseRange(input);
+      const r = parseAuditRange(input);
       if (!r) return JSON.stringify({ error: "Invalid date range" });
       const out = await detectAuditAnomalies(r);
       return JSON.stringify(out);
