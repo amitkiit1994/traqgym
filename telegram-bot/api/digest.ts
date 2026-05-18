@@ -120,26 +120,12 @@ export async function loadSnapshotsWith(
   return out;
 }
 
+// Production binding for loadSnapshotsWith — single source of truth for
+// the per-gym latest-pointer fetch. A direct copy of this with hard-coded
+// `blobRegistry.for(slug)` used to exist; consolidating prevents drift
+// when fixing things like the looksMissing pattern.
 async function loadSnapshots(registry: BlobStoreRegistry): Promise<Record<string, SnapshotLoad>> {
-  const out: Record<string, SnapshotLoad> = {};
-  await Promise.all(
-    listGyms().map(async g => {
-      try {
-        const p = await registry.for(g.slug).fetchLatest();
-        out[g.slug] = { status: "ok", date: p.snapshot_date };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const looksMissing = /404|not\s*found|no such/i.test(message);
-        out[g.slug] = looksMissing
-          ? { status: "missing" }
-          : { status: "error", reason: message.slice(0, 120) };
-        if (!looksMissing) {
-          console.warn(`[digest] snapshot load failed for gym=${g.slug}: ${message}`);
-        }
-      }
-    }),
-  );
-  return out;
+  return loadSnapshotsWith(slug => registry.for(slug).fetchLatest());
 }
 
 export function snapshotsLine(snapshots: Record<string, SnapshotLoad>): string {
@@ -164,6 +150,20 @@ export function anySnapshotLoaded(snapshots: Record<string, SnapshotLoad>): bool
   return Object.values(snapshots).some(s => s.status === "ok");
 }
 
+// IST-local date as YYYY-MM-DD. The owner sees the digest in IST and the
+// CSV Payment Date column is recorded in IST by gym staff; both ground
+// truth and presentation are IST-anchored, so the verifier MUST be too.
+// Using UTC would silently misalign by one day for manual digest runs
+// after 18:30 UTC (= 00:00 IST next day).
+export function istDateIso(now: Date = new Date()): string {
+  return new Date(now.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function istYesterdayIso(now: Date = new Date()): string {
+  const ist = new Date(now.getTime() + 5.5 * 3600 * 1000);
+  ist.setUTCDate(ist.getUTCDate() - 1);
+  return ist.toISOString().slice(0, 10);
+}
+
 // Compute yesterday's collection per gym from the raw CSV (no LLM in the
 // loop). Used by post-LLM verification to confirm the brief's headlines
 // don't silently lie about real numbers. Returns null per-gym when the
@@ -171,11 +171,8 @@ export function anySnapshotLoaded(snapshots: Record<string, SnapshotLoad>): bool
 async function computeYesterdayCollectionPerGym(
   registry: BlobStoreRegistry,
   snapshots: Record<string, SnapshotLoad>,
-  todayIso: string,
 ): Promise<Record<string, number | null>> {
-  const yesterday = new Date(todayIso + "T00:00:00Z");
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-  const yIso = yesterday.toISOString().slice(0, 10);
+  const yIso = istYesterdayIso();
   const out: Record<string, number | null> = {};
   await Promise.all(
     Object.entries(snapshots).map(async ([slug, s]) => {
@@ -216,28 +213,51 @@ function inrFormat(n: number): string {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
 }
 
+// Extract a gym's body section from a brief shaped like:
+//   === Gym A ===\n  body A\n  === Gym B ===\n  body B
+// brief.split("===") returns [preamble, headerA, bodyA, headerB, bodyB, ...].
+// Headers are at odd indices; the body for a header at index i is at i+1.
+// The previous implementation used `.find()` on the split result, which
+// returned the bare-name header segment (empty of rupee figures) instead
+// of the body that follows — so every verification false-positived with
+// "no rupee figures present in section". Exported for test coverage.
+export function extractGymSection(brief: string, gymName: string): string | null {
+  const parts = brief.split("===");
+  for (let i = 1; i < parts.length - 1; i += 2) {
+    if (parts[i]!.toUpperCase().includes(gymName.toUpperCase())) {
+      return parts[i + 1] ?? null;
+    }
+  }
+  return null;
+}
+
 // Verifier: returns appended warning text if the brief's headline numbers
 // don't line up with the computed ground-truth per gym. Heuristic — looks
-// for the gym's name + a number that's within 1% of the computed value
-// (allows for rounding in the LLM's output). Misses are reported as
-// "verification failed for <gym>".
-function verifyBriefAgainstGroundTruth(
+// for the gym's section and any rupee figure within 2% of the computed
+// value (allows for LLM rounding). Misses are reported as "verification
+// failed for <gym>". Gyms with null `computed` (unhealthy CSV — no
+// ground truth available) get a "VERIFICATION SKIPPED" line so the
+// operator sees the safety net was disabled, not silently passing.
+export function verifyBriefAgainstGroundTruth(
   brief: string,
   computed: Record<string, number | null>,
 ): string | null {
   const failures: string[] = [];
+  const skipped: string[] = [];
   for (const [slug, expected] of Object.entries(computed)) {
-    if (expected === null) continue; // Snapshot unhealthy; not verifying.
     const gym = getGym(slug);
-    // Find the gym's section in the brief (=== Gym Name ===).
-    const sectionMatch = brief.split("===").find(s => s.toUpperCase().includes(gym.name.toUpperCase()));
-    if (!sectionMatch) {
+    if (expected === null) {
+      skipped.push(`${gym.name}: payments CSV is parser-flagged or unreadable; headline number was not cross-checked`);
+      continue;
+    }
+    const body = extractGymSection(brief, gym.name);
+    if (body === null) {
       failures.push(`${gym.name}: section missing from brief`);
       continue;
     }
     // Pull all rupee-formatted numbers from the section.
     const nums: number[] = [];
-    for (const m of sectionMatch.matchAll(/₹\s*([\d,]+)/g)) {
+    for (const m of body.matchAll(/₹\s*([\d,]+)/g)) {
       const n = Number(m[1]!.replace(/,/g, ""));
       if (Number.isFinite(n)) nums.push(n);
     }
@@ -253,14 +273,21 @@ function verifyBriefAgainstGroundTruth(
       );
     }
   }
-  if (failures.length === 0) return null;
-  return `\n\n[VERIFICATION WARNING — brief may be inaccurate]\n${failures.map(f => `- ${f}`).join("\n")}`;
+  if (failures.length === 0 && skipped.length === 0) return null;
+  const parts: string[] = [];
+  if (failures.length > 0) {
+    parts.push(`[VERIFICATION WARNING — brief may be inaccurate]\n${failures.map(f => `- ${f}`).join("\n")}`);
+  }
+  if (skipped.length > 0) {
+    parts.push(`[VERIFICATION SKIPPED — cannot confirm headline numbers]\n${skipped.map(s => `- ${s}`).join("\n")}`);
+  }
+  return `\n\n${parts.join("\n\n")}`;
 }
 
 async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
   text: string; toolCalls: number; snapshots: Record<string, string>; model: string;
 }> {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = istDateIso();
   const snapshotsStructured = await loadSnapshots(blobRegistry);
   if (!anySnapshotLoaded(snapshotsStructured)) {
     // Every gym's pointer failed — refuse rather than send a useless brief.
@@ -365,7 +392,6 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
     const expected = await computeYesterdayCollectionPerGym(
       blobRegistry,
       snapshotsStructured,
-      todayIso,
     );
     const warning = verifyBriefAgainstGroundTruth(briefRaw, expected);
     if (warning) {

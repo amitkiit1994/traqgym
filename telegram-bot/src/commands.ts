@@ -48,7 +48,21 @@ export async function handleSlashCommand(ctx: SlashContext): Promise<string | nu
             `  Rows: ${Object.entries(p.row_counts).map(([k, v]) => `${k}=${v}`).join(", ")}`,
           );
         } catch (e) {
-          sections.push(`${gym.name}`, `  (no snapshot yet: ${(e as Error).message.slice(0, 80)})`);
+          const message = (e as Error).message;
+          // Distinguish "gym not yet seeded" (404 — benign) from a real
+          // outage (401/5xx/network — operator action needed). The latter
+          // must NOT be labeled "no snapshot yet" or the operator trains
+          // themselves to ignore it.
+          const looksMissing = /404|not\s*found|no such/i.test(message);
+          if (looksMissing) {
+            sections.push(`${gym.name}`, `  (no snapshot yet — first scrape hasn't completed)`);
+          } else {
+            sections.push(
+              `${gym.name}`,
+              `  ⚠ SNAPSHOT UNREACHABLE: ${message.slice(0, 120)}`,
+              `  (operator action needed — check Vercel Blob + scraper logs)`,
+            );
+          }
         }
         sections.push("");
       }

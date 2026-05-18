@@ -23,6 +23,14 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 // trigger a duplicate that re-spends OpenAI credits, double-fires GitHub
 // dispatch, and confuses the conversation history. Bounded FIFO keeps
 // memory tiny (200 × ~24-byte numbers = <5KB).
+//
+// LIMITATION: This is per-Vercel-container only — Vercel routes by load,
+// not sticky session, so two warm containers can each treat the same
+// retry as "first seen" and double-process it. For the current owner-only
+// bot the failure mode is rare (need a 60s+ LLM run AND a retry routed
+// to a different warm container). If /approve grows past ~5 active
+// users, move dedup to Vercel KV / Upstash Redis. Same scaling threshold
+// as rate-limit.ts.
 const DEDUP_MAX = 200;
 const seenUpdateIds: number[] = [];
 const seenUpdateSet = new Set<number>();
@@ -317,13 +325,26 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  // Voice → Whisper. Replace text with the transcription.
+  // Voice → Whisper. Replace text with the transcription. An empty
+  // transcript means Whisper heard silence / noise / non-speech; tell
+  // the user explicitly rather than feeding the literal placeholder
+  // "(empty voice transcription)" into the LLM (where it'd produce a
+  // confused answer the user can't act on).
   if (msg.voice) {
     try {
       inputKind = "voice";
       const file = await downloadTelegramFile({ token: config.telegramBotToken, fileId: msg.voice.file_id });
-      const transcript = await transcribeAudio({ apiKey: config.openaiApiKey, file });
-      text = transcript || "(empty voice transcription)";
+      const transcript = (await transcribeAudio({ apiKey: config.openaiApiKey, file })).trim();
+      if (transcript === "") {
+        await sendTelegramMessage({
+          token: config.telegramBotToken,
+          chatId,
+          text: "I couldn't hear anything in your voice note — please retry or type your question.",
+        });
+        res.status(200).end();
+        return;
+      }
+      text = transcript;
     } catch (e) {
       await sendTelegramMessage({
         token: config.telegramBotToken,

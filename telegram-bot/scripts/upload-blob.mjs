@@ -171,7 +171,8 @@ if (prevBlob) {
 // Absolute floor check: catches "yesterday was zero too, so % drop check
 // passes anything" — the blindspot that lets two bad days ship in a row.
 // Only enforced when this gym has a floor table; unknown gyms get the
-// historical (relative-only) behavior.
+// historical (relative-only) behavior but with a loud warning so the
+// operator sees they're shipping under-guarded.
 const floors = ROW_FLOORS[gym];
 if (floors) {
   const belowFloor = [];
@@ -185,6 +186,13 @@ if (floors) {
     console.error("Likely cause: stale FB cookie, scraper auth failure, or HTML-instead-of-CSV response.");
     process.exit(2);
   }
+} else {
+  // GH Actions ::warning:: annotation makes this visible in the run UI.
+  console.warn(
+    `::warning::Gym '${gym}' has no ROW_FLOORS entry in upload-blob.mjs — ` +
+    `only the relative >50% drop check is active. ` +
+    `Add a floor block to ROW_FLOORS to harden integrity for this gym.`,
+  );
 }
 
 const latestRes = await put(`csv/${gym}/latest.json`, JSON.stringify(latest, null, 2), {
