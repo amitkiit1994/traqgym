@@ -185,6 +185,7 @@ type ForecastData = {
 
 type Props = {
   forecast: ForecastData;
+  forecastFailed?: boolean;
   stats: {
     activeMembers: number;
     revenueThisMonth: number;
@@ -313,6 +314,7 @@ function RevenueChartWithRange({
 export function DashboardClient({
   stats,
   forecast,
+  forecastFailed = false,
   previousMonthStats,
   locations,
   currentLocationId,
@@ -932,7 +934,20 @@ export function DashboardClient({
       )}
 
       {/* Revenue Forecast (Next 30 Days) */}
-      {forecast.totalExpiring > 0 && (
+      {forecastFailed && (
+        <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle>Revenue Forecast (Next 30 Days)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+              Forecast unavailable — the upstream service is failing. Numbers above are NOT zero, they're just
+              missing. Operator should check server logs.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {!forecastFailed && forecast.totalExpiring > 0 && (
         <Card className="gradient-border-card bg-card/70 dark:bg-card/80 backdrop-blur-sm">
           <CardHeader>
             <CardTitle>Revenue Forecast (Next 30 Days)</CardTitle>

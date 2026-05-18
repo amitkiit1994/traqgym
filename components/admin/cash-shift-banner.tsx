@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { getCashShiftBannerState } from "@/lib/services/cash-shift";
 
 /**
  * Surfaces a one-line warning when:
@@ -10,24 +10,8 @@ import { prisma } from "@/lib/prisma";
  * Renders nothing in the safe case so the dashboard stays uncluttered.
  */
 export async function CashShiftBanner({ locationId }: { locationId?: number }) {
-  const today = new Date();
-  const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-  const [openShift, todayCashCount] = await Promise.all([
-    prisma.cashShift.findFirst({
-      where: { status: "open", ...(locationId ? { locationId } : {}) },
-      select: { id: true },
-    }),
-    prisma.payment.count({
-      where: {
-        paymentMode: { in: ["cash", "Cash", "CASH"] },
-        createdAt: { gte: dayStart },
-        ...(locationId ? { locationId } : {}),
-      },
-    }),
-  ]);
-
-  if (openShift || todayCashCount === 0) return null;
+  const { shouldShow, todayCashCount } = await getCashShiftBannerState(locationId);
+  if (!shouldShow) return null;
 
   return (
     <div className="px-4 pt-4 md:px-6">
