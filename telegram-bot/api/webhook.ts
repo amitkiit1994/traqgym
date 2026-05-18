@@ -10,6 +10,7 @@ import { createBlobStore } from "../src/data/blob-store.js";
 import { createAllowlistStore } from "../src/data/allowlist-store.js";
 import { createGithubDispatcher } from "../src/github-dispatch.js";
 import { runLlm } from "../src/llm.js";
+import { keepConversationalOnly } from "../src/history.js";
 
 const config = loadConfig();
 const rateLimiter = createRateLimiter({ windowMs: 60_000, max: 20 });
@@ -35,8 +36,14 @@ function describeError(e: unknown): { text: string; resetMemory: boolean } {
   const status = err?.status;
 
   // History pairing corruption — clear memory and tell user.
+  // Covers both the older "tool_call not found" and the gpt-5 reasoning-pairing
+  // 400 ("function_call … was provided without its required 'reasoning' item").
+  // We strip scratchpad before persisting, so this should not fire — but keep it
+  // as defense-in-depth in case the SDK ever leaks an unpaired item.
   if (/No tool call found for function call output/i.test(msg) ||
-      /tool_call.*not found/i.test(msg)) {
+      /tool_call.*not found/i.test(msg) ||
+      /function_call.*required.*reasoning/i.test(msg) ||
+      /reasoning.*required.*following item/i.test(msg)) {
     return {
       text: "Lost the conversation thread (tool-call pairing broke in OpenAI). I've cleared this chat's memory — ask again and I'll start fresh.",
       resetMemory: true,
@@ -310,8 +317,13 @@ export default async function handler(req: any, res: any) {
       reply = llm.text;
       toolCalls = llm.toolCalls;
       snapshotDate = llm.snapshotDate;
-      // Persist updated history, capped to last MAX_HISTORY items.
-      const trimmed = llm.history.slice(-MAX_HISTORY);
+      // Persist only conversational turns (user + assistant text). Scratchpad
+      // (reasoning, function_call, function_call_output) is dropped — replaying
+      // it across turns trips the Responses API's reasoning↔function_call
+      // pairing constraint on gpt-5. The model can re-derive tool calls
+      // fresh on the next turn from the user-visible exchange.
+      const conversational = keepConversationalOnly(llm.history);
+      const trimmed = conversational.slice(-MAX_HISTORY);
       historyByChat.set(chatId, trimmed);
     }
 
