@@ -1,7 +1,7 @@
 name: morning-digest
 on:
   schedule:
-    - cron: "0 1 * * *"     # 01:00 UTC = 06:30 IST, after CSV refresh
+    - cron: "30 3 * * *"     # 03:30 UTC = 09:00 IST, after CSV refresh
   workflow_dispatch:
 jobs:
   send-digest:
