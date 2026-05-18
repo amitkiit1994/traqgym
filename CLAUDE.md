@@ -117,7 +117,7 @@ Staff can do day-to-day operations: member check-in, renewals, payments, enquiry
 
 **Free Form Fitness** (`main` branch, Vercel project `traqgym-app`)
 - Theme: purple (OKLCh hue 275), logo `/traqLogo.png` — set via `NEXT_PUBLIC_GYM_THEME_HUE=275` in Vercel env (defaulted to 275 in `app/layout.tsx` so this can be omitted)
-- Admin: admin@freeformfitness.com / password123
+- Admin: carruthersrobin3@gmail.com / Robin@FFF2026 (Robin runs both gyms; admin@freeformfitness.com is NOT a real account on the FFF DB despite earlier docs)
 - Staff: e.g. pooja.singh@staff.freeform.local / password123
 - Members: imported from FitnessBoard — email is `{phone}@imported.local`, password is their phone number
 - ~303 users, ~16 plans, ~570 tickets, ~566 payments, 5 enquiries
