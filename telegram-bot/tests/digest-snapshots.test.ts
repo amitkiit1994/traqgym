@@ -1,10 +1,21 @@
-import { describe, it, expect } from "vitest";
-import {
+import { describe, it, expect, vi } from "vitest";
+
+// digest.ts calls loadConfig() at module load (Vercel-function pattern), so
+// we feed it the minimum env it needs before the import resolves. Real
+// values irrelevant — we only exercise the pure helpers.
+vi.stubEnv("TELEGRAM_BOT_TOKEN", "x");
+vi.stubEnv("TELEGRAM_ALLOWED_CHAT_IDS", "1");
+vi.stubEnv("WEBHOOK_SECRET", "x");
+vi.stubEnv("OPENAI_API_KEY", "x");
+vi.stubEnv("BLOB_READ_WRITE_TOKEN", "x");
+vi.stubEnv("BLOB_BASE_URL", "https://example.com");
+
+const {
   loadSnapshotsWith,
   snapshotsLine,
   snapshotDatesOnly,
   anySnapshotLoaded,
-} from "../api/digest.js";
+} = await import("../api/digest.js");
 
 // Drive loadSnapshotsWith with a tiny fake `fetchLatestFor` so we exercise
 // every status branch without standing up real Vercel Blob.
