@@ -37,7 +37,15 @@ from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 
 V3_BASE = "https://v3.fitnessboard.in"
-DEFAULT_START = "01-01-2012"
+# Trimmed from "01-01-2012" — pulling 14 years of payments nightly meant
+# fetching ~14k rows for E-GYM just to skip ~14k as "alreadyExists" in
+# the insert-only sync route. The sync is insert-only; rows older than
+# this window are already in TraqGym Postgres from earlier nightly runs
+# and will never be touched again. 1 year keeps the recent-payment
+# correction window open (the only mutable field, trainerId, gets
+# backfilled if still null) and shrinks the v3 fetch dramatically.
+DEFAULT_LOOKBACK_DAYS = 365
+DEFAULT_START = (date.today() - timedelta(days=DEFAULT_LOOKBACK_DAYS)).strftime("%d-%m-%Y")
 USER_AGENT = "Mozilla/5.0 (compatible; TraqGym-v3-sync/1.0)"
 TIMEOUT = 120
 SSL_CTX = ssl.create_default_context()
@@ -211,26 +219,26 @@ def push_dataset(base_url: str, secret: str, dataset: str, rows: list[dict]) -> 
 
 # ─── Main pipeline ────────────────────────────────────────────────────────
 def fetch_payments(cookie: str) -> list[dict]:
-    """Fetch payment rows from v3, falling back to year-by-year on empty result.
+    """Fetch payment rows from v3 over the configured lookback window.
 
-    Larger gym accounts (E-GYM Lokhandwala with 14k+ payments) sometimes return
-    empty or time out on the full-range request and need year-by-year chunking.
+    On empty response, retry the same window once after a short pause —
+    v3 occasionally returns successful-but-empty payloads under load. The
+    old year-by-year fallback chunked back to 2020, which defeated the
+    purpose of trimming the primary window and made every "bad night"
+    cost ~6x the bandwidth. Single retry handles the real failure mode
+    (transient v3 flake) without re-introducing the multi-year pull.
     """
-    today = date.today().strftime("%d-%m-%Y")
-    today_year = date.today().year
+    import time
 
+    today = date.today().strftime("%d-%m-%Y")
     rows = _fetch_payment_range(cookie, DEFAULT_START, today)
-    log(f"  parsed {len(rows)} payment rows from v3 (full range)")
+    log(f"  parsed {len(rows)} payment rows from v3 ({DEFAULT_START}..{today})")
 
     if not rows:
-        log("  full range empty — falling back to year-by-year")
-        for year in range(2020, today_year + 1):
-            start = f"01-01-{year}"
-            end = today if year == today_year else f"31-12-{year}"
-            year_rows = _fetch_payment_range(cookie, start, end)
-            if year_rows:
-                log(f"    {year}: {len(year_rows)} rows")
-                rows.extend(year_rows)
+        log("  empty response — sleeping 30s then retrying once")
+        time.sleep(30)
+        rows = _fetch_payment_range(cookie, DEFAULT_START, today)
+        log(f"  retry parsed {len(rows)} payment rows")
 
     return _normalise_payments(rows)
 
