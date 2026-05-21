@@ -164,56 +164,19 @@ function istYesterdayIso(now: Date = new Date()): string {
   return ist.toISOString().slice(0, 10);
 }
 
-// Compute yesterday's collection per gym from the raw CSV (no LLM in the
-// loop). Used by post-LLM verification to confirm the brief's headlines
-// don't silently lie about real numbers. Returns null per-gym when the
-// payments CSV is unhealthy (parser misalignment).
-async function computeYesterdayCollectionPerGym(
-  registry: BlobStoreRegistry,
-  snapshots: Record<string, SnapshotLoad>,
-): Promise<Record<string, number | null>> {
-  const yIso = istYesterdayIso();
-  const out: Record<string, number | null> = {};
-  await Promise.all(
-    Object.entries(snapshots).map(async ([slug, s]) => {
-      if (s.status !== "ok") return;
-      try {
-        const store = registry.for(slug);
-        const text = await store.fetchCsv("payments");
-        const hint = CSV_HINTS.payments ?? { date: [], number: [] };
-        const { rows, columns, column_diagnostics, parse_errors } = parseCsv(text, {
-          dateColumns: hint.date,
-          numberColumns: hint.number,
-        });
-        const res = applyQuery(
-          rows,
-          {
-            filters: [{ col: "Payment Date", op: "between", val: [yIso, yIso] }],
-            agg: { col: "Paid Amount", fn: "sum" },
-          },
-          { columns, diagnostics: column_diagnostics, parse_errors },
-        );
-        if (res.warnings && res.warnings.length > 0) {
-          // Misaligned column → can't trust the number, treat as unknown.
-          out[slug] = null;
-          return;
-        }
-        out[slug] = typeof res.agg_result === "number" ? res.agg_result : null;
-      } catch (e) {
-        console.warn(`[digest] yesterday-verify failed for gym=${slug}: ${(e as Error).message}`);
-        out[slug] = null;
-      }
-    }),
-  );
-  return out;
-}
-
 // Full section-1 ground truth per gym: total, payment count, breakdown by
 // canonical payment mode (Cash / GPay / Other), and 7-day-prior average.
-// This is what `overrideSection1FromGroundTruth` substitutes in when the
-// LLM headline doesn't match. Null per-gym when payments CSV is unhealthy
-// (same trigger as `computeYesterdayCollectionPerGym` — redactor takes
-// over for those, override stays out).
+// `.total` is what the verifier compares the LLM's headline against;
+// the rest is what `overrideSection1FromGroundTruth` substitutes in when
+// the LLM headline doesn't match. Null per-gym when payments CSV is
+// unhealthy (parser misalignment) — redactor takes over for those, both
+// verifier and override stay out.
+//
+// One fetch+parse per gym serves all three downstream consumers
+// (verifier / redactor / override). An earlier split with a separate
+// `computeYesterdayCollectionPerGym` doubled per-gym work and pushed
+// the function past Vercel's 60s ceiling, returning a 504 with no
+// brief sent.
 export interface Section1Truth {
   total: number;
   count: number;
@@ -645,9 +608,16 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
   // (parser misalignment) — there's no ground truth to check against.
   let briefText = briefRaw;
   try {
-    const expected = await computeYesterdayCollectionPerGym(
+    // One fetch+parse per gym; verifier, redactor and override all read
+    // from this. `expected[slug]` is just `section1Truth[slug]?.total`,
+    // preserving the null=unhealthy contract every consumer was written
+    // against.
+    const section1Truth = await computeYesterdaySection1PerGym(
       blobRegistry,
       snapshotsStructured,
+    );
+    const expected: Record<string, number | null> = Object.fromEntries(
+      Object.entries(section1Truth).map(([slug, t]) => [slug, t === null ? null : t.total]),
     );
     // Redaction first: if a gym's payments CSV is unhealthy, overwrite its
     // Headline + section 1 in-place so we never ship a fabricated number.
@@ -669,10 +639,6 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
     // mode the verifier alone couldn't — LLM fabricating GPay totals
     // and payment counts while Cash happens to match expected, so a
     // "any rupee figure matches" check silently passed.
-    const section1Truth = await computeYesterdaySection1PerGym(
-      blobRegistry,
-      snapshotsStructured,
-    );
     const { brief: overriddenBrief, overridden } = overrideSection1FromGroundTruth(
       briefText,
       section1Truth,
