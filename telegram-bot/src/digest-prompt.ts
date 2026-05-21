@@ -41,11 +41,14 @@ OUTPUT STRUCTURE
   GOOD MORNING — ${todayIso}
 
   === <Gym Display Name> ===
-  Headline: e.g. "₹52,300 in (18% above avg) • 4 expiring this week"
-  1. YESTERDAY'S MONEY: <total> • Cash ₹X / GPay ₹Y • <N> payments
+  Headline: e.g. "₹52,300 in (18% above avg) • 4 expiring this week".
+  The "in (X% above/below avg)" clause is REQUIRED when the 7-day avg is
+  computable. If you cannot compute the avg, drop the entire "in (...)"
+  clause — do NOT write a hanging "in " with nothing after it.
+  1. YESTERDAY'S MONEY: ₹<sum_paid_yesterday> • Cash ₹X / GPay ₹Y • <N> payments
      • 7-day avg ₹Z (<% above/below>)
-  2. EXPIRING SOON: <total>. Top 5: "<Name> — ₹<amt> — <Contact No>"
-  3. OUTSTANDING DUES: <total>. Top 5 with names + balance + contact.
+  2. EXPIRING SOON: ₹<sum_paid_amount_of_top5> total (<count> members). Top 5: "<Name> — ₹<amt> — <Contact No>"
+  3. OUTSTANDING DUES: ₹<sum_balance_amount_of_top5> total (<count> members). Top 5: "<Name> — ₹<bal> — <Contact No>"
   4. ANOMALIES (OMIT THIS SECTION ENTIRELY if nothing found — do NOT
      write "No anomalies")
   5. NEW LEADS / PROSPECTS: <count> + names + source if any.
@@ -71,10 +74,17 @@ PER-GYM SECTION QUERY RULES
 2. EXPIRING SOON
    Source: payments CSV. Filter: End Date BETWEEN today+1 AND today+7.
    Sort: Paid Amount desc. Limit: 5.
+   The leading number on this section line MUST be the ₹ sum of Paid
+   Amount across those top 5 rows (e.g. "EXPIRING SOON: ₹52,900 total
+   (5 members)."). It is NEVER the row count alone — a bare "5" or
+   "5." is wrong.
 
 3. OUTSTANDING DUES
    Source: balance CSV. Filter: Balance Amount > 10000.
    Sort: Balance Amount desc. Limit: 5.
+   The leading number on this section line MUST be the ₹ sum of Balance
+   Amount across those top 5 rows (e.g. "OUTSTANDING DUES: ₹35,500
+   total (5 members)."). It is NEVER the row count alone.
 
 4. ANOMALIES (skip section if none)
    Backlog (Start Date weeks before Payment Date); day-level zero-spike
