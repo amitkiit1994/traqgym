@@ -14,8 +14,12 @@ beforeAll(() => {
 });
 afterAll(() => { process.env = ORIGINAL_ENV; });
 
-const { extractGymSection, verifyBriefAgainstGroundTruth, istDateIso } =
-  await import("../api/digest.js");
+const {
+  extractGymSection,
+  verifyBriefAgainstGroundTruth,
+  redactUnhealthySections,
+  istDateIso,
+} = await import("../api/digest.js");
 
 // Realistic brief shape from the digest-prompt.ts output spec. Exposed
 // here because the previous regression (find on bare-name header
@@ -109,6 +113,82 @@ describe("verifyBriefAgainstGroundTruth", () => {
     expect(result).toContain("VERIFICATION SKIPPED");
     expect(result).toContain("EGYM Lokhandwala");
     expect(result).toContain("parser-flagged");
+  });
+});
+
+describe("redactUnhealthySections", () => {
+  it("rewrites Headline + section 1 when a gym is unhealthy, leaves the other gym untouched", () => {
+    const { brief, redacted } = redactUnhealthySections(REAL_BRIEF, {
+      freeform: 52_300,
+      egym: null,
+    });
+    // EGYM section: Headline and section 1 must be replaced.
+    const egymBody = extractGymSection(brief, "EGYM Lokhandwala")!;
+    expect(egymBody).toContain("Headline: (payments data unreadable today)");
+    expect(egymBody).toContain("(skipped — payments CSV column misaligned");
+    expect(egymBody).not.toContain("₹3,31,200");
+    expect(egymBody).not.toContain("Cash ₹2,80,000");
+    // FFF section: untouched.
+    const fffBody = extractGymSection(brief, "Free Form Fitness")!;
+    expect(fffBody).toContain("₹52,300");
+    expect(fffBody).toContain("Cash ₹40,000");
+    expect(redacted).toEqual(["EGYM Lokhandwala"]);
+  });
+
+  it("returns brief unchanged when every gym is healthy", () => {
+    const { brief, redacted } = redactUnhealthySections(REAL_BRIEF, {
+      freeform: 52_300,
+      egym: 3_31_200,
+    });
+    expect(brief).toBe(REAL_BRIEF);
+    expect(redacted).toEqual([]);
+  });
+
+  it("rewrites every gym when all are unhealthy", () => {
+    const { brief, redacted } = redactUnhealthySections(REAL_BRIEF, {
+      freeform: null,
+      egym: null,
+    });
+    expect(brief).not.toContain("₹52,300");
+    expect(brief).not.toContain("₹3,31,200");
+    // CROSS-GYM ACTIONS section must survive intact.
+    expect(brief).toContain("=== CROSS-GYM ACTIONS ===");
+    expect(brief).toContain("Saba Khan");
+    expect(redacted).toEqual(["Free Form Fitness", "EGYM Lokhandwala"]);
+  });
+
+  it("redacts BOTH gyms when their bodies happen to be byte-identical", () => {
+    // Regression: an earlier `out.split(body).join(rewritten)` impl would
+    // mutate both copies on the first pass, so the second iteration found
+    // nothing to change and silently dropped the gym from `redacted`.
+    const identicalBody = `\nHeadline: ₹0 in\n1. YESTERDAY'S MONEY: ₹0\n`;
+    const twin =
+      `GOOD MORNING — 2026-05-19\n\n` +
+      `=== Free Form Fitness ===${identicalBody}` +
+      `=== EGYM Lokhandwala ===${identicalBody}` +
+      `=== CROSS-GYM ACTIONS ===\n- nothing\n`;
+    const { brief, redacted } = redactUnhealthySections(twin, {
+      freeform: null,
+      egym: null,
+    });
+    expect(redacted).toEqual(["Free Form Fitness", "EGYM Lokhandwala"]);
+    // Both sections rewritten — there should be two skip markers.
+    const skipCount = (brief.match(/payments data unreadable today/g) ?? []).length;
+    expect(skipCount).toBe(2);
+  });
+
+  it("does not crash on a brief that dropped the Headline line", () => {
+    const briefNoHeadline = REAL_BRIEF.replace(/^Headline:[^\n]*\n/m, "");
+    expect(() =>
+      redactUnhealthySections(briefNoHeadline, { freeform: null, egym: 3_31_200 }),
+    ).not.toThrow();
+    const { brief, redacted } = redactUnhealthySections(briefNoHeadline, {
+      freeform: null,
+      egym: 3_31_200,
+    });
+    // The replacement marker should still appear for FFF.
+    expect(brief).toContain("payments data unreadable today");
+    expect(redacted).toContain("Free Form Fitness");
   });
 });
 

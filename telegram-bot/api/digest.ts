@@ -231,6 +231,82 @@ export function extractGymSection(brief: string, gymName: string): string | null
   return null;
 }
 
+// Defense-in-depth against fabricated YESTERDAY'S MONEY: even with the
+// prompt's PAYMENTS-CSV ABSOLUTE GATE, gpt-* models have been observed to
+// confidently write a headline number (with internally inconsistent
+// Cash/GPay split) while correctly skipping later sections. When the
+// verifier reports `null` for a gym — meaning the payments CSV is
+// parser-flagged and there is no ground truth — we rewrite that gym's
+// Headline + section 1 in-place so the operator sees an explicit skip
+// instead of a hallucinated rupee figure.
+//
+// `computed[slug] === null` is the signal. Sections 2–5 are untouched
+// because they read from different CSVs and may still be valid.
+//
+// Implementation: split the brief once on `===` so each gym's body sits
+// at a known index, mutate the slot in place, then rejoin. Earlier
+// `out.split(body).join(rewritten)` was collision-prone — two gyms with
+// identical bodies would mutate both copies on the first pass and the
+// second iteration would silently no-op.
+//
+// Exported for unit tests.
+export function redactUnhealthySections(
+  brief: string,
+  computed: Record<string, number | null>,
+): { brief: string; redacted: string[] } {
+  const redacted: string[] = [];
+  const parts = brief.split("===");
+  // parts shape: [preamble, headerA, bodyA, headerB, bodyB, …]
+  // Bodies sit at indices 2, 4, 6, … with their header at index-1.
+  for (const [slug, expected] of Object.entries(computed)) {
+    if (expected !== null) continue;
+    const gym = getGym(slug);
+    const upper = gym.name.toUpperCase();
+    let bodyIdx = -1;
+    for (let i = 1; i < parts.length - 1; i += 2) {
+      if (parts[i]!.toUpperCase().includes(upper)) {
+        bodyIdx = i + 1;
+        break;
+      }
+    }
+    if (bodyIdx === -1) continue;
+    const body = parts[bodyIdx]!;
+    const rewritten = rewriteGymBodyForUnhealthyPayments(body);
+    if (rewritten !== body) {
+      parts[bodyIdx] = rewritten;
+      redacted.push(gym.name);
+    }
+  }
+  return { brief: parts.join("==="), redacted };
+}
+
+function rewriteGymBodyForUnhealthyPayments(body: string): string {
+  let out = body;
+  if (/^[ \t]*Headline:.*$/m.test(out)) {
+    out = out.replace(
+      /^([ \t]*)Headline:.*$/m,
+      "$1Headline: (payments data unreadable today)",
+    );
+  } else {
+    out = `\n  Headline: (payments data unreadable today)${out}`;
+  }
+  // `\d+` (not `[2-9]`) so future sections like `10.` still terminate.
+  const section1Re =
+    /^([ \t]*)1\. YESTERDAY'S MONEY:[\s\S]*?(?=^[ \t]*(?:\d+\.|===)|\s*$(?![\r\n]))/m;
+  if (section1Re.test(out)) {
+    out = out.replace(
+      section1Re,
+      "$11. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)\n",
+    );
+  } else {
+    out = out.replace(
+      /(Headline:[^\n]*\n)/,
+      "$1  1. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)\n",
+    );
+  }
+  return out;
+}
+
 // Verifier: returns appended warning text if the brief's headline numbers
 // don't line up with the computed ground-truth per gym. Heuristic — looks
 // for the gym's section and any rupee figure within 2% of the computed
@@ -393,10 +469,24 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
       blobRegistry,
       snapshotsStructured,
     );
-    const warning = verifyBriefAgainstGroundTruth(briefRaw, expected);
+    // Redaction first: if a gym's payments CSV is unhealthy, overwrite its
+    // Headline + section 1 in-place so we never ship a fabricated number.
+    // Verification runs after, on the redacted text, so its skipped-list
+    // is consistent with what the operator actually sees.
+    const { brief: redactedBrief, redacted } = redactUnhealthySections(
+      briefRaw,
+      expected,
+    );
+    briefText = redactedBrief;
+    if (redacted.length > 0) {
+      const note = `\n\n[AUTO-REDACTED — payments CSV unhealthy for: ${redacted.join(", ")}; Headline + section 1 replaced with skip marker]`;
+      briefText += note;
+      console.warn(`[digest] auto-redacted unhealthy gyms: ${redacted.join(", ")}`);
+    }
+    const warning = verifyBriefAgainstGroundTruth(briefText, expected);
     if (warning) {
       console.warn(`[digest] verification mismatch: ${warning.replace(/\n/g, " | ")}`);
-      briefText = briefRaw + warning;
+      briefText = briefText + warning;
     }
   } catch (e) {
     console.warn(`[digest] verification step itself failed: ${(e as Error).message}`);

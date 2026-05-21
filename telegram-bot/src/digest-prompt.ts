@@ -108,6 +108,15 @@ DATA-QUALITY GATING (HARD RULE)
   count(*) on the same payments CSV without the date filter. If count is
   large but your filter yields 0, the date column is misaligned — skip the
   section with the message above. NEVER write a confident "₹0".
+- PAYMENTS-CSV ABSOLUTE GATE: if the payments CSV reports "Payment Date"
+  or "Paid Amount" as unhealthy_columns, OR any query_csv against the
+  payments CSV returns a warning containing "UNHEALTHY", you MUST write:
+    Headline: (payments data unreadable today)
+    1. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in
+       today's snapshot — operator action needed)
+  and the 7-day average line MUST be omitted. Do NOT invent or estimate a
+  total, a Cash/GPay split, or a payments count. Sections 2–5 remain
+  computed as usual from their own CSVs.
 
 CRITICAL
 - Only state numbers computed via tool calls. Never speculate.

@@ -8,8 +8,8 @@ filters use this so the cron always captures yesterday's activity.
 Phases:
   1. ExportToExcel reports (already done — re-confirms with end=today)
   2. AJAX endpoints with proper visit_parent
-  3. Attendance month-by-month (2020-present)
-  4. Invoices year-by-year (2020-present)
+  3. Attendance month-by-month (last 1 year — see START_DATE)
+  4. Invoices year-by-year (last 1 year — see START_DATE)
   5. Per-member details (GetMemberDetails for every member ID)
   6. Form data, feedbacks, diet, appointments, lockers, classes
 """
@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -37,8 +37,14 @@ BASE = "https://v3.fitnessboard.in"
 TODAY = date.today()
 TODAY_DASH = TODAY.strftime("%d-%m-%Y")
 TODAY_SLASH_ENC = TODAY.strftime("%d%%2F%m%%2F%Y")
-START_DASH = "01-01-2012"
-START_SLASH_ENC = "01%2F01%2F2012"
+# Trimmed window: only last 1 year (~365 days). The bot only reasons about
+# recent activity; pulling 14 years of payment history wasted Blob storage
+# and made the cron slow. Keep `START_*` derived so re-running tomorrow
+# rolls forward by one day automatically.
+START_DATE = TODAY - timedelta(days=365)
+START_YEAR = START_DATE.year
+START_DASH = START_DATE.strftime("%d-%m-%Y")
+START_SLASH_ENC = START_DATE.strftime("%d%%2F%m%%2F%Y")
 
 
 def log(msg):
@@ -340,7 +346,7 @@ def parse_json_response(raw_bytes, prefix):
 
 # ─── PHASE 1: ExportToExcel reports — re-confirm with end=today ────
 def _fetch_phase1_endpoint(t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT):
-    """Run cascading attempts for one Phase 1 endpoint. Returns row count."""
+    """Run retry attempts for one Phase 1 endpoint. Returns row count."""
     for attempt, (sd, ed) in enumerate(ranges, 1):
         t_out = SLOW_TIMEOUT if attempt == 1 else FAST_TIMEOUT
         log(f"  fetching {t} {sd} to {ed} (attempt {attempt}/{len(ranges)}, timeout={t_out}s)")
@@ -348,9 +354,7 @@ def _fetch_phase1_endpoint(t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT):
         try:
             data = curl(url, referer=f"{BASE}/Dashboard/DataReport", timeout=t_out)
         except CurlTimeout:
-            # Server timed out — the whole point of the cascade is to try
-            # a smaller window next, so treat timeout like an empty response.
-            log(f"    timeout after {t_out}s; trying smaller range")
+            log(f"    timeout after {t_out}s; retrying")
             time.sleep(1)
             continue
         if data and len(data) > 100:
@@ -358,9 +362,9 @@ def _fetch_phase1_endpoint(t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT):
             if rows > 0:
                 log(f"  -> export_{t}_all.csv: parsed via attempt {attempt}")
                 return rows
-            log(f"    response={len(data)} bytes but 0 rows parsed; trying smaller range")
+            log(f"    response={len(data)} bytes but 0 rows parsed; retrying")
         else:
-            log(f"    empty response ({len(data) if data else 0} bytes); trying smaller range")
+            log(f"    empty response ({len(data) if data else 0} bytes); retrying")
         time.sleep(1)
     log(f"  {t}: gave up — endpoint unavailable for this tenant")
     return 0
@@ -369,18 +373,13 @@ def _fetch_phase1_endpoint(t, ranges, SLOW_TIMEOUT, FAST_TIMEOUT):
 def phase1_exports():
     log("=== PHASE 1: ExportToExcel (end=today) [parallel across endpoints] ===")
     types = ["database", "balance", "activeinactive", "memberenrollment", "payment"]
-    # Cascading date-range fallback: large tenants (EGYM) time out at the
-    # server when asked for 14 years. Try full range → last 5 years → last
-    # 2 years. The data we care about (active/inactive members, recent
-    # enrollments) doesn't need ancient history anyway.
-    today = TODAY
-    def year_window(years_back):
-        start_y = today.year - years_back
-        return f"01-01-{start_y}", today.strftime("%d-%m-%Y")
+    # Window is already 1 year (START_DASH = today − 365d). The earlier
+    # 5yr/2yr cascading fallbacks only widened the range, which defeats
+    # the whole point of trimming. Retry the same range once at the fast
+    # timeout if the slow attempt fails.
     ranges = [
-        (START_DASH, TODAY_DASH),     # 14yr
-        year_window(5),               # 5yr fallback
-        year_window(2),               # 2yr fallback
+        (START_DASH, TODAY_DASH),
+        (START_DASH, TODAY_DASH),
     ]
     SLOW_TIMEOUT = 360
     FAST_TIMEOUT = 90
@@ -523,7 +522,7 @@ def phase2_ajax():
 
 # ─── PHASE 3: Attendance month-by-month ────────────────────────────
 def phase3_attendance():
-    log("=== PHASE 3: Attendance (month-by-month, 2020-present) [parallel] ===")
+    log("=== PHASE 3: Attendance (month-by-month, last 1y) [parallel] ===")
     # Prime the parent page once, then fan out the per-month AJAX calls.
     # Prime is fire-and-forget: a 20s timeout shouldn't kill the whole phase
     # since each per-month call also visits the parent as referer. Pre-
@@ -535,10 +534,18 @@ def phase3_attendance():
         log("    parent prime timed out (continuing — per-month calls re-establish referer)")
     time.sleep(0.5)
     months = []
-    for year in range(2020, TODAY.year + 1):
+    # Trimmed: only the last ~12 months. Earlier behaviour was
+    # `range(2020, TODAY.year + 1)` × 12 months = 60+ AJAX calls per gym;
+    # the bot only reasons about the last year, so the extra months were
+    # pure cron-time and Blob-size waste.
+    for year in range(START_YEAR, TODAY.year + 1):
         for month in range(1, 13):
             if year == TODAY.year and month > TODAY.month:
                 break
+            # Skip months that ended before the 365-day cutoff in the
+            # cutoff year itself.
+            if year == START_YEAR and month < START_DATE.month:
+                continue
             last = 28 if month == 2 else (30 if month in (4,6,9,11) else 31)
             if year == TODAY.year and month == TODAY.month:
                 last = TODAY.day
@@ -593,17 +600,24 @@ def phase3_attendance():
 
 # ─── PHASE 4: Invoices year-by-year ────────────────────────────────
 def phase4_invoices():
-    log("=== PHASE 4: Invoices (year-by-year, 2020-present) [parallel] ===")
+    log("=== PHASE 4: Invoices (year-by-year, last 1y) [parallel] ===")
     # See phase3 comment — prime is fire-and-forget; tolerate timeout.
     try:
         curl(f"{BASE}/Dashboard/InvoiceList", timeout=20)
     except CurlTimeout:
         log("    parent prime timed out (continuing — per-year calls re-establish referer)")
     time.sleep(0.5)
-    years = list(range(2020, TODAY.year + 1))
+    # Trimmed: only the cutoff year and current year. Previously this fetched
+    # invoices for every year from 2020 onward.
+    years = list(range(START_YEAR, TODAY.year + 1))
 
     def fetch_year(year):
-        start = f"01%2F01%2F{year}"
+        # For the cutoff year, start from the actual 365-day-back date rather
+        # than Jan 1 so we don't pull pre-cutoff months back in.
+        if year == START_YEAR:
+            start = START_SLASH_ENC
+        else:
+            start = f"01%2F01%2F{year}"
         end = f"31%2F12%2F{year}" if year < TODAY.year else TODAY_SLASH_ENC
         path = f"FilterInvoiceList?Start={start}&End={end}"
         url = f"{BASE}/Dashboard/{path}&_={int(time.time()*1000)}"
@@ -719,7 +733,7 @@ def phase5_member_details():
     # in its database CSV but most are years-deactivated phantoms whose
     # detail endpoint returns nothing. Filtering them out frees the
     # budget for current members where details actually exist.
-    active_years = int(os.environ.get("PHASE5_ACTIVE_YEARS", "5"))
+    active_years = int(os.environ.get("PHASE5_ACTIVE_YEARS", "1"))
     if active_years > 0:
         cutoff = date.today().replace(year=date.today().year - active_years)
         log(f"  building active-member set (cutoff: {cutoff})...")
