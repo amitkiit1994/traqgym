@@ -45,8 +45,11 @@ OUTPUT STRUCTURE
   The "in (X% above/below avg)" clause is REQUIRED when the 7-day avg is
   computable. If you cannot compute the avg, drop the entire "in (...)"
   clause — do NOT write a hanging "in " with nothing after it.
-  1. YESTERDAY'S MONEY: ₹<sum_paid_yesterday> • Cash ₹X / GPay ₹Y • <N> payments
+  1. YESTERDAY'S MONEY: ₹<sum_paid_yesterday> • Cash ₹X / GPay ₹Y • <N> payment<s>
      • 7-day avg ₹Z (<% above/below>)
+     (Pluralization: write "1 payment" when N==1, "<N> payments" otherwise —
+     including "0 payments". The bare digit IS the count; do NOT also use
+     "members" or any other noun for the payment count.)
   2. EXPIRING SOON: ₹<sum_paid_amount_of_top5> total (<count> members). Top 5: "<Name> — ₹<amt> — <Contact No>"
   3. OUTSTANDING DUES: ₹<sum_balance_amount_of_top5> total (<count> members). Top 5: "<Name> — ₹<bal> — <Contact No>"
   4. ANOMALIES (OMIT THIS SECTION ENTIRELY if nothing found — do NOT

@@ -57,11 +57,16 @@ if (!/^[a-z0-9-]+$/.test(gym)) {
 const token = process.env.BLOB_READ_WRITE_TOKEN;
 if (!token) { console.error("BLOB_READ_WRITE_TOKEN missing"); process.exit(1); }
 
+// The snapshot folder name and `snapshot_date` field MUST be IST-anchored.
+// The digest reads `snapshot_date` to decide which day's payments to query
+// for "yesterday"; if this date drifts to UTC, then a refresh that runs
+// late-evening UTC (= early-morning IST next day) will name the folder
+// with the wrong calendar day and the digest's "yesterday = snapshot_date
+// - 1" arithmetic is silently off by one.
 const today = new Date();
-const datePart = today.toISOString().slice(0, 10);
-const istIso = new Date(today.getTime() + 5.5 * 3600 * 1000)
-  .toISOString()
-  .replace("Z", "+05:30");
+const ist = new Date(today.getTime() + 5.5 * 3600 * 1000);
+const datePart = ist.toISOString().slice(0, 10);
+const istIso = ist.toISOString().replace("Z", "+05:30");
 
 const files = (await readdir(dir)).filter(f => f.toLowerCase().endsWith(".csv"));
 const urls = {};

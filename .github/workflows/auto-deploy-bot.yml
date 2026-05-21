@@ -1,0 +1,60 @@
+# Auto-deploy the telegram-bot Vercel project on push.
+#
+# Mirror of auto-deploy-vercel.yml but scoped to the bot's own Vercel project
+# (freeform-telegram-bot, prj_xJV7yb1gPRv2ZxZWyBwQUr1PPWfj). The existing
+# auto-deploy-vercel.yml explicitly excludes `telegram-bot/**` because the
+# bot lives in a separate Vercel project — without this companion workflow
+# every prompt/code change to the bot requires a manual
+# `vercel deploy --prod --yes`, which has already cost a real morning of
+# debugging stale code.
+#
+# Required GitHub Secret to add:
+#   VERCEL_TELEGRAM_BOT_PROJECT_ID  (prj_xJV7yb1gPRv2ZxZWyBwQUr1PPWfj)
+# Reused from auto-deploy-vercel.yml:
+#   VERCEL_TOKEN, VERCEL_ORG_ID
+
+name: Deploy telegram-bot to Vercel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # Only redeploy when the bot itself changed. Other files (app, landing,
+      # docs) never affect the bot project.
+      - 'telegram-bot/**'
+      - '.github/workflows/auto-deploy-bot.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-bot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_TELEGRAM_BOT_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings
+        working-directory: telegram-bot
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        working-directory: telegram-bot
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy
+        working-directory: telegram-bot
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
