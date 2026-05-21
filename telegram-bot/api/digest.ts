@@ -53,9 +53,12 @@ function getDeps(): DigestDeps {
 }
 
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
-// gpt-5 is too slow for the 60s function cap when computing per-gym briefs;
-// 4o-mini handles 6 sections × N gyms in ~25s reliably.
-const DIGEST_MODEL = process.env.DIGEST_MODEL ?? "gpt-4o-mini";
+// gpt-4o-mini was hallucinating yesterday's revenue daily (made-up
+// headline numbers, fabricated GPay totals, wrong payment counts) — bad
+// at arithmetic even with query_csv handing it the right answer. gpt-4o
+// fits in the 60s cap now that section-1 ground truth is computed once
+// per gym (was 2x before — see fold-into-override-compute commit).
+const DIGEST_MODEL = process.env.DIGEST_MODEL ?? "gpt-4o";
 
 const flatFilter = z.object({
   col: z.string(),
