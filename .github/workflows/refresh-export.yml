@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: "30 0 * * *"     # 00:30 UTC = 06:00 IST
   workflow_dispatch:
+    inputs:
+      allow_shrunk_snapshot:
+        description: "Bypass the >50% relative-drop guard in upload-blob.mjs (operator-only — use when a deliberate scope change legitimately shrinks the snapshot)"
+        type: boolean
+        default: false
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -53,4 +58,8 @@ jobs:
       - name: Upload CSVs to Vercel Blob (${{ matrix.gym }})
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.VERCEL_BLOB_RW_TOKEN }}
+          # Defaults to "false" on scheduled runs (input is unset); operator
+          # can flip it via workflow_dispatch when an intentional shrink is
+          # expected. Floor guard inside upload-blob.mjs stays active either way.
+          ALLOW_SHRUNK_SNAPSHOT: ${{ inputs.allow_shrunk_snapshot && 'true' || 'false' }}
         run: node telegram-bot/scripts/upload-blob.mjs /tmp/csvs-${{ matrix.gym }} --gym ${{ matrix.gym }}

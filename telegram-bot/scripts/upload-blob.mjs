@@ -16,9 +16,15 @@ import Papa from "papaparse";
 // Absolute row floors per critical CSV per gym. Catches "two bad days in a
 // row" scenarios where the >50% drop check goes blind (previous count of 0
 // makes the percentage check pass anything). Bypassed for first-ever upload.
+//
+// EGYM floors were lowered after the scraper window was trimmed from 14
+// years to 1 year (commit cc46779). Pre-trim baselines were payments=1000,
+// database=1000, memberenrollment=1000. Post-trim a typical day produces
+// ~1200 payments, ~330 active members, ~320 recent enrollments — so the
+// new floors leave headroom for slow months without going blind.
 const ROW_FLOORS = {
-  freeform: { payments: 50,  database: 50,  members: 50,  balance: 1,  memberenrollment: 50, activeinactive: 50 },
-  egym:     { payments: 1000, database: 1000, members: 100, balance: 5,  memberenrollment: 1000, activeinactive: 100 },
+  freeform: { payments: 50,  database: 50,  members: 50,  balance: 1, memberenrollment: 50, activeinactive: 50 },
+  egym:     { payments: 200, database: 100, members: 100, balance: 5, memberenrollment: 100, activeinactive: 100 },
 };
 
 // FB export filename → canonical CSV name used in latest.json
@@ -159,11 +165,24 @@ if (prevBlob) {
       console.log(`::warning::Partial fetch on non-critical CSVs: ${partials.join(", ")}`);
     }
     if (drops.length > 0 || missingCritical.length > 0) {
-      console.error("REFUSING to swap latest.json — critical CSVs dropped >50% or went missing:");
-      for (const d of drops) console.error("  " + d);
-      for (const m of missingCritical) console.error("  " + m);
-      console.error("Likely cause: stale FB cookie or scraper crash. Per-CSV blobs uploaded but latest.json is unchanged.");
-      process.exit(2);
+      // One-shot operator escape hatch: ALLOW_SHRUNK_SNAPSHOT bypasses ONLY
+      // the relative-drop guard. The absolute-floor guard below stays
+      // active so we still refuse genuinely empty / login-page-junk
+      // snapshots. Use when a deliberate scope change (e.g. trimming the
+      // scraper window) legitimately shrinks the snapshot vs yesterday.
+      if (process.env.ALLOW_SHRUNK_SNAPSHOT === "true") {
+        console.warn("::warning::ALLOW_SHRUNK_SNAPSHOT=true — bypassing relative-drop guard. Drops:");
+        for (const d of drops) console.warn("  " + d);
+        for (const m of missingCritical) console.warn("  " + m);
+        console.warn("Absolute row floors below still enforced.");
+      } else {
+        console.error("REFUSING to swap latest.json — critical CSVs dropped >50% or went missing:");
+        for (const d of drops) console.error("  " + d);
+        for (const m of missingCritical) console.error("  " + m);
+        console.error("Likely cause: stale FB cookie or scraper crash. Per-CSV blobs uploaded but latest.json is unchanged.");
+        console.error("If this drop is INTENTIONAL (e.g. scraper window was deliberately narrowed), re-run with ALLOW_SHRUNK_SNAPSHOT=true.");
+        process.exit(2);
+      }
     }
   }
 }
