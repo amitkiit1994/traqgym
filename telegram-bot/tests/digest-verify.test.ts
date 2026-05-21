@@ -18,6 +18,7 @@ const {
   extractGymSection,
   verifyBriefAgainstGroundTruth,
   redactUnhealthySections,
+  overrideSection1FromGroundTruth,
   istDateIso,
 } = await import("../api/digest.js");
 
@@ -113,6 +114,220 @@ describe("verifyBriefAgainstGroundTruth", () => {
     expect(result).toContain("VERIFICATION SKIPPED");
     expect(result).toContain("EGYM Lokhandwala");
     expect(result).toContain("parser-flagged");
+  });
+
+  // 2026-05-21 regression: brief shipped with fabricated FFF headline
+  // ₹52,300 (real: ₹12,000) and fabricated EGYM headline ₹71,000 (real:
+  // ₹11,000). The Cash sub-line happened to equal expected for each gym
+  // (₹12,000 / ₹11,000), so the old "any rupee figure in section matches"
+  // verifier silently passed. Headline-anchored check catches it.
+  it("FLAGS fabricated headline even when a sub-line happens to equal expected", () => {
+    const briefWithMatchingSubline = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+Headline: ₹52,300 in (18% above avg)
+1. YESTERDAY'S MONEY: ₹52,300 • Cash ₹12,000 / GPay ₹40,300 • 5 payments
+
+=== EGYM Lokhandwala ===
+Headline: ₹71,000 in
+1. YESTERDAY'S MONEY: ₹71,000 • Cash ₹11,000 / GPay ₹60,000 • 5 payments
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const result = verifyBriefAgainstGroundTruth(briefWithMatchingSubline, {
+      freeform: 12_000,
+      egym: 11_000,
+    });
+    expect(result).toContain("VERIFICATION WARNING");
+    expect(result).toContain("Free Form Fitness");
+    expect(result).toContain("EGYM Lokhandwala");
+    expect(result).toContain("₹52,300");
+    expect(result).toContain("₹12,000");
+    expect(result).toContain("₹71,000");
+    expect(result).toContain("₹11,000");
+  });
+});
+
+describe("overrideSection1FromGroundTruth", () => {
+  const TRUTH_FFF = {
+    total: 12_000,
+    count: 1,
+    byMode: { Cash: 12_000, GPay: 0, Other: 0 },
+    sevenDayAvg: 10_714,
+  };
+  const TRUTH_EGYM = {
+    total: 11_000,
+    count: 1,
+    byMode: { Cash: 11_000, GPay: 0, Other: 0 },
+    sevenDayAvg: 22_143,
+  };
+
+  it("replaces fabricated headline + section 1 with computed ground truth", () => {
+    const fabricated = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+Headline: ₹52,300 in (18% above avg)
+1. YESTERDAY'S MONEY: ₹52,300 • Cash ₹12,000 / GPay ₹40,300 • 5 payments
+   • 7-day avg ₹44,400 (18% above)
+2. EXPIRING SOON: ₹75,900.
+3. OUTSTANDING DUES: ₹45,000.
+
+=== EGYM Lokhandwala ===
+Headline: ₹71,000 in
+1. YESTERDAY'S MONEY: ₹71,000 • Cash ₹11,000 / GPay ₹60,000 • 5 payments
+   • 7-day avg ₹61,000 (15% above)
+2. EXPIRING SOON: ₹0.
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(fabricated, {
+      freeform: TRUTH_FFF,
+      egym: TRUTH_EGYM,
+    });
+    expect(overridden).toEqual(
+      expect.arrayContaining([
+        { gymName: "Free Form Fitness", was: 52_300, now: 12_000 },
+        { gymName: "EGYM Lokhandwala", was: 71_000, now: 11_000 },
+      ]),
+    );
+    expect(overridden).toHaveLength(2);
+    // FFF body must reflect ground truth, not the LLM's fabrication.
+    const fff = extractGymSection(brief, "Free Form Fitness")!;
+    expect(fff).toContain("Headline: ₹12,000 in");
+    expect(fff).toContain("1. YESTERDAY'S MONEY: ₹12,000 • Cash ₹12,000 • 1 payment");
+    expect(fff).toContain("7-day avg ₹10,714");
+    expect(fff).toContain("[OVERRIDE");
+    expect(fff).toContain("LLM said ₹52,300");
+    // The fabricated GPay / payment count must be GONE.
+    expect(fff).not.toContain("₹40,300");
+    expect(fff).not.toContain("5 payments");
+    // Sections 2-5 must survive untouched.
+    expect(fff).toContain("2. EXPIRING SOON: ₹75,900");
+    expect(fff).toContain("3. OUTSTANDING DUES: ₹45,000");
+    // EGYM same.
+    const egym = extractGymSection(brief, "EGYM Lokhandwala")!;
+    expect(egym).toContain("Headline: ₹11,000 in");
+    expect(egym).toContain("Cash ₹11,000");
+    expect(egym).not.toContain("₹60,000");
+  });
+
+  it("no-ops when LLM headline already matches ground truth within 2%", () => {
+    // LLM said ₹12,100 (within 2% of ₹12,000 ground truth — rounding OK)
+    const accurate = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+Headline: ₹12,100 in
+1. YESTERDAY'S MONEY: ₹12,100 • Cash ₹12,100 • 1 payment
+
+=== EGYM Lokhandwala ===
+Headline: ₹11,000 in
+1. YESTERDAY'S MONEY: ₹11,000 • Cash ₹11,000 • 1 payment
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(accurate, {
+      freeform: TRUTH_FFF,
+      egym: TRUTH_EGYM,
+    });
+    expect(overridden).toEqual([]);
+    expect(brief).toBe(accurate);
+  });
+
+  it("skips gyms whose body was already redacted (unhealthy CSV)", () => {
+    const partiallyRedacted = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+Headline: (payments data unreadable today)
+1. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)
+
+=== EGYM Lokhandwala ===
+Headline: ₹71,000 in
+1. YESTERDAY'S MONEY: ₹71,000 • Cash ₹11,000 / GPay ₹60,000 • 5 payments
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(
+      partiallyRedacted,
+      { freeform: TRUTH_FFF, egym: TRUTH_EGYM },
+      new Set(["Free Form Fitness"]),
+    );
+    // FFF stays redacted — override does NOT overwrite the skip marker.
+    expect(brief).toContain("(payments data unreadable today)");
+    expect(brief).toContain("(skipped — payments CSV column misaligned");
+    // EGYM gets overridden as normal.
+    expect(overridden.map(o => o.gymName)).toEqual(["EGYM Lokhandwala"]);
+    expect(brief).toContain("Headline: ₹11,000 in");
+  });
+
+  it("falls back to section-1 number when LLM dropped the Headline line", () => {
+    const noHeadline = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+1. YESTERDAY'S MONEY: ₹52,300 • Cash ₹12,000 / GPay ₹40,300 • 5 payments
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(noHeadline, {
+      freeform: TRUTH_FFF,
+    });
+    expect(overridden).toHaveLength(1);
+    expect(overridden[0]!.was).toBe(52_300); // picked up from section 1
+    // Override should still produce a valid Headline line.
+    expect(brief).toContain("Headline: ₹12,000 in");
+  });
+
+  it("emits 'no headline' note when LLM dropped both lines", () => {
+    const noNumbers = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+(snapshot weirdness, no clear money line)
+2. EXPIRING SOON: ₹0.
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(noNumbers, {
+      freeform: TRUTH_FFF,
+    });
+    expect(overridden).toHaveLength(1);
+    expect(overridden[0]!.was).toBeNull();
+    expect(brief).toContain("LLM dropped headline number");
+    expect(brief).toContain("Headline: ₹12,000 in");
+  });
+
+  it("skips gym entries with null ground truth (unhealthy CSV — redactor's job)", () => {
+    const { overridden } = overrideSection1FromGroundTruth(REAL_BRIEF, {
+      freeform: null,
+      egym: TRUTH_EGYM,
+    });
+    expect(overridden.map(o => o.gymName)).toEqual(["EGYM Lokhandwala"]);
+  });
+
+  // Edge: section 1 is the entire gym body (no sections 2-5, gym is the
+  // LAST `===` block, so the body slot has no trailing `===` either). The
+  // section1Re's `\s*$(?![\r\n])` end-of-string anchor must handle this —
+  // otherwise the rewrite silently no-ops and the operator gets the
+  // fabricated number anyway.
+  it("rewrites when section 1 is the only section AND the gym is the last block", () => {
+    const minimal = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+Headline: ₹52,300 in
+1. YESTERDAY'S MONEY: ₹52,300 • Cash ₹40,000 / GPay ₹12,300 • 7 payments`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(minimal, {
+      freeform: TRUTH_FFF,
+    });
+    expect(overridden).toEqual([
+      { gymName: "Free Form Fitness", was: 52_300, now: 12_000 },
+    ]);
+    expect(brief).toContain("Headline: ₹12,000 in");
+    expect(brief).toContain("1. YESTERDAY'S MONEY: ₹12,000 • Cash ₹12,000 • 1 payment");
+    // The [OVERRIDE] audit marker deliberately preserves the LLM's old
+    // value so the operator can see what was replaced. The fabricated
+    // breakdown / payment count, however, must be gone.
+    expect(brief).toContain("[OVERRIDE — LLM said ₹52,300");
+    expect(brief).not.toContain("Cash ₹40,000");
+    expect(brief).not.toContain("GPay ₹12,300");
+    expect(brief).not.toContain("7 payments");
   });
 });
 

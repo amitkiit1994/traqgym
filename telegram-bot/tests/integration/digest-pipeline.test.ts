@@ -51,21 +51,21 @@ describe("integration: digest verifier with real numbers", () => {
   });
 
   it("verifier flags brief with WRONG number for a gym", () => {
-    const brief = `=== Free Form Fitness ===\nYESTERDAY: ₹1,00,000\n=== EGYM Lokhandwala ===\nYESTERDAY: ₹3,31,200`;
+    const brief = `=== Free Form Fitness ===\n1. YESTERDAY'S MONEY: ₹1,00,000\n=== EGYM Lokhandwala ===\n1. YESTERDAY'S MONEY: ₹3,31,200`;
     const r = verifyBriefAgainstGroundTruth(brief, { freeform: 52_300, egym: 3_31_200 });
     expect(r).toContain("Free Form Fitness");
     expect(r).toContain("₹1,00,000");
   });
 
   it("verifier flags brief MISSING a gym section", () => {
-    const brief = `=== Free Form Fitness ===\nYESTERDAY: ₹52,300\n`;
+    const brief = `=== Free Form Fitness ===\n1. YESTERDAY'S MONEY: ₹52,300\n`;
     const r = verifyBriefAgainstGroundTruth(brief, { freeform: 52_300, egym: 3_31_200 });
     expect(r).toContain("EGYM Lokhandwala");
     expect(r).toContain("section missing");
   });
 
   it("verifier emits VERIFICATION SKIPPED for null computed (unhealthy CSV)", () => {
-    const brief = `=== Free Form Fitness ===\nYESTERDAY: ₹52,300\n=== EGYM Lokhandwala ===\nbroken`;
+    const brief = `=== Free Form Fitness ===\n1. YESTERDAY'S MONEY: ₹52,300\n=== EGYM Lokhandwala ===\nbroken`;
     const r = verifyBriefAgainstGroundTruth(brief, { freeform: 52_300, egym: null });
     expect(r).toContain("VERIFICATION SKIPPED");
     expect(r).toContain("EGYM Lokhandwala");

@@ -208,6 +208,85 @@ async function computeYesterdayCollectionPerGym(
   return out;
 }
 
+// Full section-1 ground truth per gym: total, payment count, breakdown by
+// canonical payment mode (Cash / GPay / Other), and 7-day-prior average.
+// This is what `overrideSection1FromGroundTruth` substitutes in when the
+// LLM headline doesn't match. Null per-gym when payments CSV is unhealthy
+// (same trigger as `computeYesterdayCollectionPerGym` — redactor takes
+// over for those, override stays out).
+export interface Section1Truth {
+  total: number;
+  count: number;
+  byMode: Record<string, number>; // "Cash" | "GPay" | "Other" → ₹
+  sevenDayAvg: number;            // mean of past-7-days totals (incl. yesterday)
+}
+async function computeYesterdaySection1PerGym(
+  registry: BlobStoreRegistry,
+  snapshots: Record<string, SnapshotLoad>,
+): Promise<Record<string, Section1Truth | null>> {
+  const yIso = istYesterdayIso();
+  const sevenAgoIso = (() => {
+    const d = new Date(`${yIso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 6); // 7-day window inclusive of yesterday
+    return d.toISOString().slice(0, 10);
+  })();
+  const out: Record<string, Section1Truth | null> = {};
+  await Promise.all(
+    Object.entries(snapshots).map(async ([slug, s]) => {
+      if (s.status !== "ok") return;
+      try {
+        const store = registry.for(slug);
+        const text = await store.fetchCsv("payments");
+        const hint = CSV_HINTS.payments ?? { date: [], number: [] };
+        const { rows, columns, column_diagnostics, parse_errors } = parseCsv(text, {
+          dateColumns: hint.date,
+          numberColumns: hint.number,
+        });
+        const meta = { columns, diagnostics: column_diagnostics, parse_errors };
+        const yesterdaySum = applyQuery(rows, {
+          filters: [{ col: "Payment Date", op: "between", val: [yIso, yIso] }],
+          agg: { col: "Paid Amount", fn: "sum" },
+        }, meta);
+        if (yesterdaySum.warnings && yesterdaySum.warnings.length > 0) {
+          out[slug] = null;
+          return;
+        }
+        const yesterdayCount = applyQuery(rows, {
+          filters: [{ col: "Payment Date", op: "between", val: [yIso, yIso] }],
+          agg: { col: "Paid Amount", fn: "count" },
+        }, meta);
+        const byModeRaw = applyQuery(rows, {
+          filters: [{ col: "Payment Date", op: "between", val: [yIso, yIso] }],
+          group_by: ["Payment Mode"],
+          agg: { col: "Paid Amount", fn: "sum" },
+        }, meta);
+        const sevenDay = applyQuery(rows, {
+          filters: [{ col: "Payment Date", op: "between", val: [sevenAgoIso, yIso] }],
+          agg: { col: "Paid Amount", fn: "sum" },
+        }, meta);
+        const total = typeof yesterdaySum.agg_result === "number" ? yesterdaySum.agg_result : 0;
+        const count = typeof yesterdayCount.agg_result === "number" ? yesterdayCount.agg_result : 0;
+        const sevenTotal = typeof sevenDay.agg_result === "number" ? sevenDay.agg_result : 0;
+        const byMode: Record<string, number> = { Cash: 0, GPay: 0, Other: 0 };
+        const groupSums = (byModeRaw.agg_result ?? {}) as Record<string, number>;
+        for (const [rawMode, amt] of Object.entries(groupSums)) {
+          // FB Payment Mode column is freeform; canonicalize so the same
+          // bucket label appears no matter how staff typed it.
+          const m = rawMode.trim().toLowerCase();
+          if (m === "cash") byMode.Cash! += amt;
+          else if (m === "gpay" || m === "google pay") byMode.GPay! += amt;
+          else byMode.Other! += amt;
+        }
+        out[slug] = { total, count, byMode, sevenDayAvg: sevenTotal / 7 };
+      } catch (e) {
+        console.warn(`[digest] section1-truth failed for gym=${slug}: ${(e as Error).message}`);
+        out[slug] = null;
+      }
+    }),
+  );
+  return out;
+}
+
 // Format INR with Indian-style grouping commas (e.g. 305700 -> "3,05,700").
 function inrFormat(n: number): string {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
@@ -280,6 +359,87 @@ export function redactUnhealthySections(
   return { brief: parts.join("==="), redacted };
 }
 
+// Hard-override the Headline + section 1 with CSV-computed ground truth
+// when the LLM's headline number is more than 2% off from reality. The
+// `redactUnhealthySections` sibling handles the "CSV is broken, can't
+// trust anything" case; THIS function handles the (more dangerous, because
+// invisible) "CSV is fine but LLM hallucinated anyway" case.
+//
+// Skip gyms in `alreadyRedacted` because their bodies were just rewritten
+// to a skip marker — we'd be replacing the skip marker with computed
+// numbers, which would confuse the operator about why we redacted in the
+// first place.
+//
+// Returns the new brief plus per-gym `{ wasHeadlineRupee, computedTotal }`
+// records for the entries that got overridden, so the caller can compose
+// an [OVERRIDE] footer naming exactly what changed.
+export function overrideSection1FromGroundTruth(
+  brief: string,
+  truth: Record<string, Section1Truth | null>,
+  alreadyRedacted: ReadonlySet<string> = new Set(),
+): { brief: string; overridden: Array<{ gymName: string; was: number | null; now: number }> } {
+  const overridden: Array<{ gymName: string; was: number | null; now: number }> = [];
+  const parts = brief.split("===");
+  for (const [slug, gt] of Object.entries(truth)) {
+    if (gt === null) continue;
+    const gym = getGym(slug);
+    if (alreadyRedacted.has(gym.name)) continue;
+    const upper = gym.name.toUpperCase();
+    let bodyIdx = -1;
+    for (let i = 1; i < parts.length - 1; i += 2) {
+      if (parts[i]!.toUpperCase().includes(upper)) {
+        bodyIdx = i + 1;
+        break;
+      }
+    }
+    if (bodyIdx === -1) continue;
+    const body = parts[bodyIdx]!;
+    const headlineNum = extractHeadlineRupee(body);
+    const tolerance = Math.max(gt.total * 0.02, 1);
+    if (headlineNum !== null && Math.abs(headlineNum - gt.total) <= tolerance) continue;
+    parts[bodyIdx] = rewriteSection1WithTruth(body, gt, headlineNum);
+    overridden.push({ gymName: gym.name, was: headlineNum, now: gt.total });
+  }
+  return { brief: parts.join("==="), overridden };
+}
+
+function rewriteSection1WithTruth(
+  body: string,
+  gt: Section1Truth,
+  wasHeadlineNum: number | null,
+): string {
+  const total = `₹${inrFormat(gt.total)}`;
+  const breakdown = ["Cash", "GPay", "Other"]
+    .filter(k => (gt.byMode[k] ?? 0) > 0)
+    .map(k => `${k} ₹${inrFormat(gt.byMode[k]!)}`)
+    .join(" / ") || "no payments";
+  const wasNote = wasHeadlineNum !== null
+    ? `LLM said ₹${inrFormat(wasHeadlineNum)}`
+    : "LLM dropped headline number";
+  const newSection1 =
+    `1. YESTERDAY'S MONEY: ${total} • ${breakdown} • ${gt.count} payment${gt.count === 1 ? "" : "s"}\n` +
+    `   • 7-day avg ₹${inrFormat(Math.round(gt.sevenDayAvg))}\n` +
+    `   [OVERRIDE — ${wasNote}; CSV ground truth ₹${inrFormat(gt.total)}]\n`;
+
+  let out = body;
+  if (/^[ \t]*Headline:.*$/m.test(out)) {
+    out = out.replace(
+      /^([ \t]*)Headline:.*$/m,
+      `$1Headline: ${total} in`,
+    );
+  } else {
+    out = `\n  Headline: ${total} in${out}`;
+  }
+  const section1Re =
+    /^([ \t]*)1\. YESTERDAY'S MONEY:[\s\S]*?(?=^[ \t]*(?:\d+\.|===)|\s*$(?![\r\n]))/m;
+  if (section1Re.test(out)) {
+    out = out.replace(section1Re, (_match, indent) => indent + newSection1);
+  } else {
+    out = out.replace(/(Headline:[^\n]*\n)/, `$1  ${newSection1}`);
+  }
+  return out;
+}
+
 function rewriteGymBodyForUnhealthyPayments(body: string): string {
   let out = body;
   if (/^[ \t]*Headline:.*$/m.test(out)) {
@@ -307,13 +467,37 @@ function rewriteGymBodyForUnhealthyPayments(body: string): string {
   return out;
 }
 
-// Verifier: returns appended warning text if the brief's headline numbers
-// don't line up with the computed ground-truth per gym. Heuristic — looks
-// for the gym's section and any rupee figure within 2% of the computed
-// value (allows for LLM rounding). Misses are reported as "verification
-// failed for <gym>". Gyms with null `computed` (unhealthy CSV — no
-// ground truth available) get a "VERIFICATION SKIPPED" line so the
-// operator sees the safety net was disabled, not silently passing.
+// Pull the first ₹ figure out of the gym body's `Headline:` line. The
+// section-1 line is checked as a backup because the LLM has been observed
+// to drop the Headline line entirely under load.
+//
+// The previous "any rupee figure in body matches expected" heuristic was
+// too permissive: on a day where yesterday's only payment was ₹12,000 Cash,
+// the brief's fabricated headline "₹52,300" with a real "Cash ₹12,000"
+// sub-line passed verification because Cash matched expected. Anchoring to
+// the headline + section-1 totals catches that exact pattern.
+function extractHeadlineRupee(body: string): number | null {
+  const headline = body.match(/^[ \t]*Headline:\s*₹\s*([\d,]+)/m);
+  if (headline) {
+    const n = Number(headline[1]!.replace(/,/g, ""));
+    if (Number.isFinite(n)) return n;
+  }
+  const section1 = body.match(/^[ \t]*1\.\s*YESTERDAY'S MONEY:\s*₹\s*([\d,]+)/m);
+  if (section1) {
+    const n = Number(section1[1]!.replace(/,/g, ""));
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+// Verifier: returns appended warning text if the brief's HEADLINE numbers
+// don't line up with the computed ground-truth per gym. Anchored to the
+// Headline / "1. YESTERDAY'S MONEY" line specifically (not any rupee figure
+// in the section) so a coincidentally-matching Cash sub-line can't mask a
+// fabricated headline. Misses are reported as "verification failed for
+// <gym>". Gyms with null `computed` (unhealthy CSV — no ground truth
+// available) get a "VERIFICATION SKIPPED" line so the operator sees the
+// safety net was disabled, not silently passing.
 export function verifyBriefAgainstGroundTruth(
   brief: string,
   computed: Record<string, number | null>,
@@ -331,21 +515,17 @@ export function verifyBriefAgainstGroundTruth(
       failures.push(`${gym.name}: section missing from brief`);
       continue;
     }
-    // Pull all rupee-formatted numbers from the section.
-    const nums: number[] = [];
-    for (const m of body.matchAll(/₹\s*([\d,]+)/g)) {
-      const n = Number(m[1]!.replace(/,/g, ""));
-      if (Number.isFinite(n)) nums.push(n);
-    }
-    if (nums.length === 0) {
-      failures.push(`${gym.name}: no rupee figures present in section (expected ₹${inrFormat(expected)})`);
+    const headlineNum = extractHeadlineRupee(body);
+    if (headlineNum === null) {
+      failures.push(`${gym.name}: no ₹ figure on Headline / "1. YESTERDAY'S MONEY" line (expected ₹${inrFormat(expected)})`);
       continue;
     }
+    // 2% tolerance allows the LLM to round (e.g. 52,300 → 52,000) but
+    // catches fabrications that drift outside rounding range.
     const tolerance = Math.max(expected * 0.02, 1);
-    const matched = nums.some(n => Math.abs(n - expected) <= tolerance);
-    if (!matched) {
+    if (Math.abs(headlineNum - expected) > tolerance) {
       failures.push(
-        `${gym.name}: brief shows ${nums.map(n => `₹${inrFormat(n)}`).join(", ")} but yesterday's collection was ₹${inrFormat(expected)}`,
+        `${gym.name}: brief headline says ₹${inrFormat(headlineNum)} but yesterday's collection was ₹${inrFormat(expected)}`,
       );
     }
   }
@@ -482,6 +662,30 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
       const note = `\n\n[AUTO-REDACTED — payments CSV unhealthy for: ${redacted.join(", ")}; Headline + section 1 replaced with skip marker]`;
       briefText += note;
       console.warn(`[digest] auto-redacted unhealthy gyms: ${redacted.join(", ")}`);
+    }
+    // Section-1 override: for gyms whose CSV is healthy but whose LLM
+    // headline doesn't match ground truth within 2%, hard-replace
+    // headline + section 1 with computed numbers. Catches the failure
+    // mode the verifier alone couldn't — LLM fabricating GPay totals
+    // and payment counts while Cash happens to match expected, so a
+    // "any rupee figure matches" check silently passed.
+    const section1Truth = await computeYesterdaySection1PerGym(
+      blobRegistry,
+      snapshotsStructured,
+    );
+    const { brief: overriddenBrief, overridden } = overrideSection1FromGroundTruth(
+      briefText,
+      section1Truth,
+      new Set(redacted),
+    );
+    briefText = overriddenBrief;
+    if (overridden.length > 0) {
+      const lines = overridden.map(o =>
+        `- ${o.gymName}: LLM said ${o.was !== null ? `₹${inrFormat(o.was)}` : "(no headline)"}, CSV ground truth ₹${inrFormat(o.now)}`,
+      ).join("\n");
+      const note = `\n\n[AUTO-OVERRIDE — LLM headline disagreed with CSV; replaced with computed numbers:\n${lines}]`;
+      briefText += note;
+      console.warn(`[digest] auto-override: ${overridden.map(o => `${o.gymName} ${o.was}->${o.now}`).join(", ")}`);
     }
     const warning = verifyBriefAgainstGroundTruth(briefText, expected);
     if (warning) {
