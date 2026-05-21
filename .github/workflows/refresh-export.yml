@@ -1,7 +1,12 @@
 name: refresh-gym-data
 on:
   schedule:
-    - cron: "30 0 * * *"     # 00:30 UTC = 06:00 IST
+    # 01:15 UTC = 06:45 IST. Off the popular top/bottom-of-hour slot
+    # to dodge the GitHub Actions scheduler pile-up that was drifting
+    # our 00:30 cron to ~04:45 UTC and into a window where FB returns
+    # successful-but-empty payloads. Still well clear of the 03:30 UTC
+    # (09:00 IST) digest cron.
+    - cron: "15 1 * * *"
   workflow_dispatch:
     inputs:
       allow_shrunk_snapshot:
@@ -41,9 +46,18 @@ jobs:
       - name: Install Node deps (Blob SDK + papaparse for upload integrity check)
         working-directory: telegram-bot
         run: npm install --omit=dev @vercel/blob papaparse
-      - name: Fetch fresh CSVs for ${{ matrix.gym }}
+      # Fetch + upload are wrapped in a single retry-once-on-failure step.
+      # The actual failure mode 3 days running was: fetch_complete.py exits
+      # 0 having quietly produced empty payloads (FB returns success-but-empty
+      # under load), then upload-blob.mjs exits 2 at the row-floor guard.
+      # So the retry MUST wrap both — retrying fetch alone changes nothing.
+      # 10-minute pause between attempts gives FB time to recover; the job's
+      # 60-minute timeout absorbs a second full run comfortably.
+      - name: Fetch + upload (one retry on failure) — ${{ matrix.gym }}
         env:
           GYM: ${{ matrix.gym }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.VERCEL_BLOB_RW_TOKEN }}
+          ALLOW_SHRUNK_SNAPSHOT: ${{ inputs.allow_shrunk_snapshot && 'true' || 'false' }}
         run: |
           # Bash variable indirection: FB_PASSWORD = $FB_PASSWORD_<GYM_UPPER>
           GYM_UPPER=$(echo "$GYM" | tr '[:lower:]' '[:upper:]')
@@ -54,12 +68,27 @@ jobs:
             exit 1
           fi
           mkdir -p "$FB_OUT_DIR"
-          python freeformfitness-data-export-fresh/fetch_complete.py
-      - name: Upload CSVs to Vercel Blob (${{ matrix.gym }})
-        env:
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.VERCEL_BLOB_RW_TOKEN }}
-          # Defaults to "false" on scheduled runs (input is unset); operator
-          # can flip it via workflow_dispatch when an intentional shrink is
-          # expected. Floor guard inside upload-blob.mjs stays active either way.
-          ALLOW_SHRUNK_SNAPSHOT: ${{ inputs.allow_shrunk_snapshot && 'true' || 'false' }}
-        run: node telegram-bot/scripts/upload-blob.mjs /tmp/csvs-${{ matrix.gym }} --gym ${{ matrix.gym }}
+          for attempt in 1 2; do
+            echo "::group::Attempt $attempt — fetch"
+            python freeformfitness-data-export-fresh/fetch_complete.py
+            fetch_rc=$?
+            echo "::endgroup::"
+            if [ "$fetch_rc" -eq 0 ]; then
+              echo "::group::Attempt $attempt — upload"
+              node telegram-bot/scripts/upload-blob.mjs "$FB_OUT_DIR" --gym "$GYM"
+              upload_rc=$?
+              echo "::endgroup::"
+              if [ "$upload_rc" -eq 0 ]; then
+                echo "Attempt $attempt succeeded."
+                exit 0
+              fi
+            fi
+            if [ "$attempt" = "2" ]; then
+              echo "Both attempts failed — giving up."
+              exit 1
+            fi
+            echo "Attempt $attempt failed. Sleeping 600s before retry to let FB recover."
+            sleep 600
+            # Clean stale output dir so we don't conflate runs.
+            rm -rf "$FB_OUT_DIR" && mkdir -p "$FB_OUT_DIR"
+          done
