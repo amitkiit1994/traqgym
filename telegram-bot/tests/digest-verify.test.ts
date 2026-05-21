@@ -211,6 +211,38 @@ Headline: ₹71,000 in
     expect(egym).not.toContain("₹60,000");
   });
 
+  // 2026-05-21 regression #2: brief shipped `Headline: ₹12,000 in (skipped
+  // — payments CSV column misaligned)` AND `1. YESTERDAY'S MONEY: (skipped
+  // — ...)`. Headline number matched ground truth so the old "headline
+  // matches → no-op" shortcut left section 1 in its skipped state — the
+  // operator saw a self-contradicting brief. Both lines must match
+  // ground truth for the no-op to apply.
+  it("overrides when Headline is correct but section 1 is tagged skipped", () => {
+    const contradictory = `GOOD MORNING — 2026-05-21
+
+=== Free Form Fitness ===
+Headline: ₹12,000 in (skipped — payments CSV column misaligned in today's snapshot — operator action needed)
+1. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)
+2. EXPIRING SOON: ₹61,050.
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const { brief, overridden } = overrideSection1FromGroundTruth(contradictory, {
+      freeform: TRUTH_FFF,
+    });
+    expect(overridden).toEqual([
+      { gymName: "Free Form Fitness", was: 12_000, now: 12_000 },
+    ]);
+    // Section 1 must be rewritten to the clean ground-truth form, not the
+    // LLM's skip marker.
+    const fff = extractGymSection(brief, "Free Form Fitness")!;
+    expect(fff).toContain("1. YESTERDAY'S MONEY: ₹12,000 • Cash ₹12,000 • 1 payment");
+    expect(fff).toContain("[OVERRIDE");
+    expect(fff).not.toMatch(/^[ \t]*1\.[^\n]*skipped/m);
+    // Section 2 must survive.
+    expect(fff).toContain("2. EXPIRING SOON: ₹61,050");
+  });
+
   it("no-ops when LLM headline already matches ground truth within 2%", () => {
     // LLM said ₹12,100 (within 2% of ₹12,000 ground truth — rounding OK)
     const accurate = `GOOD MORNING — 2026-05-21

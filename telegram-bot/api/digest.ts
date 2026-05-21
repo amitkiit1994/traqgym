@@ -359,7 +359,20 @@ export function overrideSection1FromGroundTruth(
     const body = parts[bodyIdx]!;
     const headlineNum = extractHeadlineRupee(body);
     const tolerance = Math.max(gt.total * 0.02, 1);
-    if (headlineNum !== null && Math.abs(headlineNum - gt.total) <= tolerance) continue;
+    // Both Headline AND section 1 must already match ground truth for the
+    // no-op shortcut. Headline-only is insufficient: 2026-05-21 brief
+    // shipped `Headline: ₹12,000 in (skipped — payments CSV column
+    // misaligned)` + `1. YESTERDAY'S MONEY: (skipped — ...)` — the LLM
+    // wrote the real number in the headline but tagged section 1 skipped
+    // (column-level diagnostic flagged even though yesterday-filtered rows
+    // were clean). Headline matched, override no-oped, operator saw a
+    // contradiction.
+    const headlineOk = headlineNum !== null && Math.abs(headlineNum - gt.total) <= tolerance;
+    const section1Rupee = body.match(/^[ \t]*1\.\s*YESTERDAY'S MONEY:\s*₹\s*([\d,]+)/m);
+    const section1Num = section1Rupee ? Number(section1Rupee[1]!.replace(/,/g, "")) : null;
+    const section1Ok = section1Num !== null && Number.isFinite(section1Num)
+      && Math.abs(section1Num - gt.total) <= tolerance;
+    if (headlineOk && section1Ok) continue;
     parts[bodyIdx] = rewriteSection1WithTruth(body, gt, headlineNum);
     overridden.push({ gymName: gym.name, was: headlineNum, now: gt.total });
   }
