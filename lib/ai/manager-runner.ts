@@ -33,7 +33,7 @@ import { composeBriefing, type Lang, type ComposedBriefing } from "@/lib/ai/mana
 import { renderEmail } from "@/lib/ai/manager-email";
 import { send as sendEmail } from "@/lib/channels/email";
 import { renderTelegram } from "@/lib/ai/manager-telegram";
-import { sendMessage, sendMessageWithButtons } from "@/lib/channels/telegram";
+import { sendMessage, sendMessageWithButtons, hasBotToken } from "@/lib/channels/telegram";
 
 const VALID_LANGS = new Set<Lang>(["en", "hi", "hinglish"]);
 const VALID_SEVERITIES = new Set<InsightSeverity>(["critical", "high", "medium", "low"]);
@@ -452,6 +452,9 @@ export async function runManagerBriefing(opts?: {
   // ── Telegram — fan out to every chat-id (PR 16 K.5) ──────────────────────
   if (channels.includes("telegram")) {
     const tg = renderTelegram({ briefing, ownerName, gymName });
+    // Token may come from env or the Settings-stored value — resolve once
+    // for the whole fan-out instead of per chat-id.
+    const telegramMode = (await hasBotToken()) ? "live" : "dev";
     const tgResults = await Promise.all(
       telegramChatList.map(async (chatId) => {
         try {
@@ -509,7 +512,7 @@ export async function runManagerBriefing(opts?: {
           return {
             channel: "telegram" as const,
             success: sendResult.success,
-            mode: process.env.TELEGRAM_BOT_TOKEN ? "live" : "dev",
+            mode: telegramMode,
             recipient: chatId,
             error: sendResult.success ? null : sendResult.error,
             messageId,
@@ -518,7 +521,7 @@ export async function runManagerBriefing(opts?: {
           return {
             channel: "telegram" as const,
             success: false,
-            mode: process.env.TELEGRAM_BOT_TOKEN ? "live" : "dev",
+            mode: telegramMode,
             recipient: chatId,
             error: err instanceof Error ? err.message : "send failed",
           };

@@ -1970,8 +1970,10 @@ export default function SettingsPage() {
           )}
 
           <p className="text-xs text-muted-foreground">
-            Required env: <code>TELEGRAM_BOT_TOKEN</code>,{" "}
-            <code>TELEGRAM_WEBHOOK_SECRET</code> (or override above),{" "}
+            Bot token: configure via the Telegram setup page (stored encrypted
+            in Settings) or the <code>TELEGRAM_BOT_TOKEN</code> env var — env
+            wins when both are set. Webhook secret and bot username come from
+            Settings or <code>TELEGRAM_WEBHOOK_SECRET</code> /{" "}
             <code>TELEGRAM_BOT_USERNAME</code>. Voice notes also need{" "}
             <code>WHISPER_API_KEY</code> (or reuse <code>OPENAI_API_KEY</code>).
           </p>
