@@ -107,22 +107,38 @@ describe("anySnapshotLoaded", () => {
   });
 });
 
+// snapshotsLine renders the ACTIVE roster only — the retired freeform gym
+// must never appear in the system prompt even if a stale snapshot record
+// for it is passed in.
 describe("snapshotsLine (system prompt rendering)", () => {
   it("renders UNAVAILABLE for error states so the LLM knows to refuse", () => {
     const line = snapshotsLine({
-      freeform: { status: "ok", date: "2026-05-18" },
       egym: { status: "error", reason: "ETIMEDOUT" },
     });
     expect(line).toContain("UNAVAILABLE");
     expect(line).toContain("ETIMEDOUT");
+  });
+
+  it("renders the snapshot date for ok states", () => {
+    const line = snapshotsLine({
+      egym: { status: "ok", date: "2026-05-18" },
+    });
     expect(line).toContain("snapshot 2026-05-18");
   });
 
   it("renders (no snapshot yet) for missing state", () => {
     const line = snapshotsLine({
-      freeform: { status: "missing" },
-      egym: { status: "ok", date: "2026-05-18" },
+      egym: { status: "missing" },
     });
     expect(line).toContain("(no snapshot yet)");
+  });
+
+  it("excludes the retired freeform gym even when a record is passed for it", () => {
+    const line = snapshotsLine({
+      freeform: { status: "ok", date: "2026-05-18" },
+      egym: { status: "ok", date: "2026-06-10" },
+    });
+    expect(line).not.toContain("Free Form Fitness");
+    expect(line).toContain("EGYM Lokhandwala");
   });
 });

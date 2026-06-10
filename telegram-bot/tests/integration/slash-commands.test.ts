@@ -39,9 +39,11 @@ describe("integration: slash commands", () => {
     expect(r).toContain("chat id 12345");
   });
 
-  it("/snapshot → lists every gym + snapshot date + row counts", async () => {
+  it("/snapshot → lists every ACTIVE gym + snapshot date + row counts", async () => {
     const r = await handleSlashCommand({ ...baseCtx, text: "/snapshot" });
-    expect(r).toContain("Free Form Fitness");
+    // Free Form Fitness ownership cancelled 2026-06-11 - retired from the
+    // active roster, so /snapshot must no longer surface it.
+    expect(r).not.toContain("Free Form Fitness");
     expect(r).toContain("EGYM Lokhandwala");
     expect(r).toMatch(/Snapshot date: \d{4}-\d{2}-\d{2}/);
     expect(r).toMatch(/payments=\d+/);

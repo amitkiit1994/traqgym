@@ -1,7 +1,7 @@
 {
-  "$schema": "Single source of truth for gym registry. Both gyms.ts (bot) and migrate-blob-layout.mjs (one-shot script) read this so adding a gym is a one-line change. passwordEnv is optional metadata used by the scraper, not the bot.",
+  "$schema": "Single source of truth for gym registry. Both gyms.ts (bot) and migrate-blob-layout.mjs (one-shot script) read this so adding a gym is a one-line change. passwordEnv is optional metadata used by the scraper, not the bot. A 'retired' date marks a gym the owner no longer operates: it stays here so historic blob data under csv/<slug>/ remains resolvable by name, but it is excluded from the active roster (digest, chat tools, scraper).",
   "gyms": [
-    { "slug": "freeform", "name": "Free Form Fitness", "passwordEnv": "FB_PASSWORD_FREEFORM" },
+    { "slug": "freeform", "name": "Free Form Fitness", "passwordEnv": "FB_PASSWORD_FREEFORM", "retired": "2026-06-11" },
     { "slug": "egym",     "name": "EGYM Lokhandwala",  "passwordEnv": "FB_PASSWORD_EGYM" }
   ]
 }

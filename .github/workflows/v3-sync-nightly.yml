@@ -24,9 +24,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - gym: freeformfitness
-            base_url: https://freeformfitness.traqgym.com
-            secret_name: INTERNAL_API_SECRET_FREEFORM
+          # Free Form Fitness ownership cancelled 2026-06-11 - removed from
+          # digest roster and from this sync. Its leg had been failing since
+          # 2026-06-04 (freeformfitness.traqgym.com returns HTTP 500), which
+          # made this cron red nightly while the egym leg passed.
           - gym: egymlokhandwala
             base_url: https://egymlokhandwala.traqgym.com
             secret_name: INTERNAL_API_SECRET_EGYM

@@ -36,12 +36,12 @@ describe("integration: BlobStore latest pointer", () => {
   it("EGYM: fetches latest.json with expected CSV set", async () => {
     const p = await registry.for("egym").fetchLatest();
     expect(p.snapshot_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // EGYM's scraper export grew to the full CSV set (members /
+    // activeinactive included) — earlier snapshots legitimately lacked
+    // them, but current production snapshots carry all six.
     expect(Object.keys(p.blob_urls)).toEqual(
-      expect.arrayContaining(["payments", "balance", "database"]),
+      expect.arrayContaining(["payments", "balance", "database", "members", "activeinactive"]),
     );
-    // EGYM legitimately lacks 'members' / 'activeinactive' — verify the
-    // bot doesn't claim they exist for this gym.
-    expect(Object.keys(p.blob_urls)).not.toContain("activeinactive");
   }, TEST_TIMEOUT);
 
   it("unknown gym slug throws (typo'd gym arg from LLM)", async () => {
@@ -271,10 +271,12 @@ describe("integration: error paths produce structured, actionable errors (no sil
     expect(r.error).toMatch(/Unknown op/);
   });
 
-  it("EGYM has no 'members' CSV — bot must error, not silently fallback", async () => {
+  it("a CSV missing from the snapshot errors — bot must not silently fallback", async () => {
+    // EGYM now exports 'members', so use a name that will never exist to
+    // keep the unknown-CSV error path covered against real data.
     await expect(
-      registry.for("egym").fetchCsv("members"),
-    ).rejects.toThrow(/Unknown CSV: members/);
+      registry.for("egym").fetchCsv("definitely_not_a_csv"),
+    ).rejects.toThrow(/Unknown CSV: definitely_not_a_csv/);
   }, TEST_TIMEOUT);
 });
 

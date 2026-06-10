@@ -1,9 +1,21 @@
 /**
- * Morning digest cron endpoint (multi-gym).
+ * Morning digest cron endpoint.
  *
- * Daily 06:30 IST via GitHub Actions (after CSV refresh at 06:00 IST).
- * Generates ONE combined brief covering every gym in the registry,
- * sends to every owner (env owners ∪ /approve-d users).
+ * Daily 09:00 IST (03:30 UTC) via GitHub Actions, after the CSV refresh
+ * at 06:45 IST (01:15 UTC). Generates ONE combined brief covering every
+ * ACTIVE gym in the registry, sends to every owner (env owners ∪
+ * /approve-d users).
+ *
+ * Free Form Fitness ownership cancelled 2026-06-11 - removed from digest
+ * roster (retired in src/gyms.json; listGyms() returns active gyms only).
+ *
+ * OWNER-FACING COPY CONTRACT: the Telegram text never carries internal
+ * annotations ([OVERRIDE...], [AUTO-REDACTED...], [VERIFICATION...]) or
+ * parser/CSV jargon. The CSV-ground-truth override/redaction safety
+ * machinery still runs in full — its annotations are routed to the
+ * workflow log (console + the JSON response echoed by the GitHub Action)
+ * instead of the owner message. There is no ops/admin Telegram channel in
+ * config today, so log-only.
  *
  * Auth: shared secret in Authorization: Bearer <CRON_SECRET>.
  */
@@ -337,8 +349,9 @@ export function redactUnhealthySections(
 // first place.
 //
 // Returns the new brief plus per-gym `{ wasHeadlineRupee, computedTotal }`
-// records for the entries that got overridden, so the caller can compose
-// an [OVERRIDE] footer naming exactly what changed.
+// records for the entries that got overridden, so the caller can log an
+// OVERRIDE note (workflow log only — never the owner message) naming
+// exactly what changed.
 export function overrideSection1FromGroundTruth(
   brief: string,
   truth: Record<string, Section1Truth | null>,
@@ -382,32 +395,39 @@ export function overrideSection1FromGroundTruth(
   return { brief: parts.join("==="), overridden };
 }
 
+// Owner sees clean computed numbers only. The "LLM said X, ground truth Y"
+// audit trail lives in the caller's `overridden` records, which go to the
+// workflow log — never into the message body.
 function rewriteSection1WithTruth(
   body: string,
   gt: Section1Truth,
-  wasHeadlineNum: number | null,
+  _wasHeadlineNum: number | null,
 ): string {
   const total = `₹${inrFormat(gt.total)}`;
   const breakdown = ["Cash", "GPay", "Other"]
     .filter(k => (gt.byMode[k] ?? 0) > 0)
     .map(k => `${k} ₹${inrFormat(gt.byMode[k]!)}`)
-    .join(" / ") || "no payments";
-  const wasNote = wasHeadlineNum !== null
-    ? `LLM said ₹${inrFormat(wasHeadlineNum)}`
-    : "LLM dropped headline number";
+    .join(" / ");
+  // Zero-payment days read awkwardly in the standard form ("₹0 • no
+  // payments • 0 payments") — give them a single clean line instead.
+  const moneyLine = gt.count === 0
+    ? `1. YESTERDAY'S MONEY: ₹0 • no payments recorded`
+    : `1. YESTERDAY'S MONEY: ${total} • ${breakdown || "no breakdown"} • ${gt.count} payment${gt.count === 1 ? "" : "s"}`;
   const newSection1 =
-    `1. YESTERDAY'S MONEY: ${total} • ${breakdown} • ${gt.count} payment${gt.count === 1 ? "" : "s"}\n` +
-    `   • 7-day avg ₹${inrFormat(Math.round(gt.sevenDayAvg))}\n` +
-    `   [OVERRIDE — ${wasNote}; CSV ground truth ₹${inrFormat(gt.total)}]\n`;
+    `${moneyLine}\n` +
+    `   • 7-day avg ₹${inrFormat(Math.round(gt.sevenDayAvg))}\n`;
+  // "₹X in" matches the established headline style; "₹0 in" would leave a
+  // hanging "in", so zero days get plain "₹0 yesterday".
+  const headline = gt.total === 0 ? "Headline: ₹0 yesterday" : `Headline: ${total} in`;
 
   let out = body;
   if (/^[ \t]*Headline:.*$/m.test(out)) {
     out = out.replace(
       /^([ \t]*)Headline:.*$/m,
-      `$1Headline: ${total} in`,
+      `$1${headline}`,
     );
   } else {
-    out = `\n  Headline: ${total} in${out}`;
+    out = `\n  ${headline}${out}`;
   }
   const section1Re =
     /^([ \t]*)1\. YESTERDAY'S MONEY:[\s\S]*?(?=^[ \t]*(?:\d+\.|===)|\s*$(?![\r\n]))/m;
@@ -419,15 +439,23 @@ function rewriteSection1WithTruth(
   return out;
 }
 
+// Honest owner copy for the unhealthy-payments case. The technical cause
+// (CSV column misalignment, parser diagnostics) goes to the workflow log
+// via the caller's AUTO-REDACTED note — the owner just needs to know the
+// number is unavailable and being handled.
+const OWNER_UNAVAILABLE_HEADLINE = "Headline: (collections data unavailable today)";
+const OWNER_UNAVAILABLE_SECTION1 =
+  "1. YESTERDAY'S MONEY: data unavailable today — we are on it.";
+
 function rewriteGymBodyForUnhealthyPayments(body: string): string {
   let out = body;
   if (/^[ \t]*Headline:.*$/m.test(out)) {
     out = out.replace(
       /^([ \t]*)Headline:.*$/m,
-      "$1Headline: (payments data unreadable today)",
+      `$1${OWNER_UNAVAILABLE_HEADLINE}`,
     );
   } else {
-    out = `\n  Headline: (payments data unreadable today)${out}`;
+    out = `\n  ${OWNER_UNAVAILABLE_HEADLINE}${out}`;
   }
   // `\d+` (not `[2-9]`) so future sections like `10.` still terminate.
   const section1Re =
@@ -435,12 +463,12 @@ function rewriteGymBodyForUnhealthyPayments(body: string): string {
   if (section1Re.test(out)) {
     out = out.replace(
       section1Re,
-      "$11. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)\n",
+      `$1${OWNER_UNAVAILABLE_SECTION1}\n`,
     );
   } else {
     out = out.replace(
       /(Headline:[^\n]*\n)/,
-      "$1  1. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)\n",
+      `$1  ${OWNER_UNAVAILABLE_SECTION1}\n`,
     );
   }
   return out;
@@ -519,8 +547,76 @@ export function verifyBriefAgainstGroundTruth(
   return `\n\n${parts.join("\n\n")}`;
 }
 
-async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
+// Final owner-copy gate. Strips any internal annotation that slipped into
+// the brief text — whether emitted by the LLM (despite the prompt) or by
+// older post-processing — and swaps internal skip-jargon for honest owner
+// copy. Everything removed is returned so the caller can route it to the
+// workflow log. Exported for unit tests.
+export function sanitizeForOwner(text: string): { text: string; removed: string[] } {
+  const removed: string[] = [];
+  let out = text;
+
+  // Bracketed internal annotation blocks, possibly multi-line:
+  // [OVERRIDE ...], [AUTO-OVERRIDE ...], [AUTO-REDACTED ...], [VERIFICATION ...]
+  out = out.replace(
+    /[ \t]*\[(?:OVERRIDE|AUTO-OVERRIDE|AUTO-REDACTED|VERIFICATION)[^\]]*\][ \t]*\n?/g,
+    m => { removed.push(m.trim()); return ""; },
+  );
+
+  // Internal skip-notes ("(skipped — payments CSV column misaligned in
+  // today's snapshot — operator action needed)" and variants) → honest copy.
+  out = out.replace(
+    /\(skipped[^)]*\)/gi,
+    m => { removed.push(m); return "data unavailable today — we are on it."; },
+  );
+
+  // Parser-warning asides and any other parenthetical naming internal
+  // mechanics with "operator action" phrasing.
+  out = out.replace(
+    /[ \t]*\((?:parser warning[^)]*|[^)]*operator action[^)]*)\)/gi,
+    m => { removed.push(m.trim()); return ""; },
+  );
+
+  // Legacy emoji snapshots footer, if the model still emits one. The
+  // staleness footer is appended deterministically by the caller instead.
+  out = out.replace(
+    /^[^\S\n]*(?:\u{1F4C5}[^\n]*|Snapshots:[^\n]*)\n?/gmu,
+    m => { removed.push(m.trim()); return ""; },
+  );
+
+  // Collapse 3+ blank lines left behind by removals.
+  out = out.replace(/\n{3,}/g, "\n\n").trimEnd();
+  return { text: out, removed };
+}
+
+// Plain-language staleness footer. "Expected" freshness is a snapshot
+// scraped this morning (refresh cron runs 06:45 IST, digest 09:00 IST),
+// i.e. snapshot_date === today's IST date. Anything older gets a plain
+// "Data as of <date>" line — no internal jargon. Returns null when every
+// loaded snapshot is fresh.
+export function stalenessFooter(
+  snapshots: Record<string, SnapshotLoad>,
+  todayIso: string,
+): string | null {
+  const stale: Array<{ name: string; date: string }> = [];
+  for (const g of listGyms()) {
+    const s = snapshots[g.slug];
+    if (s && s.status === "ok" && s.date < todayIso) {
+      stale.push({ name: g.name, date: s.date });
+    }
+  }
+  if (stale.length === 0) return null;
+  if (listGyms().length === 1) {
+    return `\n\nData as of ${stale[0]!.date}.`;
+  }
+  return `\n\n${stale.map(s => `${s.name}: data as of ${s.date}.`).join("\n")}`;
+}
+
+// Exported for the offline dry-run harness (compose without sending);
+// the cron handler below remains the only caller that sends.
+export async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
   text: string; toolCalls: number; snapshots: Record<string, string>; model: string;
+  opsNotes: string[];
 }> {
   const todayIso = istDateIso();
   const snapshotsStructured = await loadSnapshots(blobRegistry);
@@ -619,10 +715,17 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
   // Post-LLM verification: independently compute yesterday's collection
   // per gym from the raw CSV and assert the brief's text contains a number
   // within 2% of that. If a gym section is missing OR carries the wrong
-  // number, append a clearly-marked warning so the owner sees we suspect
-  // the brief. Verification skips gyms whose payments CSV is unhealthy
-  // (parser misalignment) — there's no ground truth to check against.
+  // number, the section is hard-replaced with computed ground truth.
+  // Verification skips gyms whose payments CSV is unhealthy (parser
+  // misalignment) — there's no ground truth to check against.
+  //
+  // All annotations (OVERRIDE / REDACTED / VERIFICATION) are internal:
+  // they go to `opsNotes` (returned to the handler, surfaced in the JSON
+  // response that the GitHub Actions workflow echoes) and to console —
+  // NEVER appended to the owner-facing text. No ops/admin Telegram chat
+  // exists in config, so log-only.
   let briefText = briefRaw;
+  const opsNotes: string[] = [];
   try {
     // One fetch+parse per gym; verifier, redactor and override all read
     // from this. `expected[slug]` is just `section1Truth[slug]?.total`,
@@ -645,9 +748,9 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
     );
     briefText = redactedBrief;
     if (redacted.length > 0) {
-      const note = `\n\n[AUTO-REDACTED — payments CSV unhealthy for: ${redacted.join(", ")}; Headline + section 1 replaced with skip marker]`;
-      briefText += note;
-      console.warn(`[digest] auto-redacted unhealthy gyms: ${redacted.join(", ")}`);
+      const note = `[AUTO-REDACTED — payments CSV unhealthy for: ${redacted.join(", ")}; Headline + section 1 replaced with owner-safe unavailable copy]`;
+      opsNotes.push(note);
+      console.warn(`[digest] ${note}`);
     }
     // Section-1 override: for gyms whose CSV is healthy but whose LLM
     // headline doesn't match ground truth within 2%, hard-replace
@@ -663,19 +766,40 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
     briefText = overriddenBrief;
     if (overridden.length > 0) {
       const lines = overridden.map(o =>
-        `- ${o.gymName}: LLM said ${o.was !== null ? `₹${inrFormat(o.was)}` : "(no headline)"}, CSV ground truth ₹${inrFormat(o.now)}`,
-      ).join("\n");
-      const note = `\n\n[AUTO-OVERRIDE — LLM headline disagreed with CSV; replaced with computed numbers:\n${lines}]`;
-      briefText += note;
-      console.warn(`[digest] auto-override: ${overridden.map(o => `${o.gymName} ${o.was}->${o.now}`).join(", ")}`);
+        `${o.gymName}: LLM said ${o.was !== null ? `₹${inrFormat(o.was)}` : "(no headline)"}, CSV ground truth ₹${inrFormat(o.now)}`,
+      );
+      const note = `[AUTO-OVERRIDE — LLM headline disagreed with CSV; replaced with computed numbers: ${lines.join("; ")}]`;
+      opsNotes.push(note);
+      console.warn(`[digest] ${note}`);
     }
     const warning = verifyBriefAgainstGroundTruth(briefText, expected);
     if (warning) {
-      console.warn(`[digest] verification mismatch: ${warning.replace(/\n/g, " | ")}`);
-      briefText = briefText + warning;
+      const note = warning.trim().replace(/\n/g, " | ");
+      opsNotes.push(note);
+      console.warn(`[digest] verification mismatch: ${note}`);
     }
   } catch (e) {
-    console.warn(`[digest] verification step itself failed: ${(e as Error).message}`);
+    const note = `verification step itself failed: ${(e as Error).message}`;
+    opsNotes.push(note);
+    console.warn(`[digest] ${note}`);
+  }
+
+  // Final owner-copy gate: strip any internal annotation or skip-jargon
+  // that survived the pipeline above, routing it to the workflow log.
+  const sanitized = sanitizeForOwner(briefText);
+  briefText = sanitized.text;
+  if (sanitized.removed.length > 0) {
+    const note = `sanitized internal text out of owner message: ${sanitized.removed.join(" | ")}`;
+    opsNotes.push(note);
+    console.warn(`[digest] ${note}`);
+  }
+
+  // Plain-language staleness disclosure ("Data as of <date>.") when a
+  // gym's snapshot is older than this morning's expected refresh.
+  const footer = stalenessFooter(snapshotsStructured, todayIso);
+  if (footer) {
+    briefText += footer;
+    console.warn(`[digest] stale snapshot disclosed to owner:${footer.replace(/\n/g, " ")}`);
   }
 
   return {
@@ -683,6 +807,7 @@ async function buildBrief(blobRegistry: BlobStoreRegistry): Promise<{
     toolCalls,
     snapshots,
     model: DIGEST_MODEL,
+    opsNotes,
   };
 }
 
@@ -735,7 +860,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const { text, toolCalls, snapshots, model: usedModel } = await buildBrief(blobRegistry);
+    const { text, toolCalls, snapshots, model: usedModel, opsNotes } = await buildBrief(blobRegistry);
 
     const sends: Promise<void>[] = [];
     for (const chatId of recipients) {
@@ -769,6 +894,7 @@ export default async function handler(req: any, res: any) {
       model: usedModel,
       latency_ms: Date.now() - started,
       snapshots,
+      ops_notes: opsNotes,
       preview: text.slice(0, 200),
     }));
     // ok must reflect actual delivery — if every send rejected (Telegram
@@ -776,11 +902,17 @@ export default async function handler(req: any, res: any) {
     // the morning-digest cron's `jq -e '.ok'` check must catch. Returning
     // ok:true on 0/N delivery would silently lose the daily brief.
     const allFailed = failed > 0 && failed >= recipients.size;
+    // ops_notes carries the internal OVERRIDE/REDACTED/VERIFICATION
+    // annotations. The morning-digest workflow echoes this JSON, so the
+    // notes land in the GitHub Actions log without touching the owner
+    // message. (No ops/admin Telegram chat id exists in config — if one
+    // is added later, send opsNotes there too.)
     res.status(200).json({
       ok: !allFailed,
       sent_to: recipients.size - failed,
       failed,
       snapshots,
+      ops_notes: opsNotes,
     });
   } catch (e) {
     console.error("digest error", e);

@@ -59,12 +59,15 @@ TOOLS (gym is REQUIRED in every data tool call)
   of one gym.
 
 MULTI-GYM RULES (CRITICAL)
-- If the user names a gym ("FFF", "free form", "egym", "lokhandwala"), use
-  that gym. Match against gym names case-insensitive — "fff" and "ffm" and
-  "free form" all = freeform. "egym" and "lokhandwala" = egym.
-- If the question is ambiguous about which gym (e.g. "cash today"), answer
-  for BOTH gyms side-by-side. Compute each separately, present them
-  together with clear section headers per gym.
+- If the user names a gym, use that gym. Match against the gym list above
+  case-insensitive — e.g. "egym" and "lokhandwala" = egym.
+- Free Form Fitness ownership cancelled 2026-06-11 - removed from the
+  roster. If the user asks about "FFF" / "free form", reply in one
+  sentence that Free Form Fitness is no longer covered by this bot.
+- If the question is ambiguous about which gym (e.g. "cash today") and
+  more than one gym is listed, answer for ALL listed gyms side-by-side.
+  Compute each separately, present them together with clear section
+  headers per gym.
 - Each gym's snapshot may have a different date. Use each gym's actual
   snapshot date in answers about that gym.
 
@@ -230,7 +233,7 @@ function buildTools(
     name: "list_csvs",
     description:
       "List CSVs for ONE gym with exact column names + sample rows. " +
-      "gym arg must be a slug from list_gyms (e.g. 'freeform', 'egym').",
+      "gym arg must be a slug from list_gyms (e.g. 'egym').",
     parameters: z.object({ gym: z.string() }),
     execute: async ({ gym }) => {
       counter.n++;

@@ -23,14 +23,18 @@ jobs:
       # Don't let one gym's failure cancel the others.
       fail-fast: false
       matrix:
-        gym: [freeform, egym]
+        # Free Form Fitness ownership cancelled 2026-06-11 - removed from
+        # digest roster. Its FB login started failing 2026-06-10 ("no
+        # .ASPXAUTH in response") because the account is no longer valid;
+        # scraping it is both broken and unnecessary. Historic blob
+        # snapshots under csv/freeform/ are retained.
+        gym: [egym]
     env:
       FB_MOBILE: ${{ secrets.FB_MOBILE }}
       # All passwords visible to every matrix run; the bash step picks
       # the right one by gym slug. GitHub Actions doesn't allow
       # dynamic `secrets[matrix.var]` indexing, so this is the
       # standard workaround.
-      FB_PASSWORD_FREEFORM: ${{ secrets.FB_PASSWORD_FREEFORM }}
       FB_PASSWORD_EGYM: ${{ secrets.FB_PASSWORD_EGYM }}
       FB_OUT_DIR: /tmp/csvs-${{ matrix.gym }}
     steps:

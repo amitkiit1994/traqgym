@@ -19,6 +19,8 @@ const {
   verifyBriefAgainstGroundTruth,
   redactUnhealthySections,
   overrideSection1FromGroundTruth,
+  sanitizeForOwner,
+  stalenessFooter,
   istDateIso,
 } = await import("../api/digest.js");
 
@@ -196,8 +198,10 @@ Headline: ₹71,000 in
     expect(fff).toContain("Headline: ₹12,000 in");
     expect(fff).toContain("1. YESTERDAY'S MONEY: ₹12,000 • Cash ₹12,000 • 1 payment");
     expect(fff).toContain("7-day avg ₹10,714");
-    expect(fff).toContain("[OVERRIDE");
-    expect(fff).toContain("LLM said ₹52,300");
+    // The audit trail (LLM said X, truth Y) is workflow-log-only now —
+    // the owner message must carry NO internal [OVERRIDE] annotation.
+    expect(fff).not.toContain("[OVERRIDE");
+    expect(fff).not.toContain("LLM said");
     // The fabricated GPay / payment count must be GONE.
     expect(fff).not.toContain("₹40,300");
     expect(fff).not.toContain("5 payments");
@@ -234,10 +238,10 @@ Headline: ₹12,000 in (skipped — payments CSV column misaligned in today's sn
       { gymName: "Free Form Fitness", was: 12_000, now: 12_000 },
     ]);
     // Section 1 must be rewritten to the clean ground-truth form, not the
-    // LLM's skip marker.
+    // LLM's skip marker — and with no internal [OVERRIDE] annotation.
     const fff = extractGymSection(brief, "Free Form Fitness")!;
     expect(fff).toContain("1. YESTERDAY'S MONEY: ₹12,000 • Cash ₹12,000 • 1 payment");
-    expect(fff).toContain("[OVERRIDE");
+    expect(fff).not.toContain("[OVERRIDE");
     expect(fff).not.toMatch(/^[ \t]*1\.[^\n]*skipped/m);
     // Section 2 must survive.
     expect(fff).toContain("2. EXPIRING SOON: ₹61,050");
@@ -269,8 +273,8 @@ Headline: ₹11,000 in
     const partiallyRedacted = `GOOD MORNING — 2026-05-21
 
 === Free Form Fitness ===
-Headline: (payments data unreadable today)
-1. YESTERDAY'S MONEY: (skipped — payments CSV column misaligned in today's snapshot — operator action needed)
+Headline: (collections data unavailable today)
+1. YESTERDAY'S MONEY: data unavailable today — we are on it.
 
 === EGYM Lokhandwala ===
 Headline: ₹71,000 in
@@ -283,9 +287,9 @@ Headline: ₹71,000 in
       { freeform: TRUTH_FFF, egym: TRUTH_EGYM },
       new Set(["Free Form Fitness"]),
     );
-    // FFF stays redacted — override does NOT overwrite the skip marker.
-    expect(brief).toContain("(payments data unreadable today)");
-    expect(brief).toContain("(skipped — payments CSV column misaligned");
+    // FFF stays redacted — override does NOT overwrite the unavailable copy.
+    expect(brief).toContain("(collections data unavailable today)");
+    expect(brief).toContain("data unavailable today — we are on it.");
     // EGYM gets overridden as normal.
     expect(overridden.map(o => o.gymName)).toEqual(["EGYM Lokhandwala"]);
     expect(brief).toContain("Headline: ₹11,000 in");
@@ -308,7 +312,7 @@ Headline: ₹71,000 in
     expect(brief).toContain("Headline: ₹12,000 in");
   });
 
-  it("emits 'no headline' note when LLM dropped both lines", () => {
+  it("records was=null when LLM dropped both lines (audit lives in overridden, not the brief)", () => {
     const noNumbers = `GOOD MORNING — 2026-05-21
 
 === Free Form Fitness ===
@@ -322,8 +326,31 @@ Headline: ₹71,000 in
     });
     expect(overridden).toHaveLength(1);
     expect(overridden[0]!.was).toBeNull();
-    expect(brief).toContain("LLM dropped headline number");
+    // The "LLM dropped headline number" detail is workflow-log-only now.
+    expect(brief).not.toContain("LLM dropped headline number");
     expect(brief).toContain("Headline: ₹12,000 in");
+  });
+
+  it("renders a clean zero-payments line (no '₹0 in' hanging headline, no '0 payments' redundancy)", () => {
+    const fabricated = `GOOD MORNING — 2026-05-21
+
+=== EGYM Lokhandwala ===
+Headline: ₹71,000 in
+1. YESTERDAY'S MONEY: ₹71,000 • Cash ₹71,000 • 3 payments
+
+=== CROSS-GYM ACTIONS ===
+- nothing`;
+    const zeroDay = { total: 0, count: 0, byMode: { Cash: 0, GPay: 0, Other: 0 }, sevenDayAvg: 17_286 };
+    const { brief, overridden } = overrideSection1FromGroundTruth(fabricated, {
+      egym: zeroDay,
+    });
+    expect(overridden).toHaveLength(1);
+    const egym = extractGymSection(brief, "EGYM Lokhandwala")!;
+    expect(egym).toContain("Headline: ₹0 yesterday");
+    expect(egym).toContain("1. YESTERDAY'S MONEY: ₹0 • no payments recorded");
+    expect(egym).toContain("7-day avg ₹17,286");
+    expect(egym).not.toContain("₹0 in");
+    expect(egym).not.toContain("0 payments");
   });
 
   it("skips gym entries with null ground truth (unhealthy CSV — redactor's job)", () => {
@@ -353,10 +380,10 @@ Headline: ₹52,300 in
     ]);
     expect(brief).toContain("Headline: ₹12,000 in");
     expect(brief).toContain("1. YESTERDAY'S MONEY: ₹12,000 • Cash ₹12,000 • 1 payment");
-    // The [OVERRIDE] audit marker deliberately preserves the LLM's old
-    // value so the operator can see what was replaced. The fabricated
-    // breakdown / payment count, however, must be gone.
-    expect(brief).toContain("[OVERRIDE — LLM said ₹52,300");
+    // The old-value audit trail is returned in `overridden` (workflow log),
+    // never embedded in the owner message. The fabricated breakdown /
+    // payment count must be gone.
+    expect(brief).not.toContain("[OVERRIDE");
     expect(brief).not.toContain("Cash ₹40,000");
     expect(brief).not.toContain("GPay ₹12,300");
     expect(brief).not.toContain("7 payments");
@@ -369,10 +396,13 @@ describe("redactUnhealthySections", () => {
       freeform: 52_300,
       egym: null,
     });
-    // EGYM section: Headline and section 1 must be replaced.
+    // EGYM section: Headline and section 1 must be replaced with the
+    // owner-honest unavailable copy (no parser/CSV jargon).
     const egymBody = extractGymSection(brief, "EGYM Lokhandwala")!;
-    expect(egymBody).toContain("Headline: (payments data unreadable today)");
-    expect(egymBody).toContain("(skipped — payments CSV column misaligned");
+    expect(egymBody).toContain("Headline: (collections data unavailable today)");
+    expect(egymBody).toContain("data unavailable today — we are on it.");
+    expect(egymBody).not.toContain("misaligned");
+    expect(egymBody).not.toContain("operator action");
     expect(egymBody).not.toContain("₹3,31,200");
     expect(egymBody).not.toContain("Cash ₹2,80,000");
     // FFF section: untouched.
@@ -419,8 +449,8 @@ describe("redactUnhealthySections", () => {
       egym: null,
     });
     expect(redacted).toEqual(["Free Form Fitness", "EGYM Lokhandwala"]);
-    // Both sections rewritten — there should be two skip markers.
-    const skipCount = (brief.match(/payments data unreadable today/g) ?? []).length;
+    // Both sections rewritten — there should be two unavailable markers.
+    const skipCount = (brief.match(/collections data unavailable today/g) ?? []).length;
     expect(skipCount).toBe(2);
   });
 
@@ -434,8 +464,94 @@ describe("redactUnhealthySections", () => {
       egym: 3_31_200,
     });
     // The replacement marker should still appear for FFF.
-    expect(brief).toContain("payments data unreadable today");
+    expect(brief).toContain("collections data unavailable today");
     expect(redacted).toContain("Free Form Fitness");
+  });
+});
+
+// Final owner-copy gate: nothing internal may survive into the Telegram
+// text. The removed fragments are returned for the workflow log.
+describe("sanitizeForOwner", () => {
+  it("strips [OVERRIDE...] / [AUTO-...] / [VERIFICATION...] blocks and reports them", () => {
+    const dirty = `=== EGYM Lokhandwala ===
+Headline: ₹11,000 in
+1. YESTERDAY'S MONEY: ₹11,000 • Cash ₹11,000 • 1 payment
+   [OVERRIDE — LLM said ₹71,000; CSV ground truth ₹11,000]
+
+[AUTO-REDACTED — payments CSV unhealthy for: X]
+
+[AUTO-OVERRIDE — LLM headline disagreed with CSV; replaced with computed numbers:
+- EGYM Lokhandwala: LLM said ₹71,000, CSV ground truth ₹11,000]
+
+[VERIFICATION SKIPPED — cannot confirm headline numbers]
+- some detail`;
+    const { text, removed } = sanitizeForOwner(dirty);
+    expect(text).not.toContain("[OVERRIDE");
+    expect(text).not.toContain("[AUTO-REDACTED");
+    expect(text).not.toContain("[AUTO-OVERRIDE");
+    expect(text).not.toContain("[VERIFICATION");
+    expect(text).toContain("1. YESTERDAY'S MONEY: ₹11,000 • Cash ₹11,000 • 1 payment");
+    expect(removed.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("replaces internal skip-notes with honest owner copy", () => {
+    const dirty = `3. OUTSTANDING DUES: (skipped — balance CSV column Balance Amount is misaligned in today's snapshot; operator action needed)`;
+    const { text, removed } = sanitizeForOwner(dirty);
+    expect(text).toBe("3. OUTSTANDING DUES: data unavailable today — we are on it.");
+    expect(removed).toHaveLength(1);
+    expect(removed[0]).toContain("misaligned");
+  });
+
+  it("drops parser-warning asides but keeps the number", () => {
+    const dirty = `1. YESTERDAY'S MONEY: ₹11,000 (parser warning: Created On UNHEALTHY)`;
+    const { text } = sanitizeForOwner(dirty);
+    expect(text).toContain("₹11,000");
+    expect(text).not.toContain("parser warning");
+  });
+
+  it("removes a legacy emoji snapshots footer line", () => {
+    const dirty = `GOOD MORNING — 2026-06-11\n\nbody\n\n\u{1F4C5} Snapshots: egym=2026-06-10`;
+    const { text } = sanitizeForOwner(dirty);
+    expect(text).not.toContain("Snapshots:");
+    expect(text).toContain("body");
+  });
+
+  it("returns clean text unchanged", () => {
+    const clean = `GOOD MORNING — 2026-06-11\n\n=== EGYM Lokhandwala ===\nHeadline: ₹11,000 in\n1. YESTERDAY'S MONEY: ₹11,000 • Cash ₹11,000 • 1 payment`;
+    const { text, removed } = sanitizeForOwner(clean);
+    expect(text).toBe(clean);
+    expect(removed).toEqual([]);
+  });
+});
+
+// Plain-language staleness disclosure. Active roster is egym-only, so the
+// single-gym phrasing applies.
+describe("stalenessFooter", () => {
+  it("returns a plain 'Data as of <date>.' line when the snapshot is older than today", () => {
+    const f = stalenessFooter(
+      { egym: { status: "ok", date: "2026-06-09" } },
+      "2026-06-11",
+    );
+    expect(f).toBe("\n\nData as of 2026-06-09.");
+  });
+
+  it("returns null when the snapshot is fresh (today)", () => {
+    const f = stalenessFooter(
+      { egym: { status: "ok", date: "2026-06-11" } },
+      "2026-06-11",
+    );
+    expect(f).toBeNull();
+  });
+
+  it("ignores missing/error snapshots (covered elsewhere) and retired gyms", () => {
+    const f = stalenessFooter(
+      {
+        egym: { status: "missing" },
+        freeform: { status: "ok", date: "2020-01-01" },
+      },
+      "2026-06-11",
+    );
+    expect(f).toBeNull();
   });
 });
 
