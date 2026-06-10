@@ -34,6 +34,11 @@ concurrency:
 
 jobs:
   deploy:
+    # Free Form Fitness ownership cancelled 2026-06-11: main-branch pushes no
+    # longer deploy traqgym-app (the FFF instance; its Railway DB is already
+    # unreachable, which made every main deploy build fail on prisma).
+    # E-GYM Lokhandwala continues to deploy from the egymlokhandwala branch.
+    if: github.ref_name == 'egymlokhandwala'
     runs-on: ubuntu-latest
     env:
       # Move ref_name into env to avoid command-injection patterns in run: blocks

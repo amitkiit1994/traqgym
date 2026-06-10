@@ -115,7 +115,7 @@ Staff can do day-to-day operations: member check-in, renewals, payments, enquiry
 
 ## Production Data
 
-**Free Form Fitness** (`main` branch, Vercel project `traqgym-app`)
+**Free Form Fitness** (`main` branch, Vercel project `traqgym-app`) — **OWNERSHIP CANCELLED 2026-06-11**: removed from digest roster, refresh/v3-sync cron matrices, and main-branch auto-deploy (its Railway DB is unreachable). Instance frozen pending decommission; Robin operates E-GYM Lokhandwala only.
 - Theme: purple (OKLCh hue 275), logo `/traqLogo.png` — set via `NEXT_PUBLIC_GYM_THEME_HUE=275` in Vercel env (defaulted to 275 in `app/layout.tsx` so this can be omitted)
 - Admin: Robin's account — credentials live in the shared password manager, NEVER in this file (this repo is public and git history retains old revisions; the previously committed password is burned and must be rotated). Robin runs both gyms; admin@freeformfitness.com is NOT a real account on the FFF DB despite earlier docs.
 - Staff: e.g. pooja.singh@staff.freeform.local / password123
