@@ -1,24 +1,73 @@
 /**
  * Telegram Bot API channel — outbound message helpers + inbound utilities.
  *
- * All functions use a single global bot (configured via TELEGRAM_BOT_TOKEN env)
- * and call the HTTPS API directly via `fetch` — no SDK, no extra dependency.
+ * All functions use a single global bot. The token is resolved per call:
+ * the TELEGRAM_BOT_TOKEN env var wins when set, otherwise the admin-pasted
+ * `telegram_bot_token` GymSettings row (saved encrypted by the setup flow in
+ * lib/actions/telegram-setup.ts; getSetting decrypts transparently). Calls
+ * go to the HTTPS API directly via `fetch` — no SDK, no extra dependency.
  *
  * Design rules:
  *   - Never throw to the caller; always return a `{success, ...}` shape.
- *   - When the bot token is unset, every call gracefully no-ops with
- *     `{success:false, error:"no_token"}`. This keeps build/dev safe.
+ *   - When no bot token is configured (env or Settings), every call
+ *     gracefully no-ops with `{success:false, error:"no_token"}`. This
+ *     keeps build/dev safe.
  *   - HTML parse_mode is preferred over MarkdownV2 (escaping rules in MarkdownV2
  *     are very finicky — HTML only requires escaping `<`, `>`, `&`).
  *   - Whisper voice transcription is opt-in via WHISPER_API_KEY; if missing the
  *     caller is told to set it.
  */
 
+import { getSetting } from "@/lib/services/settings";
+
 const TG_BASE = "https://api.telegram.org";
 
-function token(): string | null {
-  const t = process.env.TELEGRAM_BOT_TOKEN;
-  return t && t.length > 0 ? t : null;
+// Module-scope cache for the DB-stored token so per-send lookups (this runs
+// on serverless — warm instances reuse module state) don't pay a settings
+// read every time. Short TTL keeps Save/Disconnect in the admin UI effective
+// within a minute on already-warm instances.
+const TOKEN_CACHE_TTL_MS = 60 * 1000;
+let dbTokenCache: { value: string | null; ts: number } | null = null;
+
+/**
+ * Resolve the bot token: TELEGRAM_BOT_TOKEN env when set, otherwise the
+ * `telegram_bot_token` GymSettings value saved by the admin setup flow
+ * (same getSetting accessor as telegram-setup.ts — handles decryption of
+ * the enc:v1: format). Returns null when neither source has a token.
+ */
+async function resolveToken(): Promise<string | null> {
+  const envToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (envToken && envToken.length > 0) return envToken;
+  if (dbTokenCache && Date.now() - dbTokenCache.ts < TOKEN_CACHE_TTL_MS) {
+    return dbTokenCache.value;
+  }
+  try {
+    const stored = (await getSetting("telegram_bot_token", "")).trim();
+    const value = stored.length > 0 ? stored : null;
+    dbTokenCache = { value, ts: Date.now() };
+    return value;
+  } catch (err) {
+    // getSetting can throw (DB unreachable, DATA_ENCRYPTION_KEY missing or
+    // wrong). Design rule: never throw to the caller — treat as no token.
+    // Don't cache the failure so the next call retries.
+    console.warn("[telegram] could not read telegram_bot_token setting:", err);
+    return null;
+  }
+}
+
+/** True when a bot token is configured (env var or Settings UI). */
+export async function hasBotToken(): Promise<boolean> {
+  return (await resolveToken()) !== null;
+}
+
+/**
+ * Drop the cached DB token. Called by the setup/disconnect actions right
+ * after they write `telegram_bot_token`, so the same warm instance doesn't
+ * serve a stale value for up to TOKEN_CACHE_TTL_MS (other instances simply
+ * expire the cache).
+ */
+export function invalidateBotTokenCache(): void {
+  dbTokenCache = null;
 }
 
 type ApiResult<T = unknown> =
@@ -29,7 +78,7 @@ async function callTelegram<T = unknown>(
   method: string,
   body: Record<string, unknown>
 ): Promise<ApiResult<T>> {
-  const t = token();
+  const t = await resolveToken();
   if (!t) {
     return { success: false, error: "no_token" };
   }
@@ -164,7 +213,7 @@ export async function getFile(params: {
 export async function downloadFile(params: {
   filePath: string;
 }): Promise<ApiResult<Buffer>> {
-  const t = token();
+  const t = await resolveToken();
   if (!t) return { success: false, error: "no_token" };
   try {
     const url = `${TG_BASE}/file/bot${t}/${params.filePath}`;

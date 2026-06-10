@@ -20,6 +20,7 @@ import {
   deleteWebhook,
   sendMessage,
   derivePairingCode,
+  hasBotToken,
 } from "@/lib/channels/telegram";
 
 function computeWebhookUrl(): string {
@@ -43,8 +44,12 @@ export async function registerWebhookAction(): Promise<RegisterWebhookResult> {
       error: err instanceof Error ? err.message : "Unauthorized",
     };
   }
-  if (!process.env.TELEGRAM_BOT_TOKEN) {
-    return { success: false, error: "TELEGRAM_BOT_TOKEN not configured" };
+  if (!(await hasBotToken())) {
+    return {
+      success: false,
+      error:
+        "Bot token not configured (set it in Settings → Telegram, or via TELEGRAM_BOT_TOKEN env)",
+    };
   }
 
   const url = computeWebhookUrl();
@@ -88,7 +93,7 @@ export async function disconnectTelegramAction(): Promise<DisconnectTelegramResu
   // Best-effort: also delete the webhook so the bot stops receiving updates
   // when the gym intentionally disconnects. Comment this out if you want the
   // webhook to remain installed.
-  if (process.env.TELEGRAM_BOT_TOKEN) {
+  if (await hasBotToken()) {
     await deleteWebhook().catch(() => {});
   }
   return { success: true };
@@ -119,10 +124,13 @@ export async function sendTestTelegramAction(): Promise<SendTestTelegramResult> 
   if (!result.success) {
     return {
       success: false,
-      error: result.error === "no_token" ? "TELEGRAM_BOT_TOKEN not configured" : result.error,
+      error:
+        result.error === "no_token"
+          ? "Bot token not configured (set it in Settings → Telegram, or via TELEGRAM_BOT_TOKEN env)"
+          : result.error,
     };
   }
-  return { success: true, mode: process.env.TELEGRAM_BOT_TOKEN ? "live" : "dev" };
+  return { success: true, mode: (await hasBotToken()) ? "live" : "dev" };
 }
 
 export type PairingInfoResult = {

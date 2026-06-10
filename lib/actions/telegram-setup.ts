@@ -3,7 +3,11 @@
 import crypto from "node:crypto";
 import { requireWorker } from "@/lib/auth-guard";
 import { getSetting, setSetting } from "@/lib/services/settings";
-import { setWebhook, derivePairingCode } from "@/lib/channels/telegram";
+import {
+  setWebhook,
+  derivePairingCode,
+  invalidateBotTokenCache,
+} from "@/lib/channels/telegram";
 import { revalidatePath } from "next/cache";
 
 export type ValidateResult =
@@ -74,11 +78,13 @@ export async function configureBot(params: { botToken: string }): Promise<Config
   await setSetting("telegram_bot_token", params.botToken);
   await setSetting("telegram_bot_username", validation.botUsername);
   await setSetting("telegram_webhook_secret", webhookSecret);
+  invalidateBotTokenCache();
 
-  // Register the webhook with Telegram. Use the just-saved token directly
-  // (setWebhook reads it from env or from where the channel module reads it,
-  // but the call goes through the Telegram API and needs the token in the URL).
-  // We pass our own fetch here instead of relying on a global TELEGRAM_BOT_TOKEN.
+  // Register the webhook with Telegram using the just-pasted token directly.
+  // The channel module (lib/channels/telegram.ts) resolves env-then-Settings
+  // with a short-lived cache, so right after saving it could briefly serve a
+  // stale/empty token on a warm instance — calling fetch ourselves with the
+  // in-hand token avoids that race entirely.
   const setRes = await fetch(`https://api.telegram.org/bot${params.botToken}/setWebhook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -146,6 +152,7 @@ export async function disconnectBot(): Promise<{ success: true }> {
   await setSetting("telegram_bot_username", "");
   await setSetting("telegram_webhook_secret", "");
   await setSetting("gym_owner_telegram_chat_id", "");
+  invalidateBotTokenCache();
   revalidatePath("/admin/settings/integrations/telegram");
   return { success: true };
 }
