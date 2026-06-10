@@ -117,14 +117,14 @@ Staff can do day-to-day operations: member check-in, renewals, payments, enquiry
 
 **Free Form Fitness** (`main` branch, Vercel project `traqgym-app`)
 - Theme: purple (OKLCh hue 275), logo `/traqLogo.png` — set via `NEXT_PUBLIC_GYM_THEME_HUE=275` in Vercel env (defaulted to 275 in `app/layout.tsx` so this can be omitted)
-- Admin: carruthersrobin3@gmail.com / Robin@FFF2026 (Robin runs both gyms; admin@freeformfitness.com is NOT a real account on the FFF DB despite earlier docs)
+- Admin: Robin's account — credentials live in the shared password manager, NEVER in this file (this repo is public and git history retains old revisions; the previously committed password is burned and must be rotated). Robin runs both gyms; admin@freeformfitness.com is NOT a real account on the FFF DB despite earlier docs.
 - Staff: e.g. pooja.singh@staff.freeform.local / password123
 - Members: imported from FitnessBoard — email is `{phone}@imported.local`, password is their phone number
 - ~303 users, ~16 plans, ~570 tickets, ~566 payments, 5 enquiries
 
 **E-GYM Lokhandwala** (`egymlokhandwala` branch, Vercel project `traqgym-egym`, Railway PostgreSQL)
 - Theme: red/black (OKLCh hue 25), logo `/egym-logo.png` — REQUIRES `NEXT_PUBLIC_GYM_THEME_HUE=25` in the Vercel project env (without it the deploy renders FFF purple)
-- Admin: carruthersrobin3@gmail.com / Robin@FFF2026
+- Admin: same admin account as FFF — credentials in the shared password manager, never committed here
 - Members: imported from E-Gym CSV exports
 - 10,275 users, 102 plans, 9,803 tickets, 14,771 payments, 3,779 enquiries, 7,701 followups
 - Domain target: `egymlokhandwala.traqgym.com`

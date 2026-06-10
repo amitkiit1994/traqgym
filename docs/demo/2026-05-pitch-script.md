@@ -72,7 +72,7 @@ URL: `/admin/settings/integrations/fitnessboard`
 ## Pre-demo checklist (do day-of)
 
 - [ ] `freeformfitness.traqgym.com` loads cleanly
-- [ ] Logged in as `carruthersrobin3@gmail.com / Robin@FFF2026`
+- [ ] Logged in as the admin account (credentials in the shared password manager — never in this repo)
 - [ ] Dashboard tiles populated (sync ran successfully last night)
 - [ ] Telegram bot responding (if configured) — send `/start` to verify
 - [ ] Phone Bluetooth ready if doing voice demo
