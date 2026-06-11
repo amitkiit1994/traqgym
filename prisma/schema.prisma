@@ -1435,3 +1435,18 @@ model AutonomyPolicy {
   demotionReason String?
   updatedAt      DateTime  @updatedAt
 }
+
+// One row per morning-digest cron run (Task #78: unified owner chat).
+// In shadow mode the digest is built + stored here WITHOUT being sent, so
+// the lead can diff `metrics` against the legacy CSV-blob digest messages
+// for a few days before flipping GymSettings digest_source to "db"
+// (scripts/compare-digest.ts prints the recent rows for that comparison).
+model DigestRun {
+  id          Int       @id @default(autoincrement())
+  date        String    @unique // IST calendar date YYYY-MM-DD the digest was composed on
+  source      String // GymSettings digest_source at run time: "shadow" | "db" | "manual"
+  text        String    @db.Text // full composed digest text (HTML-safe)
+  metrics     Json // DigestMetrics comparison snapshot (see lib/services/morning-digest.ts)
+  deliveredAt DateTime? // stamped after a successful db-mode send — same-day cron re-runs see it and skip the send (no double-send)
+  createdAt   DateTime  @default(now())
+}
