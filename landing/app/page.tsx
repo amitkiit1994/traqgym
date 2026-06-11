@@ -1,7 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import KinelyBar from "../components/KinelyBar";
+
+const START_URL = "https://traqgym.kinely.ai/start";
+const PRICING_URL = "https://traqgym.kinely.ai/pricing";
 
 /* ─── Intersection Observer ─── */
 function useInView(threshold = 0.1) {
@@ -18,6 +22,30 @@ function useInView(threshold = 0.1) {
     return () => obs.disconnect();
   }, [threshold]);
   return { ref, inView };
+}
+
+
+/* ─── Hero media: reserved video slot with graceful fallback ───
+   Drop hero-traqgym.mp4 into public/ and it automatically replaces the
+   animated dashboard preview. Until the file ships, the <video> never
+   becomes visible and the fallback (current hero visual) renders. */
+function HeroMedia({ children }: { children: ReactNode }) {
+  const [videoReady, setVideoReady] = useState(false);
+  return (
+    <>
+      <video
+        src="/hero-traqgym.mp4"
+        className={videoReady ? "w-full rounded-2xl border border-white/[0.08] bg-card shadow-2xl shadow-accent/5" : "hidden"}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        onCanPlayThrough={() => setVideoReady(true)}
+      />
+      {!videoReady && children}
+    </>
+  );
 }
 
 
@@ -98,8 +126,8 @@ function DashboardContent() {
       {/* Sidebar */}
       <div className="w-48 border-r border-white/[0.06] bg-surface/50 p-4 hidden md:block shrink-0">
         <div className="flex items-center gap-2 mb-6">
-          <Image src="/logo.png" alt="EGym" width={20} height={20} />
-          <span className="text-[12px] font-semibold">EGym</span>
+          <Image src="/logo.png" alt="Demo gym" width={20} height={20} />
+          <span className="text-[12px] font-semibold">Demo Gym</span>
         </div>
         {["Dashboard", "Members", "Attendance", "Plans", "Billing", "Reports", "Staff", "Settings"].map((item, i) => (
           <div key={item} className={`text-[12px] py-2 px-3 rounded-lg mb-0.5 flex items-center gap-2.5 ${i === 0 && !showAI ? "bg-accent/10 text-accent font-medium" : "text-dim hover:text-sub"}`}>
@@ -123,13 +151,16 @@ function DashboardContent() {
               <h3 className="text-[15px] font-semibold">Dashboard</h3>
               <p className="text-[11px] text-dim mt-0.5">Welcome back, Admin</p>
             </div>
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-400/80 border border-amber-400/20 bg-amber-400/5 rounded-full px-2.5 py-0.5">
+              Sample data
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-5">
             {[
               { label: "Active Members", value: "342", change: "+12", color: "text-green-400" },
               { label: "Today's Check-ins", value: "87", change: "+5", color: "text-green-400" },
-              { label: "Revenue (MTD)", value: "\u20B94.2L", change: "+18%", color: "text-green-400" },
+              { label: "Gym Collections (MTD)", value: "\u20B94.2L", change: "+18%", color: "text-green-400" },
               { label: "Expiring This Week", value: "14", change: "", color: "text-amber-400" },
             ].map(s => (
               <div key={s.label} className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-3.5">
@@ -145,7 +176,7 @@ function DashboardContent() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
             <div className="md:col-span-3 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-[12px] font-medium">Revenue Overview</p>
+                <p className="text-[12px] font-medium">Collections Overview</p>
                 <div className="flex gap-3">
                   {["Week", "Month", "Year"].map((t, i) => (
                     <span key={t} className={`text-[10px] ${i === 1 ? "text-accent" : "text-dim"}`}>{t}</span>
@@ -168,11 +199,11 @@ function DashboardContent() {
             <div className="md:col-span-2 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
               <p className="text-[12px] font-medium mb-3">Recent Members</p>
               {[
-                { name: "Priya Sharma", plan: "6 Month", status: "Active" },
-                { name: "Rahul Verma", plan: "Annual", status: "Active" },
-                { name: "Ankit Patel", plan: "Monthly", status: "Expiring" },
-                { name: "Sneha Iyer", plan: "3 Month", status: "Active" },
-                { name: "Karan Singh", plan: "Annual", status: "Active" },
+                { name: "M-1042", plan: "6 Month", status: "Active" },
+                { name: "M-0291", plan: "Annual", status: "Active" },
+                { name: "M-1137", plan: "Monthly", status: "Expiring" },
+                { name: "M-0658", plan: "3 Month", status: "Active" },
+                { name: "M-0412", plan: "Annual", status: "Active" },
               ].map((m, i) => (
                 <div key={m.name} className={`flex items-center justify-between py-2 ${i > 0 ? "border-t border-white/[0.04]" : ""}`}>
                   <div className="flex items-center gap-2.5">
@@ -268,27 +299,28 @@ function DashboardContent() {
   );
 }
 
+// Illustrative conversations with anonymized member IDs — no real member data.
 const dashAIConversations = [
   [
     { role: "user" as const, text: "Who hasn't paid this month?" },
-    { role: "ai" as const, text: "7 members have overdue payments totalling ₹43,200. Want me to send WhatsApp reminders?" },
+    { role: "ai" as const, text: "7 members have overdue payments totalling ₹43,200. Want me to send Telegram reminders?" },
     { role: "user" as const, text: "Yes, send reminders" },
-    { role: "ai" as const, text: "Done! 7 WhatsApp reminders sent. I'll notify you when payments come in." },
+    { role: "ai" as const, text: "Done! 7 Telegram reminders sent. I'll notify you when payments come in." },
   ],
   [
-    { role: "user" as const, text: "Freeze Rahul's plan for 2 weeks" },
-    { role: "ai" as const, text: "Rahul Verma — Annual Plan, active till Dec 2026. Freezing for 14 days will extend expiry to Jan 10. Confirm?" },
+    { role: "user" as const, text: "Freeze member M-0291's plan for 2 weeks" },
+    { role: "ai" as const, text: "M-0291 — Annual Plan, active till Dec 2026. Freezing for 14 days will extend expiry to Jan 10. Confirm?" },
     { role: "user" as const, text: "Confirm" },
-    { role: "ai" as const, text: "Plan frozen. Rahul has been notified on WhatsApp. Expiry updated." },
+    { role: "ai" as const, text: "Plan frozen. The member has been notified on Telegram. Expiry updated." },
   ],
   [
     { role: "user" as const, text: "How's today looking?" },
-    { role: "ai" as const, text: "87 check-ins so far, ₹28,400 collected. 3 memberships expiring today — Priya, Ankit, Sneha. 2 new enquiries pending follow-up." },
+    { role: "ai" as const, text: "87 check-ins so far, ₹28,400 collected. 3 memberships expiring today — M-1042, M-1137, M-0658. 2 new enquiries pending follow-up." },
     { role: "user" as const, text: "Send renewal reminder to the 3 expiring" },
-    { role: "ai" as const, text: "Sent! Personalised WhatsApp messages with payment links delivered to all 3." },
+    { role: "ai" as const, text: "Sent! Personalised Telegram messages with payment links delivered to all 3." },
   ],
   [
-    { role: "user" as const, text: "Show revenue for last 3 months" },
+    { role: "user" as const, text: "Show collections for last 3 months" },
     { role: "ai" as const, text: "Jan: ₹4.1L, Feb: ₹3.8L, Mar: ₹4.6L. March was your best month — 12% growth. Top plan: Annual (₹2.1L)." },
     { role: "user" as const, text: "Why did Feb dip?" },
     { role: "ai" as const, text: "14 fewer renewals vs Jan. 8 members switched to quarterly plans. Suggest running a promo for annual upgrades?" },
@@ -300,7 +332,7 @@ const dashAIConversations = [
 const features = [
   { title: "AI-Powered Operations", desc: "Manage everything through natural language. Renewals, reports, reminders — just ask.", icon: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z", color: "accent" },
   { title: "Smart Billing & POS", desc: "UPI QR payments, GST invoices, point-of-sale, partial payments, balance tracking — all built in.", icon: "M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z", color: "cyan-brand" },
-  { title: "WhatsApp & SMS", desc: "Automated renewal reminders, payment receipts, welcome messages. Bulk notify with one click.", icon: "M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z", color: "accent" },
+  { title: "Chat Notifications", desc: "Automated renewal reminders, payment receipts, welcome messages — Telegram and in-app today, WhatsApp rolling out.", icon: "M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z", color: "accent" },
   { title: "Biometric Check-in", desc: "Kiosk mode with fingerprint sync. Members check in by phone — no cards needed.", icon: "M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33", color: "accent-bright" },
   { title: "Workout & Diet Plans", desc: "Create and assign custom workout routines and diet plans. Members access them from their portal.", icon: "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12", color: "cyan-brand" },
   { title: "Enquiry & Lead Management", desc: "Track walk-ins, follow up on leads, convert prospects to members. Never lose a potential sale.", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9zm3.75 11.625a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z", color: "accent-bright" },
@@ -312,15 +344,15 @@ const features = [
   { title: "Staff & Member Portals", desc: "Dedicated portals for staff (attendance, leaves, payroll) and members (plans, invoices, waivers, bookings).", icon: "M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3", color: "accent-bright" },
 ];
 
+// Canonical pricing — must match traqgym-cloud /pricing (src/lib/plans.ts).
 const plans = [
-  { name: "Starter", price: "4,999", period: "/mo", desc: "Single-location gyms", items: ["1 location", "Unlimited members", "500 AI queries/mo", "Billing & GST invoices", "WhatsApp & SMS", "Biometric check-in", "Analytics & reports"] },
-  { name: "Growth", price: "3,999", period: "/location/mo", desc: "Gym chains & franchises", items: ["Unlimited locations", "Everything in Starter", "1,000 AI queries/location", "Centralized dashboard", "Per-location staff", "Cross-location reports", "Priority support"], featured: true },
-  { name: "Self-Hosted", price: "Custom", period: "", desc: "Your servers, your data", items: ["Full data isolation", "Everything in Growth", "Unlimited AI (your API key)", "Source code access", "Custom integrations", "Dedicated engineer", "White-label"] },
+  { name: "Starter", price: "3,999", period: "/location/mo", desc: "Single-location gyms", items: ["Members, plans, and attendance tracking", "Billing with UPI QR + GST invoices", "Renewal reminders and follow-ups", "Chat operations (Telegram live, WhatsApp rolling out)"] },
+  { name: "Growth", price: "4,999", period: "/location/mo", desc: "The AI night shift, covered", items: ["Everything in Starter", "14 AI night-shift agents with morning summaries", "Retention CRM and PT management", "Biometric check-in integration"], featured: true },
+  { name: "Scale", price: "7,999", period: "/location/mo", desc: "Chains & franchises", items: ["Everything in Growth", "Multi-location dashboard", "White-label", "Priority migration and chat support"] },
 ];
 
 const partners = [
-  { name: "Free Form Fitness", area: "Oshiwara, Mumbai", rating: "4.4", type: "Fitness Center" },
-  { name: "EGym Lokhandwala", area: "Andheri West, Mumbai", rating: "4.1", type: "Gym" },
+  { name: "EGym Lokhandwala", area: "Andheri West, Mumbai", type: "First paying customer" },
 ];
 
 const iconColorMap: Record<string, string> = {
@@ -353,8 +385,8 @@ export default function Home() {
             <a href="#features" className="text-[13px] text-dim hover:text-accent transition-colors">Features</a>
             <a href="#pricing" className="text-[13px] text-dim hover:text-accent transition-colors">Pricing</a>
           </div>
-          <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="hidden md:inline-flex glow-btn text-[13px] font-medium bg-gradient-to-r from-accent to-cyan-brand text-white px-5 py-2 rounded-lg transition-all hover:scale-[1.03]">
-            Get Started
+          <a href={START_URL} className="hidden md:inline-flex glow-btn text-[13px] font-medium bg-gradient-to-r from-accent to-cyan-brand text-white px-5 py-2 rounded-lg transition-all hover:scale-[1.03]">
+            Start free trial
           </a>
           <button onClick={() => setMobileNavOpen(v => !v)} className="md:hidden p-2 text-dim hover:text-white transition-colors" aria-label="Toggle menu">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -369,7 +401,7 @@ export default function Home() {
           <div className="md:hidden border-t border-white/[0.04] bg-[#050507]/95 backdrop-blur-2xl px-6 py-3 space-y-2">
             <a href="#features" onClick={() => setMobileNavOpen(false)} className="block text-sm text-dim hover:text-accent py-2">Features</a>
             <a href="#pricing" onClick={() => setMobileNavOpen(false)} className="block text-sm text-dim hover:text-accent py-2">Pricing</a>
-            <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="block text-sm font-medium text-accent py-2">Get Started</a>
+            <a href={START_URL} className="block text-sm font-medium text-accent py-2">Start free trial</a>
           </div>
         )}
       </nav>
@@ -388,33 +420,33 @@ export default function Home() {
           {/* Badge */}
           <div className={`inline-flex items-center gap-2 mb-8 px-4 py-1.5 rounded-full border border-accent/20 bg-accent/[0.05] ${hero.inView ? "anim-fade-up" : "opacity-0"}`}>
             <div className="w-1.5 h-1.5 rounded-full bg-accent anim-pulse" />
-            <span className="text-[11px] text-accent font-medium tracking-wide">Powered by AI</span>
+            <span className="text-[11px] text-accent font-medium tracking-wide">A Kinely product</span>
           </div>
 
           <h1 className={`text-[clamp(2.5rem,7vw,5.5rem)] font-bold tracking-[-0.03em] leading-[1.02] ${hero.inView ? "anim-fade-up d-100" : "opacity-0"}`}>
-            The <span className="gradient-text">AI-native</span> gym
-            <br />management platform
+            The <span className="gradient-text">AI-native</span>, chat-first
+            <br />gym OS for India
           </h1>
 
           <p className={`mt-7 text-[17px] md:text-lg text-sub max-w-xl mx-auto leading-relaxed ${hero.inView ? "anim-fade-up d-200" : "opacity-0"}`}>
-            Members, billing, attendance, notifications — all managed through natural language. Just tell it what you need.
+            Run members, billing, attendance, and renewals from chat — Telegram live today, WhatsApp rolling out. Just tell it what you need.
           </p>
 
           <div className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 ${hero.inView ? "anim-fade-up d-300" : "opacity-0"}`}>
-            <a href="mailto:contactus@traqgym.com?subject=TraqGym Enquiry" className="glow-btn group bg-gradient-to-r from-accent via-accent-bright to-cyan-brand text-white px-5 md:px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.04] shadow-lg shadow-accent/20">
-              Get Started
+            <a href={START_URL} className="glow-btn group bg-gradient-to-r from-accent via-accent-bright to-cyan-brand text-white px-5 md:px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.04] shadow-lg shadow-accent/20">
+              Start 30-day free trial
               <span className="inline-block ml-2 group-hover:translate-x-1 transition-transform">&rarr;</span>
             </a>
-            <a href="#features" className="group border border-accent/15 px-5 md:px-8 py-3.5 rounded-xl text-sm font-medium hover:bg-accent/[0.05] hover:border-accent/25 transition-all flex items-center gap-2">
-              See Features
-              <span className="inline-block group-hover:translate-x-1 transition-transform">&darr;</span>
+            <a href={PRICING_URL} className="group border border-accent/15 px-5 md:px-8 py-3.5 rounded-xl text-sm font-medium hover:bg-accent/[0.05] hover:border-accent/25 transition-all flex items-center gap-2">
+              See pricing
+              <span className="inline-block group-hover:translate-x-1 transition-transform">&rarr;</span>
             </a>
           </div>
 
           {/* Stats */}
           <div className={`mt-24 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-8 max-w-xl mx-auto ${hero.inView ? "anim-fade-up d-400" : "opacity-0"}`}>
             {[
-              { value: "< 2 min", l: "Setup Time" },
+              { value: "Overnight", l: "Data Migration" },
               { value: "Zero", l: "Spreadsheets Needed" },
               { value: "24/7", l: "AI Assistant" },
             ].map((s, i) => (
@@ -434,7 +466,8 @@ export default function Home() {
       <section ref={dash.ref} className="pb-16 md:pb-28 -mt-8 relative overflow-hidden">
         <div className="relative mx-auto max-w-5xl px-6">
           <div className={`${dash.inView ? "anim-fade-up d-200" : "opacity-0"}`}>
-            {/* Browser frame */}
+            <HeroMedia>
+            {/* Browser frame — fallback visual until /hero-traqgym.mp4 ships */}
             <div className="rounded-2xl border border-white/[0.08] bg-card overflow-hidden shadow-2xl shadow-accent/5">
               {/* Title bar */}
               <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06] bg-surface">
@@ -445,14 +478,18 @@ export default function Home() {
                 </div>
                 <div className="flex-1 flex justify-center">
                   <div className="bg-white/[0.04] border border-white/[0.06] rounded-md px-4 py-1 text-[11px] text-dim font-mono">
-                    egymlokhandwala.traqgym.com/admin
+                    yourgym.traqgym.com/admin
                   </div>
                 </div>
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-400/80 border border-amber-400/20 bg-amber-400/5 rounded-full px-2.5 py-0.5">
+                  Sample data
+                </span>
               </div>
 
               {/* Dashboard content */}
               <DashboardContent />
             </div>
+            </HeroMedia>
 
             {/* Reflection glow */}
             <div className="h-40 bg-gradient-to-b from-accent/[0.03] to-transparent rounded-b-3xl -mt-1" />
@@ -549,11 +586,17 @@ export default function Home() {
             ))}
           </div>
           <div className={`text-center mt-10 ${price.inView ? "anim-fade-up d-400" : "opacity-0"}`}>
-            <a href="mailto:contactus@traqgym.com?subject=TraqGym Pricing Enquiry" className="glow-btn inline-flex items-center gap-2 bg-gradient-to-r from-accent to-cyan-brand text-white px-5 md:px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.03] shadow-lg shadow-accent/20">
-              Get Started
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
-            </a>
-            <p className="text-[12px] text-dim mt-3">Email us at contactus@traqgym.com</p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <a href={START_URL} className="glow-btn inline-flex items-center gap-2 bg-gradient-to-r from-accent to-cyan-brand text-white px-5 md:px-8 py-3.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.03] shadow-lg shadow-accent/20">
+                Start 30-day free trial
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
+              </a>
+              <a href={PRICING_URL} className="border border-accent/15 px-5 md:px-8 py-3.5 rounded-xl text-sm font-medium hover:bg-accent/[0.05] hover:border-accent/25 transition-all">
+                See full pricing &amp; annual billing
+              </a>
+            </div>
+            <p className="text-[12px] text-dim mt-4">All prices per location per month, exclusive of 18% GST. Annual billing and sign-up live at traqgym.kinely.ai.</p>
+            <p className="text-[12px] text-dim mt-1">Questions? Email contactus@traqgym.com</p>
           </div>
         </div>
       </section>
@@ -564,21 +607,15 @@ export default function Home() {
       <section ref={partner.ref} className="py-16 md:py-28 relative overflow-hidden">
         <div className="relative mx-auto max-w-6xl px-6">
           <p className={`text-[11px] text-dim uppercase tracking-[0.2em] font-semibold text-center mb-14 ${partner.inView ? "anim-fade-up" : "opacity-0"}`}>
-            Trusted by gyms across India
+            Live in Mumbai — first paying gym onboard
           </p>
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-6 max-w-2xl mx-auto mb-20">
             {partners.map((p, i) => (
               <div key={p.name} className={`glass shine rounded-2xl p-6 text-center flex-1 max-w-xs ${partner.inView ? `anim-fade-up d-${(i + 1) * 100}` : "opacity-0"}`}>
                 <p className="font-semibold text-[16px] text-white/90">{p.name}</p>
                 <p className="text-[12px] text-sub mt-1">{p.area}</p>
-                <div className="flex items-center justify-center gap-1.5 mt-2">
-                  <div className="flex gap-0.5">
-                    {[...Array(5)].map((_, j) => (
-                      <svg key={j} className={`w-3 h-3 ${j < Math.floor(parseFloat(p.rating)) ? "text-amber-400" : "text-dim/30"}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
-                    ))}
-                  </div>
-                  <span className="text-[11px] text-white/60 font-medium">{p.rating}</span>
-                  <span className="text-[10px] text-dim">· {p.type}</span>
+                <div className="flex items-center justify-center mt-2">
+                  <span className="text-[10px] text-dim">{p.type}</span>
                 </div>
               </div>
             ))}
@@ -588,19 +625,15 @@ export default function Home() {
           <div className={`max-w-2xl mx-auto ${partner.inView ? "anim-fade-up d-500" : "opacity-0"}`}>
             <div className="glow-card rounded-2xl p-10 text-center relative">
               <div className="absolute -top-px left-1/2 -translate-x-1/2 w-32 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent" />
-              <div className="flex justify-center gap-1.5 mb-6">
-                {[...Array(5)].map((_, i) => (
-                  <svg key={i} className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                  </svg>
-                ))}
-              </div>
+              <p className="text-[10px] text-dim uppercase tracking-[0.2em] font-semibold mb-6">
+                From the Kinely founding team
+              </p>
               <p className="text-[15px] text-sub italic leading-relaxed">
                 &ldquo;TraqGym replaced three different tools we were juggling — billing spreadsheets, WhatsApp groups for reminders, and a paper register for attendance. Now it&apos;s all in one place, and the AI just works.&rdquo;
               </p>
               <div className="mt-6">
                 <p className="text-sm font-semibold">Robin Carruthers</p>
-                <p className="text-[12px] text-dim mt-0.5">Owner, Free Form Fitness &mdash; Mumbai</p>
+                <p className="text-[12px] text-dim mt-0.5">Kinely co-founder &mdash; previously ran Free Form Fitness, Mumbai, on TraqGym, where the product was built and tested daily</p>
               </div>
             </div>
           </div>
@@ -625,13 +658,14 @@ export default function Home() {
               <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-5">
                 Ready to <span className="gradient-text">transform</span> your gym?
               </h2>
-              <p className="text-dim max-w-md mx-auto mb-10 text-[15px]">Stop juggling spreadsheets, WhatsApp groups, and paper registers. Let AI handle it all.</p>
-              <a href="mailto:contactus@traqgym.com?subject=TraqGym Demo Request" className="glow-btn inline-flex items-center gap-2.5 bg-gradient-to-r from-accent via-accent-bright to-cyan-brand text-white px-10 py-4 rounded-xl text-sm font-semibold transition-all hover:scale-[1.04] shadow-xl shadow-accent/20">
-                Get Started
+              <p className="text-dim max-w-md mx-auto mb-10 text-[15px]">Stop juggling spreadsheets, chat groups, and paper registers. Let AI handle it all.</p>
+              <a href={START_URL} className="glow-btn inline-flex items-center gap-2.5 bg-gradient-to-r from-accent via-accent-bright to-cyan-brand text-white px-10 py-4 rounded-xl text-sm font-semibold transition-all hover:scale-[1.04] shadow-xl shadow-accent/20">
+                Start 30-day free trial
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
               </a>
+              <p className="text-[12px] text-dim mt-6">Prefer to talk first? Email <a href="mailto:contactus@traqgym.com" className="text-sub hover:text-accent transition-colors">contactus@traqgym.com</a></p>
             </div>
           </div>
         </div>
@@ -643,15 +677,19 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <Image src="/logo.png" alt="TraqGym" width={20} height={20} className="drop-shadow-[0_0_6px_rgba(129,140,248,0.2)]" />
-            <span className="text-[12px] text-dim">&copy; {new Date().getFullYear()} TraqGym</span>
+            <span className="text-[12px] text-dim">
+              &copy; {new Date().getFullYear()} TraqGym &middot; <a href="https://kinely.ai" className="hover:text-accent transition-colors">A Kinely product</a>
+            </span>
           </div>
           <div className="flex items-center gap-6">
             <a href="#features" className="text-[12px] text-dim hover:text-accent transition-colors">Features</a>
-            <a href="#pricing" className="text-[12px] text-dim hover:text-accent transition-colors">Pricing</a>
+            <a href={PRICING_URL} className="text-[12px] text-dim hover:text-accent transition-colors">Pricing</a>
+            <a href={START_URL} className="text-[12px] text-dim hover:text-accent transition-colors">Start free trial</a>
             <a href="mailto:contactus@traqgym.com" className="text-[12px] text-dim hover:text-accent transition-colors">contactus@traqgym.com</a>
           </div>
         </div>
       </footer>
+      <KinelyBar current="traqgym" />
     </div>
   );
 }

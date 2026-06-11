@@ -1,7 +1,7 @@
 {
   "name": "TraqGym",
   "short_name": "TraqGym",
-  "description": "AI-Native Gym Management Software",
+  "description": "AI-native, chat-first gym OS for India. A Kinely product.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050507",
