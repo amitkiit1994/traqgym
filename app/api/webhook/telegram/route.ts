@@ -53,6 +53,11 @@ import {
   captureRejectReason,
   isAutonomyEnabled,
 } from "@/lib/services/action-loop";
+// Task #78: on-demand DB-backed morning digest (/digest). Deterministic —
+// composed straight from Postgres, no LLM. Works in every digest_source
+// mode so the owner can pull the brief anytime (live acceptance test for
+// the CSV-digest cutover).
+import { buildDigest } from "@/lib/services/morning-digest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -1046,6 +1051,35 @@ export async function POST(request: Request) {
       await sendMessage({
         chatId,
         text: "\u26A0\uFE0F Could not load the action register. Try again.",
+      });
+    }
+    return OK();
+  }
+
+  // ── Task #78: /digest — DB-backed morning brief on demand ───────────────
+  // Owner-gated above (same stack as /actions: webhook secret, owner chat
+  // gate, update_id dedupe). Sends buildDigest() regardless of the
+  // digest_source cron mode — lets the owner pull the DB brief anytime.
+  if (msg.text && /^\/digest(@\w+)?\b/i.test(msg.text.trim())) {
+    try {
+      const digest = await buildDigest();
+      if (digest.success) {
+        await sendMessage({
+          chatId,
+          text: digest.text,
+          parseMode: "HTML",
+        });
+      } else {
+        await sendMessage({
+          chatId,
+          text: "⚠️ Could not build the digest right now. Try again in a minute.",
+        });
+      }
+    } catch (err) {
+      console.error("[telegram-webhook] /digest error:", err);
+      await sendMessage({
+        chatId,
+        text: "⚠️ Could not build the digest right now. Try again in a minute.",
       });
     }
     return OK();
