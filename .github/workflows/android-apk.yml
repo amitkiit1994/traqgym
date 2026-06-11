@@ -1,0 +1,56 @@
+name: Build Android APK
+
+# Builds a gym-targeted TraqGym APK (Capacitor shell loading the gym's live
+# web app). The server URL is swapped at build time, so one workflow serves
+# every gym instance. Debug-signed: sideload-distribution, same as the
+# original APK.
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: 'Gym web app URL the APK should load'
+        required: true
+        default: 'https://egymlokhandwala.traqgym.com'
+      apk_label:
+        description: 'Label used in the artifact/file name'
+        required: true
+        default: 'egym'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Point the app at the requested gym
+        run: |
+          python3 - << 'EOF'
+          import json, os
+          p = 'android/app/src/main/assets/capacitor.config.json'
+          cfg = json.load(open(p))
+          cfg['server']['url'] = os.environ['SERVER_URL']
+          json.dump(cfg, open(p, 'w'), indent='\t')
+          print('server.url ->', cfg['server']['url'])
+          EOF
+        env:
+          SERVER_URL: ${{ github.event.inputs.server_url }}
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename artifact
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "TraqGym-${{ github.event.inputs.apk_label }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TraqGym-${{ github.event.inputs.apk_label }}-apk
+          path: TraqGym-${{ github.event.inputs.apk_label }}.apk
+          retention-days: 30
