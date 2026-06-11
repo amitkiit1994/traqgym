@@ -176,17 +176,34 @@ const allTools = [
 
 export { allTools };
 
-export function createGymAgent(context: AgentContext) {
+export async function createGymAgent(context: AgentContext) {
   // Filter tools based on role — staff can't see admin-only tools
   const tools =
     context.role === "admin"
       ? allTools
       : allTools.filter((t) => !ADMIN_ONLY_TOOLS.has(t.name));
 
+  // Earned Autonomy: inject the owner's reject reasons (boundary conditions)
+  // into the system prompt wherever renewal/messaging actions are decided.
+  // Empty until the action loop is enabled AND the owner has rejected at
+  // least one proposal — so this is a no-op on day zero. Callers may pre-set
+  // context.boundaryConditions to skip the lookup.
+  let boundaryConditions = context.boundaryConditions;
+  if (!boundaryConditions) {
+    try {
+      const { getAllBoundaryConditionLines } = await import(
+        "@/lib/services/action-loop"
+      );
+      boundaryConditions = await getAllBoundaryConditionLines();
+    } catch {
+      boundaryConditions = [];
+    }
+  }
+
   return new Agent({
     name: "TraqGym AI",
     model: "gpt-5.4",
-    instructions: buildSystemPrompt(context),
+    instructions: buildSystemPrompt({ ...context, boundaryConditions }),
     tools,
   });
 }
