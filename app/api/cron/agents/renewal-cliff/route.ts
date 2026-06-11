@@ -16,8 +16,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { created, total } = await run();
-    return Response.json({ ok: true, created, total });
+    const { created, total, proposalsCreated } = await run();
+    return Response.json({ ok: true, created, total, proposalsCreated });
   } catch (err) {
     console.error("[renewal-cliff cron] Error:", err);
     return Response.json(

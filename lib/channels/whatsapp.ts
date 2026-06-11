@@ -13,9 +13,10 @@ export async function send(params: {
   const integratedNumber = (await getSetting("msg91_whatsapp_number", "")) || process.env.MSG91_WHATSAPP_INTEGRATED_NUMBER;
 
   if (!authKey || !integratedNumber) {
+    // PII rule: member phone numbers and variables (names, drafted message
+    // text) stay out of logger lines — last 4 digits only.
     console.log(
-      `[WhatsApp DEV] "${params.templateName}" to ${params.recipient}`,
-      params.variables
+      `[WhatsApp DEV] "${params.templateName}" to ****${params.recipient.slice(-4)}`
     );
     return { success: true, channel: "whatsapp", mode: "dev" };
   }

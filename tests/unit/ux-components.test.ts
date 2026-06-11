@@ -148,6 +148,15 @@ vi.mock("@/lib/auth-guard", () => ({
   requireWorker: vi.fn().mockResolvedValue({ id: 1, role: "admin", actorType: "worker" }),
 }));
 
+// next/cache unstable_cache requires the Next.js server incrementalCache
+// (request scope), which does not exist under vitest — make it a passthrough
+// so the wrapped function runs directly against the prisma mocks.
+vi.mock("next/cache", () => ({
+  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
+  revalidateTag: vi.fn(),
+  revalidatePath: vi.fn(),
+}));
+
 import { prisma } from "@/lib/prisma";
 import { calculateChurnRisk } from "@/lib/services/churn-risk";
 

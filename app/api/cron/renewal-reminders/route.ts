@@ -6,6 +6,8 @@ import { send as sendSMS } from "@/lib/channels/sms";
 import { getSetting } from "@/lib/services/settings";
 import { requireCronSecret } from "@/lib/auth-cron";
 import { istCalendarFor, istDayBoundsUtc } from "@/lib/utils/date-ist";
+import { createProposal, isAutonomyEnabled } from "@/lib/services/action-loop";
+import { inr } from "@/lib/agents/_helpers";
 
 export async function GET(req: NextRequest) {
   const guard = requireCronSecret(req);
@@ -15,6 +17,19 @@ export async function GET(req: NextRequest) {
   if (enabled !== "true") {
     return Response.json({ success: true, skipped: true, reason: "Cron disabled in settings" });
   }
+
+  // Earned Autonomy cutover: this cron is the spec's canonical "unearned
+  // autonomy" — it direct-sends to members with no approval history. When
+  // the action loop is ON, its renewal sends are CAPTURED: each becomes an
+  // auto_executed ActionProposal routed through the message-only executor,
+  // so it shows up in the register ("Done (auto)") and gets outcome-measured
+  // like everything else. The duplicate raw direct send is disabled.
+  // Priority goes to the verify loop: if renewal-cliff already proposed for
+  // a member (it runs earlier and covers the full 7-day window), the dedupe
+  // inside createProposal suppresses the legacy auto-send — the owner's
+  // pending decision owns that member. Birthday greetings are NOT renewal
+  // reminders and are untouched. When the loop is OFF, nothing changes.
+  const autonomyOn = await isAutonomyEnabled();
 
   // Anchor "today" to the IST calendar day. MemberTicket.expireDate is stored as
   // IST midnight (which is 18:30 UTC of the prior day), so all date-window math
@@ -55,7 +70,7 @@ export async function GET(req: NextRequest) {
         },
         include: {
           user: { select: { id: true, firstname: true, lastname: true, phone: true } },
-          plan: { select: { name: true } },
+          plan: { select: { name: true, price: true } },
         },
       });
 
@@ -72,6 +87,65 @@ export async function GET(req: NextRequest) {
               ? "renewal_expiry_1day"
               : "renewal_expiry_3days";
 
+        // Render expiryDate in IST (targetDate is IST midnight as a UTC instant —
+        // calling .toISOString() directly would yield the prior UTC day).
+        const expiryIst = istCalendarFor(targetDate);
+        const expiryDateStr = `${expiryIst.year}-${String(expiryIst.month + 1).padStart(2, "0")}-${String(expiryIst.day).padStart(2, "0")}`;
+        const memberName = `${ticket.user.firstname} ${ticket.user.lastname}`.trim();
+
+        // ── Legacy autonomy captured ───────────────────────────────────────
+        // Route the send through the executor as an auto_executed proposal:
+        // visible in the register, outcome-measured, NotificationLog-deduped
+        // by the executor itself. If renewal-cliff already has a live
+        // proposal for this member, createProposal skips and the verify
+        // loop owns the member (no unearned send, no duplicate).
+        if (autonomyOn) {
+          const value = Number(ticket.totalAmount ?? ticket.plan.price ?? 0);
+          const draft =
+            `Hi ${ticket.user.firstname}, your ${ticket.plan.name} membership ` +
+            `expires on ${expiryDateStr}` +
+            `${daysAhead === 0 ? " (today)" : daysAhead === 1 ? " (tomorrow)" : ""}. ` +
+            `Renew at the front desk or reply here to keep your access uninterrupted.`;
+          const proposal = await createProposal(
+            {
+              actionType: "renewal_reminder",
+              sourceAgent: "renewal_reminders_cron",
+              targetUserId: ticket.userId,
+              title: `Renewal reminder — ${memberName} (D-${daysAhead})`,
+              instruction:
+                `Deterministic ${daysAhead}-day renewal reminder for ${memberName} ` +
+                `(${ticket.plan.name}, expires ${expiryDateStr}). ` +
+                `Projected save: ${inr(value)}.\n\n"${draft}"`,
+              params: {
+                templateName,
+                variables: {
+                  name: memberName,
+                  plan: ticket.plan.name,
+                  expiryDate: expiryDateStr,
+                },
+                messageText: draft,
+              },
+              likelihood: 0.7,
+              projectedImpactInr: Math.round(value),
+              clockspeedDays: 7,
+              gymContext: {
+                ticketId: ticket.id,
+                planName: ticket.plan.name,
+                expireDate: expiryDateStr,
+                daysAhead,
+                legacyCapture: true,
+              },
+            },
+            { forceAuto: true }
+          );
+          if (proposal.success && !proposal.skipped && proposal.autoExecuted) {
+            sent++;
+          } else {
+            skipped++;
+          }
+          continue;
+        }
+
         const result = await dispatch({
           userId: ticket.userId,
           templateName,
@@ -84,12 +158,8 @@ export async function GET(req: NextRequest) {
 
         try {
           const phone = ticket.user.phone ?? "unknown";
-          // Render expiryDate in IST (targetDate is IST midnight as a UTC instant —
-          // calling .toISOString() directly would yield the prior UTC day).
-          const expiryIst = istCalendarFor(targetDate);
-          const expiryDateStr = `${expiryIst.year}-${String(expiryIst.month + 1).padStart(2, "0")}-${String(expiryIst.day).padStart(2, "0")}`;
           const vars = {
-            name: `${ticket.user.firstname} ${ticket.user.lastname}`,
+            name: memberName,
             plan: ticket.plan.name,
             expiryDate: expiryDateStr,
           };
@@ -154,8 +224,12 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Smart AI Renewal: 7-day window ──
+  // All three Smart AI Renewal sections below are additional renewal_reminder
+  // direct sends — when the action loop is ON they are disabled (cutover):
+  // renewal_reminder drafting + sending is owned by the register
+  // (renewal-cliff proposals + the captured deterministic path above).
   let aiRenewal7daySent = 0;
-  const aiSmart7dayEnabled = await getSetting("ai_smart_renewal_7day_enabled", "false") === "true";
+  const aiSmart7dayEnabled = !autonomyOn && (await getSetting("ai_smart_renewal_7day_enabled", "false")) === "true";
   if (aiSmart7dayEnabled) {
     try {
       const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
@@ -252,7 +326,7 @@ Write a warm, personal 2-sentence early reminder encouraging renewal. Reference 
 
   // ── Smart AI Renewal: 3-day window ──
   let aiRenewal3daySent = 0;
-  const aiSmart3dayEnabled = await getSetting("ai_smart_renewal_3day_enabled", "false") === "true";
+  const aiSmart3dayEnabled = !autonomyOn && (await getSetting("ai_smart_renewal_3day_enabled", "false")) === "true";
   if (aiSmart3dayEnabled) {
     try {
       const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
@@ -349,7 +423,7 @@ Write a warm but slightly urgent 2-sentence reminder encouraging renewal. Mentio
 
   // ── Smart AI Renewal (personalized message for expiring-today members) ──
   let aiRenewalSent = 0;
-  const aiSmartEnabled = await getSetting("ai_smart_renewal_enabled", "false") === "true";
+  const aiSmartEnabled = !autonomyOn && (await getSetting("ai_smart_renewal_enabled", "false")) === "true";
   if (aiSmartEnabled) {
     try {
       const { runProactiveAgent } = await import("@/lib/ai/proactive-runner");
@@ -434,5 +508,16 @@ Write a warm, personal 2-sentence message encouraging renewal. Reference their f
     }
   }
 
-  return Response.json({ success: true, sent, skipped, birthdaySent, aiRenewal7daySent, aiRenewal3daySent, aiRenewalSent });
+  return Response.json({
+    success: true,
+    sent,
+    skipped,
+    birthdaySent,
+    aiRenewal7daySent,
+    aiRenewal3daySent,
+    aiRenewalSent,
+    mode: autonomyOn
+      ? "legacy captured — renewal sends routed through the action register as auto_executed proposals"
+      : "legacy direct send",
+  });
 }

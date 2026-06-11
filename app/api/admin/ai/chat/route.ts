@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
     workerId,
   };
 
-  const agent = createGymAgent(context);
+  const agent = await createGymAgent(context);
 
   // Stream the response
   const aiCtx = { workerId, role };

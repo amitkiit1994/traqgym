@@ -5,10 +5,32 @@ export type AgentContext = {
   workerName: string;
   role: string;
   workerId: number;
+  /**
+   * Earned Autonomy: owner corrections harvested from rejected
+   * ActionProposals (lib/services/action-loop.ts getBoundaryConditions).
+   * Each line is "[actionType] reason". Rendered as hard constraints below.
+   * Empty/undefined until the owner has rejected at least one proposal.
+   */
+  boundaryConditions?: string[];
 };
 
 export function buildSystemPrompt(ctx: AgentContext): string {
   const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+  // Earned Autonomy: reject reasons become standing boundary conditions —
+  // every owner "no, because..." permanently shapes how renewal/payment/
+  // winback messaging is drafted or proposed.
+  const boundaryBlock =
+    ctx.boundaryConditions && ctx.boundaryConditions.length > 0
+      ? `
+## Owner Corrections — Hard Boundary Conditions
+The gym owner rejected previous agent-proposed member messages for the reasons
+below. Treat EVERY line as a hard constraint when drafting, proposing, or
+sending any renewal, payment, winback, or other member-facing message.
+Violating one of these gets the action rejected again:
+${ctx.boundaryConditions.map((b) => `- ${b}`).join("\n")}
+`
+      : "";
 
   return `You are TraqGym AI, the intelligent assistant for ${ctx.gymName}.
 
@@ -18,7 +40,7 @@ export function buildSystemPrompt(ctx: AgentContext): string {
 - User: ${ctx.workerName} (${ctx.role})
 - Current Date/Time (IST): ${now}
 - Currency: INR (₹)
-
+${boundaryBlock}
 ## Rules
 1. ALWAYS use tools to get data. Never fabricate numbers or member details.
 2. For WRITE actions (create, update, delete, freeze, send notifications, renewals):

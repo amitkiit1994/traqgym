@@ -1081,6 +1081,9 @@ model Insight {
   // PR 16 K.4: cross-channel delivery tracking (email + telegram message_ids).
   deliveries InsightDelivery[]
 
+  // Earned Autonomy: proposals spawned from this insight (provenance link).
+  actionProposals ActionProposal[]
+
   @@index([agent, createdAt])
   @@index([severity, dismissedAt])
   // Sprint 3 perf: every dashboard load + manager briefing filters by
@@ -1367,4 +1370,68 @@ model PendingGymProvisioning {
 
   @@index([status])
   @@index([createdAt])
+}
+
+// ─── Earned Autonomy: action register (agents propose, humans verify) ───────
+// Philosophy: agents emit concrete ACTIONS (instruction + likelihood +
+// projected rupee impact + clockspeed window), the owner approves/rejects via
+// Telegram, reject reasons become boundary conditions injected into agent
+// prompts, and autonomy graduates per action-type only when the numbers earn
+// it. Kill-switch: GymSettings `autonomy_enabled` (default "false") — nothing
+// in this loop runs until the owner flips it. Money-out actions are
+// structurally unreachable (executeAction whitelist is message-only).
+
+model ActionProposal {
+  id         Int    @id @default(autoincrement())
+  actionType String // "renewal_reminder" | "winback_message" | "dues_nudge" | "enquiry_followup" | "payment_followup" (message-only whitelist)
+  gymContext Json? // selection evidence: { ticketId, planName, expireDate, enquiryId, balanceDueAtProposal, ... }
+
+  targetUserId Int? // member the action touches (plain Int — no relation churn on User)
+  title        String // short owner-facing label: "Renewal reminder — Karan S"
+  instruction  String @db.Text // owner-readable: what will happen if approved
+  params       Json // exact execution params: { templateName, variables, messageText }
+
+  likelihood         Float? // 0-1 agent-estimated probability of achieving the impact
+  projectedImpactInr Int? // projected rupee impact (e.g. ticket value for a renewal save)
+  clockspeedDays     Int? // days before the opportunity decays; drives dedupe + outcome window
+
+  status String @default("proposed") // proposed | approved | rejected | executed | auto_executed | expired | failed
+
+  decidedById  Int? // Worker who verified (resolved system worker for Telegram taps)
+  decidedAt    DateTime?
+  rejectReason String?   @db.Text // the training signal — becomes a boundary condition
+
+  executedAt        DateTime?
+  outcomeMeasuredAt DateTime? // set by app/api/cron/autonomy-outcomes once the clockspeed window elapses
+  outcomeImpactInr  Int? // realized rupees, compared against projectedImpactInr
+  outcomeStatus     String? // hit | miss | unmeasurable (target row deleted etc.)
+
+  sourceAgent String // producing agent, e.g. "renewal_cliff"
+  insightId   Int? // provenance: the analysis-layer Insight this action came from
+  insight     Insight? @relation(fields: [insightId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([actionType])
+}
+
+// Per action-type autonomy state. Mode NEVER auto-flips to "notify" — the
+// graduation check only writes an Insight suggesting the owner enable it
+// (acceptance path: /autonomy notify <type> on Telegram). Demotion IS
+// automatic (fail-toward-human): bad calibration or execution failures flip
+// notify back to verify and stamp demotedAt/demotionReason.
+model AutonomyPolicy {
+  id             Int       @id @default(autoincrement())
+  actionType     String    @unique
+  mode           String    @default("verify") // verify | notify | off
+  approvals      Int       @default(0)
+  rejections     Int       @default(0)
+  executedCount  Int       @default(0)
+  outcomeHitRate Float? // measured outcomes hitting >=50% of projection
+  calibrationPct Float? // 100 * sum(outcomeImpactInr) / sum(projectedImpactInr) over measured rows
+  measuredCount  Int       @default(0) // measured outcomes (hit + miss; unmeasurable excluded)
+  graduatedAt    DateTime? // owner accepted notify mode
+  demotedAt      DateTime? // last auto/manual demotion back to verify
+  demotionReason String?
+  updatedAt      DateTime  @updatedAt
 }

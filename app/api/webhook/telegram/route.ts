@@ -41,6 +41,18 @@ import {
   derivePairingCode,
   escapeHtml,
 } from "@/lib/channels/telegram";
+// Earned Autonomy: action-register verify surface (approve/reject callbacks +
+// reject-reason capture). All paths are inert while GymSettings
+// `autonomy_enabled` is off (default) — no proposals exist, callbacks no-op.
+import {
+  handleActionCallback,
+  sendActionRegister,
+  handleAutonomyCommand,
+} from "@/lib/ai/action-telegram";
+import {
+  captureRejectReason,
+  isAutonomyEnabled,
+} from "@/lib/services/action-loop";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -526,7 +538,7 @@ async function processAgentMessage(args: {
     workerId: systemWorkerId,
   };
 
-  const agent = createGymAgent(context);
+  const agent = await createGymAgent(context);
 
   let output = "";
   try {
@@ -590,6 +602,30 @@ async function handleCallbackQuery(cq: TgCallbackQuery): Promise<Response> {
       callbackQueryId: cq.id,
       text: "Not authorized.",
       showAlert: true,
+    });
+    return OK();
+  }
+
+  // ── Earned Autonomy: action-register callbacks (plain "action_*" strings,
+  // not JSON — must be routed before the JSON.parse below). Owner gate and
+  // update_id dedupe already enforced above; the atomic status-claim inside
+  // decideProposal makes duplicate taps single-execution.
+  if (cq.data.startsWith("action_")) {
+    const actionWorkerId = await resolveSystemWorkerId();
+    if (actionWorkerId === null) {
+      await answerCallbackQuery({
+        callbackQueryId: cq.id,
+        text: "No worker available to attribute action.",
+        showAlert: true,
+      });
+      return OK();
+    }
+    await handleActionCallback({
+      data: cq.data,
+      chatId: fromChatId,
+      messageId: cq.message?.message_id,
+      callbackQueryId: cq.id,
+      workerId: actionWorkerId,
     });
     return OK();
   }
@@ -990,6 +1026,78 @@ export async function POST(request: Request) {
       parseMode: "HTML",
     });
     return OK();
+  }
+
+  // ── Earned Autonomy: /actions — show the open action register ───────────
+  if (msg.text && /^\/actions(@\w+)?\b/i.test(msg.text.trim())) {
+    if (!(await isAutonomyEnabled())) {
+      await sendMessage({
+        chatId,
+        text:
+          "\u2139\uFE0F The action loop is off (<code>autonomy_enabled</code> is not set to <code>true</code> in Settings). No actions are being proposed.",
+        parseMode: "HTML",
+      });
+      return OK();
+    }
+    try {
+      await sendActionRegister(chatId);
+    } catch (err) {
+      console.error("[telegram-webhook] /actions error:", err);
+      await sendMessage({
+        chatId,
+        text: "\u26A0\uFE0F Could not load the action register. Try again.",
+      });
+    }
+    return OK();
+  }
+
+  // ── Earned Autonomy: /autonomy — status + kill-switch + per-type modes ──
+  // Same security stack as /actions: webhook secret verified, owner chat
+  // gated above, update_id deduped. status | on | off | verify <type> |
+  // notify <type> | off <type>.
+  if (msg.text && /^\/autonomy(@\w+)?\b/i.test(msg.text.trim())) {
+    const autonomyWorkerId = await resolveSystemWorkerId();
+    if (autonomyWorkerId === null) {
+      await sendMessage({
+        chatId,
+        text: "⚠️ No active worker available to attribute the command.",
+      });
+      return OK();
+    }
+    try {
+      await handleAutonomyCommand({
+        chatId,
+        text: msg.text.trim(),
+        workerId: autonomyWorkerId,
+      });
+    } catch (err) {
+      console.error("[telegram-webhook] /autonomy error:", err);
+      await sendMessage({
+        chatId,
+        text: "⚠️ Could not process the autonomy command. Try again.",
+      });
+    }
+    return OK();
+  }
+
+  // ── Earned Autonomy: pending reject-reason capture ──────────────────────
+  // If the owner just tapped [Reject] on an action, their next plain-text
+  // message within 10 minutes is the reject reason — capture it as the
+  // training signal and do NOT forward it to the AI agent.
+  if (msg.text && !msg.text.startsWith("/")) {
+    const captured = await captureRejectReason({
+      chatId: String(chatId),
+      text: msg.text,
+    });
+    if (captured.captured) {
+      await sendMessage({
+        chatId,
+        text:
+          `\u2705 Reason recorded for action #${captured.proposalId}. ` +
+          `It is now a boundary condition — future proposals of this type will be drafted to respect it.`,
+      });
+      return OK();
+    }
   }
 
   // ── Voice message ────────────────────────────────────────────────────────

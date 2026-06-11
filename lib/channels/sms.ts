@@ -14,9 +14,10 @@ export async function send(params: {
   const senderId = (await getSetting("msg91_sms_sender_id", "")) || process.env.MSG91_SMS_SENDER_ID;
 
   if (!authKey || !flowId) {
+    // PII rule: member phone numbers and variables (names, drafted message
+    // text) stay out of logger lines — last 4 digits only.
     console.log(
-      `[SMS DEV] "${params.templateName}" to ${params.recipient}`,
-      params.variables
+      `[SMS DEV] "${params.templateName}" to ****${params.recipient.slice(-4)}`
     );
     return { success: true, channel: "sms", mode: "dev" };
   }

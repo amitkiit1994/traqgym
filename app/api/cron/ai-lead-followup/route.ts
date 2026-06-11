@@ -5,13 +5,31 @@ import { runProactiveAgent } from "@/lib/ai/proactive-runner";
 import { getColdLeads } from "@/lib/services/lead-scoring";
 import { send as sendWhatsApp } from "@/lib/channels/whatsapp";
 import { requireCronSecret } from "@/lib/auth-cron";
+import { createProposal, isAutonomyEnabled } from "@/lib/services/action-loop";
+import { sendActionRegister } from "@/lib/ai/action-telegram";
+import { upsertInsight } from "@/lib/agents/_shared";
+import { inr, isoDay } from "@/lib/agents/_helpers";
+
+// Earned Autonomy prior: probability that one followup converts a cold lead
+// within the window. Projected impact = average realized ticket value (last
+// 90 days of actual sales) x likelihood — measured by the autonomy-outcomes
+// cron as enquiry stage advancement / conversion payments.
+const ENQUIRY_LIKELIHOOD = 0.1;
+const ENQUIRY_CLOCKSPEED_DAYS = 7;
 
 export async function GET(req: NextRequest) {
   const guard = requireCronSecret(req);
   if (guard) return guard;
 
+  // Cutover: when the action loop is ON, this cron becomes the
+  // enquiry_followup PRODUCER (this legacy path was ALSO unearned autonomy —
+  // default-on LLM direct sends to leads). Same selection (getColdLeads),
+  // proposals instead of sends; legacy direct send disabled. When the loop
+  // is OFF, legacy behavior is untouched.
+  const autonomyOn = await isAutonomyEnabled();
+
   const enabled = await getSetting("ai_lead_followup_enabled", "true");
-  if (enabled !== "true") {
+  if (!autonomyOn && enabled !== "true") {
     return Response.json({ success: true, skipped: true, reason: "Lead follow-up disabled" });
   }
 
@@ -21,6 +39,8 @@ export async function GET(req: NextRequest) {
 
   // Guard: don't run if WhatsApp channel selected but MSG91 isn't configured.
   // Otherwise we burn OpenAI tokens generating messages that get console.log'd.
+  // Applies to the producer too — proposing a send that can only dev-log is
+  // not an honest action.
   if (channel === "whatsapp" || channel === "both") {
     const authKey = (await getSetting("msg91_auth_key", "")) || process.env.MSG91_AUTH_KEY;
     const integratedNumber = (await getSetting("msg91_whatsapp_number", "")) || process.env.MSG91_WHATSAPP_INTEGRATED_NUMBER;
@@ -37,6 +57,106 @@ export async function GET(req: NextRequest) {
 
   if (coldLeads.length === 0) {
     return Response.json({ success: true, processed: 0, reason: "No cold leads found" });
+  }
+
+  // ── Earned Autonomy: enquiry_followup producer ───────────────────────────
+  if (autonomyOn) {
+    const gymName =
+      process.env.NEXT_PUBLIC_GYM_NAME || process.env.GYM_NAME || "the gym";
+
+    // Honest projection basis: what a converted enquiry has actually been
+    // worth at this gym lately (average ticket value over the last 90 days).
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000);
+    const agg = await prisma.memberTicket.aggregate({
+      _avg: { totalAmount: true },
+      where: { createdAt: { gte: ninetyDaysAgo }, totalAmount: { not: null } },
+    });
+    const avgTicketValue = Number(agg._avg.totalAmount ?? 0);
+    const projected =
+      avgTicketValue > 0 ? Math.round(avgTicketValue * ENQUIRY_LIKELIHOOD) : undefined;
+
+    let proposalsCreated = 0;
+    for (const lead of coldLeads) {
+      if (!lead.phone) continue;
+      const draft =
+        `Hi ${lead.name.split(" ")[0] || lead.name}, thanks for your interest in ` +
+        `${gymName}! We'd love to show you around — drop in any time this week for a ` +
+        `quick tour and a trial workout, or reply here and we'll call you back at a ` +
+        `time that suits you.`;
+
+      const proposal = await createProposal({
+        actionType: "enquiry_followup",
+        sourceAgent: "ai_lead_followup",
+        targetEnquiryId: lead.enquiryId,
+        title: `Lead follow-up — ${lead.name} (${lead.stage}, quiet ${lead.daysSinceLastActivity}d)`,
+        instruction:
+          `Send enquiry ${lead.name} (${lead.phone}, source ${lead.source}, stage ` +
+          `"${lead.stage}", ${lead.daysSinceLastActivity}d since last activity, ` +
+          `${lead.followupCount} prior followup(s)) the message below via WhatsApp/SMS. ` +
+          (projected
+            ? `Projected: avg ticket ${inr(avgTicketValue)} x ${Math.round(ENQUIRY_LIKELIHOOD * 100)}% = ${inr(projected)}.`
+            : `No projection (no ticket sales in the last 90 days to base one on).`) +
+          `\n\n"${draft}"`,
+        params: {
+          templateName: "ai_lead_followup",
+          variables: { name: lead.name, message: draft },
+          messageText: draft,
+        },
+        likelihood: ENQUIRY_LIKELIHOOD,
+        projectedImpactInr: projected,
+        clockspeedDays: ENQUIRY_CLOCKSPEED_DAYS,
+        gymContext: {
+          stageAtProposal: lead.stage,
+          source: lead.source,
+          daysSinceLastActivity: lead.daysSinceLastActivity,
+          followupCount: lead.followupCount,
+        },
+      });
+      if (proposal.success && !proposal.skipped) proposalsCreated++;
+    }
+
+    if (proposalsCreated > 0) {
+      const insight = await upsertInsight({
+        agent: "enquiry_followup_proposer",
+        severity: "medium",
+        title: `${proposalsCreated} cold lead(s) proposed for follow-up`,
+        body:
+          `${proposalsCreated} enquiry(ies) inactive >${gapHours}h were proposed for ` +
+          `follow-up messages (verify on Telegram via /actions).` +
+          (projected
+            ? ` Projection basis: ${inr(avgTicketValue)} avg ticket x ${Math.round(ENQUIRY_LIKELIHOOD * 100)}% conversion prior.`
+            : ""),
+        dataJson: {
+          proposalsCreated,
+          avgTicketValue,
+          likelihood: ENQUIRY_LIKELIHOOD,
+          clockspeedDays: ENQUIRY_CLOCKSPEED_DAYS,
+        },
+        entityType: "global",
+        dedupeKey: `enquiry_followup_proposer:${isoDay()}`,
+      });
+      await prisma.actionProposal.updateMany({
+        where: {
+          actionType: "enquiry_followup",
+          insightId: null,
+          createdAt: { gte: new Date(Date.now() - 60 * 60000) },
+        },
+        data: { insightId: insight.insightId },
+      });
+
+      const ownerChatId = (
+        await getSetting("gym_owner_telegram_chat_id", "")
+      ).trim();
+      if (ownerChatId) {
+        await sendActionRegister(ownerChatId);
+      }
+    }
+
+    return Response.json({
+      success: true,
+      proposalsCreated,
+      legacyDirectSend: "disabled (autonomy_enabled=true — verify loop owns lead followups)",
+    });
   }
 
   let sent = 0;
